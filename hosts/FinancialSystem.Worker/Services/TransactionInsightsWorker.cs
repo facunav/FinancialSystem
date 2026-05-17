@@ -1,7 +1,6 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Insights;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace FinancialSystem.Worker.Services;
@@ -46,7 +45,6 @@ public sealed class TransactionInsightsWorker(
             var transactions = await db.Transactions
                 .AsNoTracking()
                 .OrderByDescending(t => t.Date)
-                .ThenByDescending(t => t.CreatedAtUtc)
                 .Take(Math.Max(1, options.TransactionBatchSize))
                 .ToListAsync(cancellationToken);
 

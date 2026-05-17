@@ -38,5 +38,12 @@ internal sealed class TransactionConfiguration : IEntityTypeConfiguration<Transa
             .HasDefaultValueSql("timezone('utc', now())");
 
         builder.HasIndex(t => t.Date);
+
+        // These entity properties exist for application-level metadata but may not
+        // be present in the database schema for older deployments. Ignore them
+        // so EF Core does not attempt to query non-existent columns.
+        builder.Ignore(t => t.CouponNumber);
+        builder.Ignore(t => t.RawLine);
+        builder.Ignore(t => t.SourceFile);
     }
 }

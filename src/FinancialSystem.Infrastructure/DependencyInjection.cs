@@ -1,6 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Insights;
+using FinancialSystem.Application.Parsing.Bbva;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Persistence;
@@ -26,12 +27,14 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.Configure<FileIngestionOptions>(configuration.GetSection(FileIngestionOptions.SectionName));
-        services.Configure<PdfStatementParseOptions>(configuration.GetSection(PdfStatementParseOptions.SectionName));
 
         services.AddSingleton<ITransactionNormalizer, Imports.Normalization.TransactionNormalizer>();
         services.AddSingleton<IFileParser, Imports.Parsers.CsvFileParser>();
-        services.AddSingleton<IFileParser, Imports.Parsers.PdfStatementParser>();
         services.AddSingleton<IFileParser, Imports.Parsers.ExcelWorkbookParser>();
+        services.AddSingleton<PdfPigTextExtractor>();
+        services.AddSingleton<IPdfTextExtractor>(sp => sp.GetRequiredService<PdfPigTextExtractor>());
+        services.AddSingleton<BbvaTransactionLineParser>();
+        services.AddSingleton<IFileParser, BbvaVisaStatementParser>();
         services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
 

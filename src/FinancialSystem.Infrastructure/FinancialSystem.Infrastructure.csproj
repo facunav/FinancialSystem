@@ -28,4 +28,9 @@
     <PackageReference Include="ClosedXML" Version="0.104.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Pdf\" />
+    <Folder Include="Persistence\Migrations\" />
+  </ItemGroup>
+
 </Project>

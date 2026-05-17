@@ -9,11 +9,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace FinancialSystem.Infrastructure.Persistence.Migrations
+namespace FinancialSystem.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260515103514_AddTransactionDateIndex")]
-    partial class AddTransactionDateIndex
+    [Migration("20260517004223_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -35,6 +35,9 @@ namespace FinancialSystem.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<string>("CouponNumber")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -52,6 +55,12 @@ namespace FinancialSystem.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<string>("RawLine")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceFile")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
