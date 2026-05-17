@@ -2,6 +2,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Parsing.Bbva;
+using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Persistence;
@@ -29,15 +30,35 @@ public static class DependencyInjection
         services.Configure<FileIngestionOptions>(configuration.GetSection(FileIngestionOptions.SectionName));
 
         services.AddSingleton<ITransactionNormalizer, Imports.Normalization.TransactionNormalizer>();
+
+        // ── Parsers CSV y Excel ──────────────────────────────────────────────────
         services.AddSingleton<IFileParser, Imports.Parsers.CsvFileParser>();
         services.AddSingleton<IFileParser, Imports.Parsers.ExcelWorkbookParser>();
+
+        // ── Infraestructura PDF compartida ───────────────────────────────────────
         services.AddSingleton<PdfPigTextExtractor>();
         services.AddSingleton<IPdfTextExtractor>(sp => sp.GetRequiredService<PdfPigTextExtractor>());
+
+        // ── Parsers PDF: line parsers (sin estado, singleton seguros) ────────────
         services.AddSingleton<BbvaTransactionLineParser>();
+        services.AddSingleton<MastercardTransactionLineParser>();
+
+        // ── Parsers PDF: statement parsers (implementan IFileParser + IStatementParser)
+        // ORDEN IMPORTANTE: si un PDF puede matchear múltiples parsers,
+        // el que se registra primero gana. Registrar del más específico al más genérico.
+        // Ejemplo: "BBVA Visa" antes que un hipotético parser genérico "Visa".
         services.AddSingleton<IFileParser, BbvaVisaStatementParser>();
+        services.AddSingleton<IFileParser, MastercardStatementParser>();
+        // Futuros parsers PDF van aquí:
+        // services.AddSingleton<IFileParser, GaliciaVisaStatementParser>();
+        // services.AddSingleton<IFileParser, SantanderMastercardStatementParser>();
+
+        // ── Factory: routing por contenido para PDF, por extensión para el resto ──
         services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
+
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
 
+        // ── Insights ─────────────────────────────────────────────────────────────
         services.Configure<OllamaOptions>(configuration.GetSection(OllamaOptions.SectionName));
         services.AddHttpClient<IFinancialInsightsService, OllamaFinancialInsightsService>()
             .ConfigureHttpClient((sp, client) =>
