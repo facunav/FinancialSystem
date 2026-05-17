@@ -100,7 +100,10 @@ internal sealed class ImportFileProcessingSink(
                 Description = parsed.Description,
                 Amount = parsed.Amount,
                 Currency = string.IsNullOrWhiteSpace(parsed.Currency) ? "ARS" : parsed.Currency,
-                CreatedAtUtc = dateTimeProvider.UtcNow
+                CreatedAtUtc = dateTimeProvider.UtcNow,
+                CouponNumber = parsed.CouponNumber,
+                RawLine = parsed.RawLine,
+                SourceFile = filePath
             });
             inserted++;
         }

@@ -15,8 +15,11 @@ internal sealed partial class TransactionNormalizer : ITransactionNormalizer
         var amount = extracted.Amount;
         var currency = ResolveCurrency(extracted.CurrencyHint, description);
         var date = NormalizeDate(extracted.Date);
+        var couponNumber = extracted.CouponNumber;
+        var rawLine = extracted.RawLine;
+        var sourceFile = extracted.SourceLocation;
 
-        return new ParsedTransaction(date, description, amount, currency);
+        return new ParsedTransaction(date, description, amount, currency, couponNumber, rawLine, sourceFile);
     }
 
     public IReadOnlyList<ParsedTransaction> NormalizeAll(IEnumerable<ExtractedTransaction> extracted) =>

@@ -223,7 +223,10 @@ public sealed class BbvaVisaStatementParser : IStatementParser, IFileParser
             t.Description,
             t.Amount,
             t.Currency,
-            t.RawLine)).ToList();
+            t.CouponNumber,
+            t.RawLine,
+            t.SourceFile
+            )).ToList();
 
         sw.Stop();
         return new FileParseResult(extracted, 0, [], sw.Elapsed);
