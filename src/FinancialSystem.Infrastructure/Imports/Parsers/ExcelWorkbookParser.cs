@@ -19,7 +19,8 @@ internal sealed class ExcelWorkbookParser(ILogger<ExcelWorkbookParser> logger) :
         var diagnostics = new List<string>();
         var skipped = 0;
 
-        using var workbook = new XLWorkbook(filePath);
+        using var cleanStream = XlsxSanitizer.StripDataValidations(filePath, logger);
+        using var workbook = new XLWorkbook(cleanStream);
 
         foreach (var worksheet in workbook.Worksheets)
         {

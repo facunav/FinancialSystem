@@ -1,10 +1,11 @@
 using System.Text.RegularExpressions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Imports.Parsing;
+using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Domain.Entities;
 using Microsoft.Extensions.Logging;
 
-namespace FinancialSystem.Application.Parsing.Mastercard;
+namespace FinancialSystem.Application.Parsing.Bbva.Mastercard;
 
 /// <summary>
 /// Parser de extractos Mastercard Argentina.
@@ -26,14 +27,14 @@ namespace FinancialSystem.Application.Parsing.Mastercard;
 ///   Si necesitás parsear BBVA Mastercard, crear un parser dedicado
 ///   BbvaMastercardStatementParser con fingerprints más específicos.
 /// </summary>
-public sealed class MastercardStatementParser : PdfStatementParserBase
+public sealed class BbvaMastercardStatementParser : PdfStatementParserBase
 {
     private readonly MastercardTransactionLineParser _lineParser;
 
-    public MastercardStatementParser(
+    public BbvaMastercardStatementParser(
         MastercardTransactionLineParser lineParser,
         IPdfTextExtractor textExtractor,
-        ILogger<MastercardStatementParser> logger)
+        ILogger<BbvaMastercardStatementParser> logger)
         : base(textExtractor, logger)
     {
         _lineParser = lineParser;

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 namespace FinancialSystem.Worker.Services;
 
 public sealed class ImportsFolderWatcherHostedService(
-    IImportFileSink importFileSink,
+    IFileImportRouter importRouter,
     IOptions<FileIngestionOptions> options,
     IHostEnvironment hostEnvironment,
     ILogger<ImportsFolderWatcherHostedService> logger) : BackgroundService
@@ -111,7 +111,7 @@ public sealed class ImportsFolderWatcherHostedService(
             }
 
             await WaitForFileReadyAsync(filePath, cts.Token);
-            await importFileSink.HandleFileAsync(filePath, cts.Token);
+            await importRouter.RouteAsync(filePath, cts.Token);
         }
         catch (OperationCanceledException)
         {

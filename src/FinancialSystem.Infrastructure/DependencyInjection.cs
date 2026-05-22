@@ -1,9 +1,13 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
+using FinancialSystem.Application.Imports.Parsing;
 using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Parsing.Bbva;
+using FinancialSystem.Application.Parsing.Bbva.Mastercard;
+using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Infrastructure.Imports;
+using FinancialSystem.Infrastructure.Imports.ManualExpenses;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -48,7 +52,7 @@ public static class DependencyInjection
         // el que se registra primero gana. Registrar del más específico al más genérico.
         // Ejemplo: "BBVA Visa" antes que un hipotético parser genérico "Visa".
         services.AddSingleton<IFileParser, BbvaVisaStatementParser>();
-        services.AddSingleton<IFileParser, MastercardStatementParser>();
+        services.AddSingleton<IFileParser, BbvaMastercardStatementParser>();
         // Futuros parsers PDF van aquí:
         // services.AddSingleton<IFileParser, GaliciaVisaStatementParser>();
         // services.AddSingleton<IFileParser, SantanderMastercardStatementParser>();
@@ -56,7 +60,14 @@ public static class DependencyInjection
         // ── Factory: routing por contenido para PDF, por extensión para el resto ──
         services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
 
+        services.AddSingleton<IFileImportHandler, ManualExpenseImportHandler>();
+        services.AddSingleton<IFileImportHandler, TransactionImportHandler>();
+        services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
+        services.AddSingleton<IManualExpenseSheetParser, DynamicSheetParser>();
+        services.AddSingleton<IManualExpenseSheetParser, FixedSheetParser>();
+        services.AddSingleton<IManualExpenseImporter, ExcelManualExpenseImporter>();
+
 
         // ── Insights ─────────────────────────────────────────────────────────────
         services.Configure<OllamaOptions>(configuration.GetSection(OllamaOptions.SectionName));

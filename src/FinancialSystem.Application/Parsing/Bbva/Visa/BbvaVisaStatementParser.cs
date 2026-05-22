@@ -4,7 +4,7 @@ using FinancialSystem.Application.Imports.Parsing;
 using FinancialSystem.Domain.Entities;
 using Microsoft.Extensions.Logging;
 
-namespace FinancialSystem.Application.Parsing.Bbva;
+namespace FinancialSystem.Application.Parsing.Bbva.Visa;
 
 /// <summary>
 /// Parser para extractos BBVA Visa Argentina.

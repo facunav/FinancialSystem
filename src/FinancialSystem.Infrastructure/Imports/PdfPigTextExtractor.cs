@@ -1,8 +1,9 @@
+using FinancialSystem.Application.Imports;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
-namespace FinancialSystem.Application.Imports;
+namespace FinancialSystem.Infrastructure.Imports;
 
 /// <summary>
 /// Extrae texto de PDFs usando PdfPig con estrategia de reconstrucción por palabras.
