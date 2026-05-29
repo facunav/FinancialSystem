@@ -222,4 +222,40 @@ public static class MovementAdapter
                            or "BBVA CUENTA" => MovementCategory.Transfer,
             _ => MovementCategory.Unknown,
         };
+
+    /// <summary>
+    /// Convierte BankStatement → FinancialMovement para el motor de conciliación.
+    ///
+    /// DECISIONES DE MAPEO:
+    ///   Source = BankDebit siempre: BankStatement es siempre referencia contable.
+    ///   Description = Concept (descripción principal del banco).
+    ///     Si existe Detail significativo, se concatena para enriquecer el matching
+    ///     de descripción contra registros manuales.
+    ///   Amount = se preserva con signo original (negativo = débito, positivo = crédito).
+    ///     El motor de matching usa Math.Abs() para comparar montos, así que el signo
+    ///     no interfiere con el score — pero preservarlo mantiene la semántica contable.
+    ///   OriginalId = ExternalId del BankStatement (su clave de idempotencia).
+    /// </summary>
+    public static FinancialMovement FromBankStatement(BankStatement statement)
+    {
+        // Enriquecer descripción con el detalle del canal si es significativo.
+        // "PAGO CON VISA DEBITO 96477108" + "100 - BANCA ONLINE"
+        // da más tokens al DescriptionMatchingRule para comparar.
+        var description = !string.IsNullOrWhiteSpace(statement.Detail)
+            ? $"{statement.Concept} {statement.Detail}"
+            : statement.Concept;
+
+        return new FinancialMovement
+        {
+            Id = statement.Id,
+            Date = statement.Date,
+            Description = description,
+            Amount = statement.Amount,
+            Currency = statement.Currency,
+            Source = MovementSource.BankDebit,
+            Category = InferCategory(statement.Concept),
+            OriginalId = statement.ExternalId,
+            SourceFile = statement.SourceFile,
+        };
+    }
 }

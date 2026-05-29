@@ -8,7 +8,10 @@ public sealed class FileIngestionOptions
 
     public int DebounceMilliseconds { get; set; } = 750;
 
-    public static readonly string[] WatchedExtensions = [".pdf", ".csv", ".xlsx"];
+    public static readonly string[] WatchedExtensions = [".pdf", ".csv", ".xlsx", ".xls"];
 
     public string[] ManualExpenseFilePatterns { get; set; } = ["Cuentas*.xlsx"];
+
+    public string[] BbvaBankStatementFilePatterns { get; set; } =
+       ["Caja*.xls", "*ahorros*.xls", "*corriente*.xls"];
 }

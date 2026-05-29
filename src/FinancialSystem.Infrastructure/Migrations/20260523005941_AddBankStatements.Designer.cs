@@ -3,6 +3,7 @@ using System;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FinancialSystem.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260523005941_AddBankStatements")]
+    partial class AddBankStatements
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -222,154 +225,6 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.HasIndex("Date");
 
                     b.ToTable("Transactions", (string)null);
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpense", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ConfirmedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ConfirmedBy")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)")
-                        .HasDefaultValue("ARS");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<DateTime>("EffectiveDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("MatchConfidence")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<double>("MatchScore")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateOnly>("PeriodEnd")
-                        .HasColumnType("date");
-
-                    b.Property<DateOnly>("PeriodStart")
-                        .HasColumnType("date");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EffectiveDate")
-                        .HasDatabaseName("IX_ReconciledExpenses_EffectiveDate");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("IX_ReconciledExpenses_Status");
-
-                    b.HasIndex("ConfirmedBy", "ConfirmedAt")
-                        .HasDatabaseName("IX_ReconciledExpenses_ConfirmedBy_ConfirmedAt")
-                        .HasFilter("\"ConfirmedBy\" IS NOT NULL");
-
-                    b.HasIndex("PeriodStart", "PeriodEnd")
-                        .HasDatabaseName("IX_ReconciledExpenses_Period");
-
-                    b.HasIndex("Status", "PeriodStart")
-                        .HasDatabaseName("IX_ReconciledExpenses_Status_PeriodStart");
-
-                    b.ToTable("ReconciledExpenses", (string)null);
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpenseItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("ContributionScore")
-                        .HasColumnType("double precision");
-
-                    b.Property<decimal>("OriginalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("OriginalCurrency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)")
-                        .HasDefaultValue("ARS");
-
-                    b.Property<DateTime>("OriginalDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("OriginalDescription")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("OriginalSourceFile")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<Guid>("ReconciledExpenseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Role")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SourceEntityType")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("SourceId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReconciledExpenseId")
-                        .HasDatabaseName("IX_ReconciledExpenseItems_ReconciledExpenseId");
-
-                    b.HasIndex("SourceEntityType", "SourceId")
-                        .HasDatabaseName("IX_ReconciledExpenseItems_Source");
-
-                    b.HasIndex("ReconciledExpenseId", "SourceEntityType", "SourceId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_ReconciledExpenseItems_UniqueSourcePerExpense");
-
-                    b.ToTable("ReconciledExpenseItems", (string)null);
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpenseItem", b =>
-                {
-                    b.HasOne("FinancialSystem.Domain.Reconciliation.ReconciledExpense", "ReconciledExpense")
-                        .WithMany("Items")
-                        .HasForeignKey("ReconciledExpenseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ReconciledExpense");
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpense", b =>
-                {
-                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

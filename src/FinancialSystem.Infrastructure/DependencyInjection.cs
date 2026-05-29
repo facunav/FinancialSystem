@@ -7,6 +7,7 @@ using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Infrastructure.Imports;
+using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Imports.ManualExpenses;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Persistence;
@@ -61,6 +62,10 @@ public static class DependencyInjection
         services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
 
         services.AddSingleton<IFileImportHandler, ManualExpenseImportHandler>();
+        services.AddSingleton<XlsBankStatementReader>();
+        services.AddSingleton<BbvaBankStatementParser>();
+        services.AddSingleton<BbvaBankStatementImporter>();
+        services.AddSingleton<IFileImportHandler, BbvaBankStatementImportHandler>();
         services.AddSingleton<IFileImportHandler, TransactionImportHandler>();
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();

@@ -43,6 +43,8 @@ public static class ReconciliationServiceExtensions
         // ── Orquestador ───────────────────────────────────────────
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
+        services.AddScoped<ReconciliationOrchestrator>();
+
         return services;
     }
 }
