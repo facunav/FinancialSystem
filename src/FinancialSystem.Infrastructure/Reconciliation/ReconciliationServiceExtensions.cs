@@ -23,27 +23,23 @@ public static class ReconciliationServiceExtensions
         services.Configure<ReconciliationOptions>(
             configuration.GetSection(ReconciliationOptions.SectionName));
 
-        // ── Reglas de matching ────────────────────────────────────
         services.AddSingleton<IMatchingRule, CurrencyConstraint>();
         services.AddSingleton<IMatchingRule, AmountMatchingRule>();
         services.AddSingleton<IMatchingRule, DateMatchingRule>();
         services.AddSingleton<IMatchingRule, DescriptionMatchingRule>();
         services.AddSingleton<IMatchingRule, PaymentMethodMatchingRule>();
 
-        // ── Servicios core del motor ──────────────────────────────
         services.AddSingleton<IMatchScorer, MatchScorer>();
         services.AddSingleton<ISuspicionDetector, SuspicionDetector>();
         services.AddSingleton<IReconciliationEngine, ReconciliationEngine>();
 
-        // ── Repositorio de gastos manuales ────────────────────────
-        // Scoped porque usa IDbContextFactory internamente y crea
-        // un DbContext por operación. No tiene estado entre llamadas.
         services.AddScoped<IManualExpenseRepository, ManualExpenseRepository>();
 
-        // ── Orquestador ───────────────────────────────────────────
-        services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
-
         services.AddScoped<ReconciliationOrchestrator>();
+
+        // NUEVO
+        services.AddScoped<IReconciledExpenseRepository, ReconciledExpenseRepository>();
+        services.AddScoped<ReconciliationConfirmationService>();
 
         return services;
     }

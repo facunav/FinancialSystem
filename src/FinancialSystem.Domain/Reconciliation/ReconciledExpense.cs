@@ -41,6 +41,11 @@ namespace FinancialSystem.Domain.Reconciliation
         public ReconciledExpenseStatus Status { get; set; }
         public double MatchScore { get; set; }   // inmutable post-creación
         public string MatchConfidence { get; set; } = string.Empty; // inmutable
+        /// <summary>
+        /// Origen de la confirmación. Permite distinguir si el score
+        /// fue calculado por el motor o es una confirmación manual pura.
+        /// </summary>
+        public ConfirmationSource ConfirmationSource { get; set; }
 
         // ── Auditoría ─────────────────────────────────────────────────
         public DateTime CreatedAt { get; set; }   // inmutable: cuándo el motor generó esto
