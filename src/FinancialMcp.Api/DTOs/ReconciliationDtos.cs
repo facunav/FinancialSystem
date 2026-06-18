@@ -160,14 +160,11 @@ namespace FinancialSystem.Api.DTOs
         string ConfirmationSource,
         DateTime ConfirmedAt,
         string ConfirmedBy,
-        ReconciledItemDto Reference,
-        ReconciledItemDto Candidate)
+        IReadOnlyList<ReconciledItemDto> ReferenceItems,
+        IReadOnlyList<ReconciledItemDto> CandidateItems)
     {
         public static ReconciledExpenseDto From(ReconciledExpense e)
         {
-            var refItem = e.Items.First(i => i.Role == ReconciliationItemRole.Reference);
-            var candItem = e.Items.First(i => i.Role == ReconciliationItemRole.Candidate);
-
             return new(
                 e.Id,
                 e.EffectiveDate,
@@ -179,8 +176,10 @@ namespace FinancialSystem.Api.DTOs
                 e.ConfirmationSource.ToString(),
                 e.ConfirmedAt ?? e.CreatedAt,
                 e.ConfirmedBy ?? string.Empty,
-                ReconciledItemDto.From(refItem),
-                ReconciledItemDto.From(candItem));
+                e.Items.Where(i => i.Role == ReconciliationItemRole.Reference)
+                            .Select(ReconciledItemDto.From).ToList(),
+                e.Items.Where(i => i.Role == ReconciliationItemRole.Candidate)
+                            .Select(ReconciledItemDto.From).ToList());
         }
     }
 
@@ -200,4 +199,43 @@ namespace FinancialSystem.Api.DTOs
             i.OriginalDescription,
             i.OriginalCurrency);
     }
+
+    // ── GET /unmatched-movements ──────────────────────────────────────
+
+    public sealed record UnmatchedMovementsResponse(
+        DateOnly PeriodStart,
+        DateOnly PeriodEnd,
+        IReadOnlyList<UnmatchedMovementDto> References,
+        IReadOnlyList<UnmatchedMovementDto> Candidates);
+
+    public sealed record UnmatchedMovementDto(
+        Guid Id,
+        string Source,
+        DateTime Date,
+        string Description,
+        decimal Amount,
+        string Currency,
+        bool AlreadyReconciled);
+
+    // ── POST /confirm-group ───────────────────────────────────────────
+
+    public sealed record ConfirmGroupRequest(
+        DateOnly PeriodStart,
+        DateOnly PeriodEnd,
+        string ConfirmedBy,
+        IReadOnlyList<MovementRefDto> ReferenceItems,
+        IReadOnlyList<MovementRefDto> CandidateItems);
+
+    public sealed record MovementRefDto(
+        Guid Id,
+        string Source);
+
+    public sealed record ConfirmGroupResponse(
+        bool Success,
+        Guid? ExpenseId = null,
+        decimal ReferenceTotal = 0,
+        decimal CandidateTotal = 0,
+        decimal AmountDelta = 0,
+        bool HasAmountMismatch = false,
+        string? Error = null);
 }

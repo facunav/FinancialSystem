@@ -52,6 +52,21 @@ namespace FinancialSystem.Domain.Reconciliation
         public DateTime? ConfirmedAt { get; set; }   // null hasta que el usuario actúa
         public string? ConfirmedBy { get; set; }   // userId, email, o "system"
 
+        /// <summary>
+        /// NUEVO: diferencia entre suma(Reference) y suma(Candidate) en valor absoluto.
+        /// 0 para conciliaciones balanceadas. Persistido para auditoría —
+        /// permite reportes de "conciliaciones con diferencia" sin recalcular.
+        /// </summary>
+        public decimal AmountDelta { get; set; }
+
+        /// <summary>
+        /// NUEVO: true si AmountDelta excede la tolerancia configurada
+        /// al momento de confirmar. No bloquea, pero queda trazado.
+        /// </summary>
+        public bool HasAmountMismatch { get; set; }
+
+        public ReconciliationGroupingMode GroupingMode { get; set; }
+
         // ── Navegación ────────────────────────────────────────────────
         public ICollection<ReconciledExpenseItem> Items { get; set; } = [];
     }

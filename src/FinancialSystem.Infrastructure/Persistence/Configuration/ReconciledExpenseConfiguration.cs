@@ -100,6 +100,20 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
             builder.HasIndex(e => new { e.ConfirmedBy, e.ConfirmedAt })
                 .HasDatabaseName("IX_ReconciledExpenses_ConfirmedBy_ConfirmedAt")
                 .HasFilter("\"ConfirmedBy\" IS NOT NULL");   // índice parcial: solo filas confirmadas
+
+            builder.Property(e => e.AmountDelta)
+                .IsRequired()
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0m);
+
+            builder.Property(e => e.HasAmountMismatch)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            builder.Property(e => e.GroupingMode)
+                .IsRequired()
+                .HasConversion<int>()
+                .HasDefaultValue(0);
         }
     }
 }

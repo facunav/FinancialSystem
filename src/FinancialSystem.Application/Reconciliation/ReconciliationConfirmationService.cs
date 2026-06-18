@@ -201,12 +201,14 @@ namespace FinancialSystem.Application.Reconciliation
                 Currency = pair.Reference.Currency,
                 Description = BuildDescription(pair.Reference, pair.Candidate),
                 Status = ReconciledExpenseStatus.Confirmed,
-                // Score y confianza: vienen del motor si la confirmación es de una sugerencia,
-                // o del par rehidratado (score 1.0 / High) si es confirmación manual pura.
-                // En ambos casos se preserva exactamente lo que el par trae.
                 MatchScore = pair.Score.Total,
                 MatchConfidence = pair.Confidence.ToString(),
                 ConfirmationSource = confirmationSource,
+                // ── NUEVOS ───────────────────────────────────────────────
+                AmountDelta = Math.Abs(Math.Abs(pair.Reference.Amount) - Math.Abs(pair.Candidate.Amount)),
+                HasAmountMismatch = false,  // 1↔1 del motor: por definición pasó AmountMatchingRule
+                GroupingMode = ReconciliationGroupingMode.EngineSuggested,
+                // ─────────────────────────────────────────────────────────
                 CreatedAt = now,
                 ConfirmedAt = now,
                 ConfirmedBy = confirmedBy,
