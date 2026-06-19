@@ -31,8 +31,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 
 }
-
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseHttpsRedirection();
+
+app.MapGet("/", () => Results.Redirect("/group-reconciliation.html"));
+
 app.MapReconciliationEndpoints();
 
 app.Run();

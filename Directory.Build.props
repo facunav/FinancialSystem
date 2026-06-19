@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Disable SDK implicit Content items globally so explicit Content entries control included files. This prevents duplicate content warnings. -->
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+  </PropertyGroup>
+</Project>

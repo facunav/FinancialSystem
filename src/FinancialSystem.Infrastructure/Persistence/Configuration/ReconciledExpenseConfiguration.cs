@@ -1,4 +1,5 @@
-﻿using FinancialSystem.Domain.Reconciliation;
+﻿using FinancialSystem.Domain.Enums;
+using FinancialSystem.Domain.Reconciliation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -113,7 +114,7 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
             builder.Property(e => e.GroupingMode)
                 .IsRequired()
                 .HasConversion<int>()
-                .HasDefaultValue(0);
+                .HasDefaultValue(ReconciliationGroupingMode.EngineSuggested);
         }
     }
 }
