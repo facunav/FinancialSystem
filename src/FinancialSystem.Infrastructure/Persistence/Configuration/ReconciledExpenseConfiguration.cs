@@ -71,6 +71,12 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
             builder.Property(e => e.ConfirmedBy)
                 .HasMaxLength(256);
 
+            builder.Property(x => x.ReviewReason)
+                .HasConversion<int>();
+
+            builder.Property(x => x.ReviewNotes)
+                .HasMaxLength(1000);
+
             // ── Relación con Items ────────────────────────────────────
             // NO cascade delete. Borrado controlado explícitamente.
             // La aplicación debe eliminar los Items antes de eliminar el padre.

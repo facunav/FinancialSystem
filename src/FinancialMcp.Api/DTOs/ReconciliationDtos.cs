@@ -238,4 +238,12 @@ namespace FinancialSystem.Api.DTOs
         decimal AmountDelta = 0,
         bool HasAmountMismatch = false,
         string? Error = null);
+
+
+    // ── POST /review-movement ─────────────────────────────────────────
+    public sealed record ReviewMovementRequest(
+    SourceEntityType SourceEntityType,
+    Guid SourceId,
+    ReviewReason Reason,
+    string? Notes);
 }

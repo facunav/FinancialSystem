@@ -23,8 +23,49 @@ namespace FinancialSystem.Api.Endpoints
             group.MapGet("/reconciled", GetReconciled);
             group.MapGet("/unmatched-movements", GetUnmatchedMovements);
             group.MapPost("/confirm-group", ConfirmGroup);
+            group.MapPost("/review", ReviewMovementAsync);
 
             return app;
+        }
+
+        private static async Task<IResult> ReviewMovementAsync([FromBody] ReviewMovementRequest request, [FromServices] IReconciledExpenseRepository repository, CancellationToken ct)
+        {
+            if (request.SourceId == Guid.Empty) return Results.BadRequest("SourceId es requerido");
+            var now = DateTime.UtcNow;
+
+            var expense = new ReconciledExpense
+            {
+                PeriodStart = DateOnly.FromDateTime(now),
+                PeriodEnd = DateOnly.FromDateTime(now),
+                EffectiveDate = now,
+                TotalAmount = 0m,
+                Currency = "ARS",
+                Description = string.Empty,
+                Status = ReconciledExpenseStatus.Reviewed,
+                MatchScore = 0.0,
+                MatchConfidence = "Manual Review",
+                ConfirmationSource = ConfirmationSource.Manual,
+                CreatedAt = now,
+                ConfirmedAt = now,
+                ConfirmedBy = "Facundo",
+                ReviewReason = request.Reason,
+                ReviewNotes = request.Notes,
+            };
+
+            expense.Items.Add(new ReconciledExpenseItem
+            {
+                SourceEntityType = request.SourceEntityType,
+                SourceId = request.SourceId,
+                Role = ReconciliationItemRole.Reference,
+                OriginalAmount = 0m,
+                OriginalDate = now,
+                OriginalDescription = string.Empty,
+                OriginalCurrency = expense.Currency,
+            });
+
+            await repository.SaveAsync(expense, ct);
+
+            return Results.Ok(new { Success = true, ExpenseId = expense.Id });
         }
 
         // ── GET /api/reconciliation/suggestions ───────────────────────

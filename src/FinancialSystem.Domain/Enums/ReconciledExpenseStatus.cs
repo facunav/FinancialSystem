@@ -28,5 +28,10 @@
         /// ConfirmedAt y ConfirmedBy registran quién/cuándo rechazó.
         /// </summary>
         Rejected = 3,
+
+        /// <summary>
+        /// Usuario marco como revisado.
+        /// </summary>
+        Reviewed = 4
     }
 }

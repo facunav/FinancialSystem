@@ -52,6 +52,10 @@ namespace FinancialSystem.Domain.Reconciliation
         public DateTime? ConfirmedAt { get; set; }   // null hasta que el usuario actúa
         public string? ConfirmedBy { get; set; }   // userId, email, o "system"
 
+        public ReviewReason? ReviewReason { get; set; }
+
+        public string? ReviewNotes { get; set; }
+
         /// <summary>
         /// NUEVO: diferencia entre suma(Reference) y suma(Candidate) en valor absoluto.
         /// 0 para conciliaciones balanceadas. Persistido para auditoría —
