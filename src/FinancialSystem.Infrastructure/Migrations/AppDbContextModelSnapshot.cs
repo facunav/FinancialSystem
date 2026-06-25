@@ -98,6 +98,41 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.ToTable("BankStatements", (string)null);
                 });
 
+            modelBuilder.Entity("FinancialSystem.Domain.Entities.Category", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("IsSystem")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Categories_Name");
+
+                    b.ToTable("Categories", (string)null);
+                });
+
             modelBuilder.Entity("FinancialSystem.Domain.Entities.ManualExpense", b =>
                 {
                     b.Property<Guid>("Id")
@@ -108,11 +143,6 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
                     b.Property<string>("Currency")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -122,6 +152,11 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("ExternalId")
                         .IsRequired()
@@ -224,27 +259,18 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.ToTable("Transactions", (string)null);
                 });
 
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpense", b =>
+            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ProcessedExpense", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("AmountDelta")
-                        .ValueGeneratedOnAdd()
+                    b.Property<decimal?>("AmountDelta")
                         .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasDefaultValue(0m);
+                        .HasColumnType("numeric(18,2)");
 
-                    b.Property<int>("ConfirmationSource")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ConfirmedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ConfirmedBy")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -264,33 +290,25 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.Property<DateTime>("EffectiveDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("GroupingMode")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                    b.Property<int>("FinancialImpact")
+                        .HasColumnType("integer");
 
-                    b.Property<bool>("HasAmountMismatch")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("MatchConfidence")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<double>("MatchScore")
+                    b.Property<double?>("MatchScore")
                         .HasColumnType("double precision");
 
-                    b.Property<DateOnly>("PeriodEnd")
-                        .HasColumnType("date");
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly>("PeriodStart")
-                        .HasColumnType("date");
+                    b.Property<string>("ProcessedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("ProcessingSource")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ReviewNotes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
 
                     b.Property<int?>("ReviewReason")
                         .HasColumnType("integer");
@@ -304,33 +322,33 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("IX_ProcessedExpenses_CategoryId");
+
                     b.HasIndex("EffectiveDate")
-                        .HasDatabaseName("IX_ReconciledExpenses_EffectiveDate");
+                        .HasDatabaseName("IX_ProcessedExpenses_EffectiveDate");
+
+                    b.HasIndex("FinancialImpact")
+                        .HasDatabaseName("IX_ProcessedExpenses_FinancialImpact");
 
                     b.HasIndex("Status")
-                        .HasDatabaseName("IX_ReconciledExpenses_Status");
+                        .HasDatabaseName("IX_ProcessedExpenses_Status");
 
-                    b.HasIndex("ConfirmedBy", "ConfirmedAt")
-                        .HasDatabaseName("IX_ReconciledExpenses_ConfirmedBy_ConfirmedAt")
-                        .HasFilter("\"ConfirmedBy\" IS NOT NULL");
+                    b.HasIndex("ProcessedBy", "ProcessedAt")
+                        .HasDatabaseName("IX_ProcessedExpenses_ProcessedBy_At")
+                        .HasFilter("\"ProcessedBy\" IS NOT NULL");
 
-                    b.HasIndex("PeriodStart", "PeriodEnd")
-                        .HasDatabaseName("IX_ReconciledExpenses_Period");
+                    b.HasIndex("EffectiveDate", "CategoryId", "FinancialImpact")
+                        .HasDatabaseName("IX_ProcessedExpenses_Date_Category_Impact");
 
-                    b.HasIndex("Status", "PeriodStart")
-                        .HasDatabaseName("IX_ReconciledExpenses_Status_PeriodStart");
-
-                    b.ToTable("ReconciledExpenses", (string)null);
+                    b.ToTable("ProcessedExpenses", (string)null);
                 });
 
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpenseItem", b =>
+            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ProcessedExpenseItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<double?>("ContributionScore")
-                        .HasColumnType("double precision");
 
                     b.Property<decimal>("OriginalAmount")
                         .HasPrecision(18, 2)
@@ -355,7 +373,7 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
-                    b.Property<Guid>("ReconciledExpenseId")
+                    b.Property<Guid>("ProcessedExpenseId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Role")
@@ -369,31 +387,42 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ReconciledExpenseId")
-                        .HasDatabaseName("IX_ReconciledExpenseItems_ReconciledExpenseId");
+                    b.HasIndex("ProcessedExpenseId")
+                        .HasDatabaseName("IX_ProcessedExpenseItems_ProcessedExpenseId");
 
                     b.HasIndex("SourceEntityType", "SourceId")
-                        .HasDatabaseName("IX_ReconciledExpenseItems_Source");
+                        .HasDatabaseName("IX_ProcessedExpenseItems_Source");
 
-                    b.HasIndex("ReconciledExpenseId", "SourceEntityType", "SourceId")
+                    b.HasIndex("ProcessedExpenseId", "SourceEntityType", "SourceId")
                         .IsUnique()
-                        .HasDatabaseName("UX_ReconciledExpenseItems_UniqueSourcePerExpense");
+                        .HasDatabaseName("UX_ProcessedExpenseItems_UniqueSourcePerExpense");
 
-                    b.ToTable("ReconciledExpenseItems", (string)null);
+                    b.ToTable("ProcessedExpenseItems", (string)null);
                 });
 
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpenseItem", b =>
+            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ProcessedExpense", b =>
                 {
-                    b.HasOne("FinancialSystem.Domain.Reconciliation.ReconciledExpense", "ReconciledExpense")
-                        .WithMany("Items")
-                        .HasForeignKey("ReconciledExpenseId")
+                    b.HasOne("FinancialSystem.Domain.Entities.Category", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("ReconciledExpense");
+                    b.Navigation("Category");
                 });
 
-            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ReconciledExpense", b =>
+            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ProcessedExpenseItem", b =>
+                {
+                    b.HasOne("FinancialSystem.Domain.Reconciliation.ProcessedExpense", "ProcessedExpense")
+                        .WithMany("Items")
+                        .HasForeignKey("ProcessedExpenseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ProcessedExpense");
+                });
+
+            modelBuilder.Entity("FinancialSystem.Domain.Reconciliation.ProcessedExpense", b =>
                 {
                     b.Navigation("Items");
                 });

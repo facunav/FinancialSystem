@@ -9,7 +9,9 @@ public interface IApplicationDbContext
     DbSet<Transaction> Transactions { get; }
     DbSet<ManualExpense> ManualExpenses { get; }
     DbSet<BankStatement> BankStatements { get; }
-    DbSet<ReconciledExpense> ReconciledExpenses { get; }
-    DbSet<ReconciledExpenseItem> ReconciledExpenseItems { get; }
+    DbSet<Category> Categories { get; }
+    DbSet<ProcessedExpense> ProcessedExpenses { get; }
+    DbSet<ProcessedExpenseItem> ProcessedExpenseItems { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

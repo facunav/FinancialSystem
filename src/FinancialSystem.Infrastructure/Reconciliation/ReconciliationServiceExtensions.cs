@@ -19,28 +19,31 @@ namespace FinancialSystem.Infrastructure.Reconciliation
             services.Configure<ReconciliationOptions>(
                 configuration.GetSection(ReconciliationOptions.SectionName));
 
+            // Reglas de matching (singleton: sin estado, thread-safe)
             services.AddSingleton<IMatchingRule, CurrencyConstraint>();
             services.AddSingleton<IMatchingRule, AmountMatchingRule>();
             services.AddSingleton<IMatchingRule, DateMatchingRule>();
             services.AddSingleton<IMatchingRule, DescriptionMatchingRule>();
             services.AddSingleton<IMatchingRule, PaymentMethodMatchingRule>();
-
             services.AddSingleton<IMatchScorer, MatchScorer>();
             services.AddSingleton<ISuspicionDetector, SuspicionDetector>();
             services.AddSingleton<IReconciliationEngine, ReconciliationEngine>();
 
+            // Repositorios y contexto
             services.AddScoped<IManualExpenseRepository, ManualExpenseRepository>();
             services.AddScoped<IApplicationDbContext>(
                 sp => sp.GetRequiredService<AppDbContext>());
+            services.AddScoped<IProcessedExpenseRepository, ProcessedExpenseRepository>();
 
+            // Servicios de aplicación
             services.AddScoped<ReconciliationOrchestrator>();
-            services.AddScoped<IReconciledExpenseRepository, ReconciledExpenseRepository>();
             services.AddScoped<ReconciliationConfirmationService>();
             services.AddScoped<MovementHydrationService>();
 
-            // N↔M handlers
+            // Handlers
             services.AddScoped<ConfirmGroupHandler>();
             services.AddScoped<GetUnmatchedMovementsHandler>();
+            services.AddScoped<ReviewMovementHandler>();
 
             return services;
         }

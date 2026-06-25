@@ -9,8 +9,8 @@ namespace FinancialSystem.Application.Reconciliation
 {
     public interface IMovementLoader
     {
-        Task<IReadOnlyList<FinancialMovement>> LoadReferenceMovementsAsync(DateOnly from, DateOnly to, CancellationToken ct);
+        Task<IReadOnlyList<FinancialMovement>> LoadReferenceMovementsAsync(DateTime from, DateTime to, CancellationToken ct);
 
-        Task<IReadOnlyList<FinancialMovement>> LoadCandidateMovementsAsync(DateOnly from, DateOnly to, CancellationToken ct);
+        Task<IReadOnlyList<FinancialMovement>> LoadCandidateMovementsAsync(DateTime from, DateTime to, CancellationToken ct);
     }
 }

@@ -89,7 +89,7 @@ namespace FinancialSystem.Application.Imports.Parsing
                 expenses.Add(new ManualExpense
                 {
                     Date = DateTime.SpecifyKind(date.Value.Date, DateTimeKind.Utc),
-                    Category = catRaw.Trim(),
+                    Description = catRaw.Trim(),
                     PaymentMethod = CommonHelper.NormalizePaymentMethod(paymentRaw),
                     Amount = amount.Value,
                     Currency = "ARS",

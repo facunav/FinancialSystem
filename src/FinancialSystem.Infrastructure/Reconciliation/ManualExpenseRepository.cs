@@ -25,7 +25,7 @@ internal sealed class ManualExpenseRepository : IManualExpenseRepository
         ManualExpenseSheet? sheet = null,
         CancellationToken ct = default)
     {
-        // Convertir DateOnly a DateTime UTC para comparar contra la columna Date
+        // Convertir DateTime a DateTime UTC para comparar contra la columna Date
         var fromUtc = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var toUtc   = to.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
 

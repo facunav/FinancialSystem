@@ -12,12 +12,12 @@ internal sealed class ManualExpenseConfiguration : IEntityTypeConfiguration<Manu
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
 
-        // ── Campos requeridos ────────────────────────────────────
         builder.Property(e => e.Date)
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
-        builder.Property(e => e.Category)
+        // Antes: Category. Ahora: Description (vocabulario libre del usuario).
+        builder.Property(e => e.Description)
             .IsRequired()
             .HasMaxLength(128);
 
@@ -38,20 +38,15 @@ internal sealed class ManualExpenseConfiguration : IEntityTypeConfiguration<Manu
             .IsRequired()
             .HasConversion<int>();
 
-        // ── Campos opcionales ────────────────────────────────────
         builder.Property(e => e.Notes).HasMaxLength(1024);
         builder.Property(e => e.MonthLabel).HasMaxLength(32);
         builder.Property(e => e.PaymentStatus).HasMaxLength(32);
-        builder.Property(e => e.PaidAt)
-            .HasColumnType("timestamp with time zone");
+        builder.Property(e => e.PaidAt).HasColumnType("timestamp with time zone");
 
-        // ── Trazabilidad ─────────────────────────────────────────
         builder.Property(e => e.ExternalId)
             .IsRequired()
-            .HasMaxLength(64);  // SHA256 hex = 64 chars
+            .HasMaxLength(64);
 
-        // Índice único: garantiza idempotencia a nivel DB.
-        // Re-importar el mismo Excel produce conflicto → ignoramos el insert.
         builder.HasIndex(e => e.ExternalId)
             .IsUnique()
             .HasDatabaseName("IX_ManualExpenses_ExternalId");
@@ -63,7 +58,6 @@ internal sealed class ManualExpenseConfiguration : IEntityTypeConfiguration<Manu
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
-        // ── Índices de consulta ───────────────────────────────────
         builder.HasIndex(e => e.Date)
             .HasDatabaseName("IX_ManualExpenses_Date");
 

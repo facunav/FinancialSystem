@@ -5,78 +5,59 @@ using Microsoft.Extensions.Logging;
 namespace FinancialSystem.Application.Reconciliation
 {
     /// <summary>
-    /// Único punto de entrada para persistir conciliaciones confirmadas.
-    /// Nada fuera de este servicio llama a IReconciledExpenseRepository.SaveAsync.
-    ///
-    /// FLUJO:
-    ///   1. Validar input (sin I/O) — monedas, IDs vacíos, confirmedBy
-    ///   2. Detectar duplicados dentro del batch (sin I/O)
-    ///   3. Consultar DB para movimientos ya reconciliados (una query por tipo)
-    ///   4. Construir entidades (pure, sin I/O)
-    ///   5. Persistir en una única transacción
+    /// Único punto de entrada para persistir conciliaciones confirmadas (1↔1 y batch).
+    /// No maneja N↔M — eso lo hace ConfirmGroupHandler.
     /// </summary>
     public sealed class ReconciliationConfirmationService
     {
-        private readonly IReconciledExpenseRepository _repository;
+        private readonly IProcessedExpenseRepository _repository;
         private readonly ILogger<ReconciliationConfirmationService> _logger;
 
         public ReconciliationConfirmationService(
-            IReconciledExpenseRepository repository,
+            IProcessedExpenseRepository repository,
             ILogger<ReconciliationConfirmationService> logger)
         {
             _repository = repository;
             _logger = logger;
         }
 
-        // ── Confirmación individual ───────────────────────────────────
+        // ── Confirmación individual ───────────────────────────────────────────────
 
         public async Task<ConfirmationResult> ConfirmPairAsync(
-       MatchedPair pair,
-       string confirmedBy,
-       DateOnly periodStart,
-       DateOnly periodEnd,
-       ConfirmationSource confirmationSource = ConfirmationSource.Manual,
-       CancellationToken ct = default)
+            MatchedPair pair,
+            string confirmedBy,
+            Guid categoryId,
+            FinancialImpact financialImpact,
+            ProcessingSource processingSource = ProcessingSource.ManualMatch,
+            CancellationToken ct = default)
         {
-            var inputError = ValidateInput(pair, confirmedBy);
+            var inputError = ValidateInput(pair, confirmedBy, categoryId);
             if (inputError is not null)
                 return ConfirmationResult.Failure(inputError);
 
-            var dbError = await ValidateNotAlreadyReconciledAsync([pair], ct);
+            var dbError = await ValidateNotAlreadyProcessedAsync([pair], ct);
             if (dbError is not null)
                 return ConfirmationResult.Failure(dbError);
 
-            var expense = BuildExpense(pair, confirmedBy, periodStart, periodEnd, confirmationSource);
+            var expense = BuildExpense(pair, confirmedBy, categoryId, financialImpact, processingSource);
             await _repository.SaveAsync(expense, ct);
 
             _logger.LogInformation(
-                "Par confirmado: {ExpenseId} | Ref={RefId} Cand={CandId} | " +
-                "Score={Score:P0} Confidence={Confidence} Source={Source} | By={By}",
-                expense.Id,
-                pair.Reference.Id, pair.Candidate.Id,
-                pair.Score.Total, pair.Confidence, confirmationSource, confirmedBy);
+                "Par confirmado: {ExpenseId} | Ref={RefId} Cand={CandId} | Score={Score:P0} | By={By}",
+                expense.Id, pair.Reference.Id, pair.Candidate.Id, pair.Score.Total, confirmedBy);
 
             return ConfirmationResult.Success(expense.Id);
         }
 
-        // ── Confirmación en batch ─────────────────────────────────────
+        // ── Confirmación en batch ─────────────────────────────────────────────────
 
-        /// <summary>
-        /// Valida y confirma múltiples pares en una única transacción.
-        ///
-        /// Validaciones de negocio: skip individual, el resto continúa.
-        /// Errores de DB (SaveBatch): excepción — atómico, ninguno persiste.
-        /// </summary>
         public async Task<BatchConfirmationResult> ConfirmBatchAsync(
-       IReadOnlyList<PairConfirmationRequest> requests,
-       string confirmedBy,
-       DateOnly periodStart,
-       DateOnly periodEnd,
-       CancellationToken ct = default)
+            IReadOnlyList<PairConfirmationRequest> requests,
+            string confirmedBy,
+            CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(confirmedBy))
                 return BatchConfirmationResult.AllFailed("confirmedBy no puede estar vacío");
-
             if (requests.Count == 0)
                 return new BatchConfirmationResult([], []);
 
@@ -85,7 +66,7 @@ namespace FinancialSystem.Application.Reconciliation
 
             foreach (var req in requests)
             {
-                var error = ValidateInput(req.Pair, confirmedBy);
+                var error = ValidateInput(req.Pair, confirmedBy, req.CategoryId);
                 if (error is not null) failures.Add(new PairFailure(req.Pair, error));
                 else validReqs.Add(req);
             }
@@ -105,7 +86,7 @@ namespace FinancialSystem.Application.Reconciliation
                 return new BatchConfirmationResult([], failures);
 
             var validPairs = validReqs.Select(r => r.Pair).ToList();
-            var dbError = await ValidateNotAlreadyReconciledAsync(validPairs, ct);
+            var dbError = await ValidateNotAlreadyProcessedAsync(validPairs, ct);
             if (dbError is not null)
             {
                 failures.AddRange(validPairs.Select(p => new PairFailure(p, dbError)));
@@ -113,12 +94,10 @@ namespace FinancialSystem.Application.Reconciliation
             }
 
             var expenses = validReqs
-                .Select(r => BuildExpense(
-                    r.Pair, confirmedBy, periodStart, periodEnd, r.ConfirmationSource))
+                .Select(r => BuildExpense(r.Pair, confirmedBy, r.CategoryId, r.FinancialImpact, r.ProcessingSource))
                 .ToList();
 
             await _repository.SaveBatchAsync(expenses, ct);
-
             _logger.LogInformation(
                 "Batch confirmado: {Confirmed} persistidos, {Failed} fallidos | By={By}",
                 expenses.Count, failures.Count, confirmedBy);
@@ -128,22 +107,20 @@ namespace FinancialSystem.Application.Reconciliation
                 failures);
         }
 
-        // ── Validaciones (sin I/O) ────────────────────────────────────
+        // ── Validaciones (sin I/O) ────────────────────────────────────────────────
 
-        private static string? ValidateInput(MatchedPair pair, string confirmedBy)
+        private static string? ValidateInput(MatchedPair pair, string confirmedBy, Guid categoryId)
         {
-            if (string.IsNullOrWhiteSpace(confirmedBy))
-                return "confirmedBy no puede estar vacío";
-            if (pair.Reference.Id == Guid.Empty)
-                return "El movimiento de referencia no tiene Id válido";
-            if (pair.Candidate.Id == Guid.Empty)
-                return "El movimiento candidato no tiene Id válido";
+            if (string.IsNullOrWhiteSpace(confirmedBy)) return "confirmedBy no puede estar vacío";
+            if (pair.Reference.Id == Guid.Empty) return "El movimiento de referencia no tiene Id válido";
+            if (pair.Candidate.Id == Guid.Empty) return "El movimiento candidato no tiene Id válido";
             if (pair.Reference.Currency != pair.Candidate.Currency)
                 return $"Monedas incompatibles: {pair.Reference.Currency} vs {pair.Candidate.Currency}";
+            if (categoryId == Guid.Empty) return "CategoryId es requerido";
             return null;
         }
 
-        private async Task<string?> ValidateNotAlreadyReconciledAsync(
+        private async Task<string?> ValidateNotAlreadyProcessedAsync(
             IReadOnlyList<MatchedPair> pairs, CancellationToken ct)
         {
             var byType = new Dictionary<SourceEntityType, List<Guid>>();
@@ -156,15 +133,14 @@ namespace FinancialSystem.Application.Reconciliation
             var conflicts = new List<Guid>();
             foreach (var (sourceType, ids) in byType)
             {
-                var already = await _repository.GetAlreadyReconciledSourceIdsAsync(sourceType, ids, ct);
+                var already = await _repository.GetAlreadyProcessedSourceIdsAsync(sourceType, ids, ct);
                 conflicts.AddRange(already);
             }
 
             if (conflicts.Count == 0) return null;
-
             var listed = string.Join(", ", conflicts.Take(5));
             var extra = conflicts.Count > 5 ? $" (y {conflicts.Count - 5} más)" : string.Empty;
-            return $"Movimientos ya reconciliados: {listed}{extra}";
+            return $"Movimientos ya procesados: {listed}{extra}";
         }
 
         private static List<(MatchedPair Pair, string Error)> DetectIntraBatchDuplicates(
@@ -182,36 +158,31 @@ namespace FinancialSystem.Application.Reconciliation
             return duplicates;
         }
 
-        // ── Construcción (pure, sin I/O) ──────────────────────────────
+        // ── Construcción (pure, sin I/O) ──────────────────────────────────────────
 
-        private static ReconciledExpense BuildExpense(
+        private static ProcessedExpense BuildExpense(
             MatchedPair pair,
             string confirmedBy,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            ConfirmationSource confirmationSource)
+            Guid categoryId,
+            FinancialImpact financialImpact,
+            ProcessingSource processingSource)
         {
             var now = DateTime.UtcNow;
-            var expense = new ReconciledExpense
+            var expense = new ProcessedExpense
             {
-                PeriodStart = periodStart,
-                PeriodEnd = periodEnd,
                 EffectiveDate = pair.Reference.Date,
                 TotalAmount = Math.Abs(pair.Reference.Amount),
                 Currency = pair.Reference.Currency,
                 Description = BuildDescription(pair.Reference, pair.Candidate),
-                Status = ReconciledExpenseStatus.Confirmed,
+                CategoryId = categoryId,
+                FinancialImpact = financialImpact,
+                Status = ExpenseStatus.Confirmed,
+                ProcessingSource = processingSource,
                 MatchScore = pair.Score.Total,
-                MatchConfidence = pair.Confidence.ToString(),
-                ConfirmationSource = confirmationSource,
-                // ── NUEVOS ───────────────────────────────────────────────
                 AmountDelta = Math.Abs(Math.Abs(pair.Reference.Amount) - Math.Abs(pair.Candidate.Amount)),
-                HasAmountMismatch = false,  // 1↔1 del motor: por definición pasó AmountMatchingRule
-                GroupingMode = ReconciliationGroupingMode.EngineSuggested,
-                // ─────────────────────────────────────────────────────────
                 CreatedAt = now,
-                ConfirmedAt = now,
-                ConfirmedBy = confirmedBy,
+                ProcessedAt = now,
+                ProcessedBy = confirmedBy,
             };
 
             expense.Items.Add(BuildItem(pair.Reference, ReconciliationItemRole.Reference));
@@ -219,8 +190,7 @@ namespace FinancialSystem.Application.Reconciliation
             return expense;
         }
 
-        private static ReconciledExpenseItem BuildItem(
-            FinancialMovement movement, ReconciliationItemRole role) =>
+        private static ProcessedExpenseItem BuildItem(FinancialMovement movement, ReconciliationItemRole role) =>
             new()
             {
                 SourceEntityType = SourceTypeOf(movement.Source),
@@ -240,8 +210,7 @@ namespace FinancialSystem.Application.Reconciliation
             return $"{Truncate(candidate.Description.Trim(), 200)} ({Truncate(reference.Description.Trim(), 200)})";
         }
 
-        private static string Truncate(string s, int max) =>
-            s.Length <= max ? s : s[..max] + "…";
+        private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
         private static SourceEntityType SourceTypeOf(MovementSource source) => source switch
         {
@@ -259,25 +228,21 @@ namespace FinancialSystem.Application.Reconciliation
         }
     }
 
-    // ── Wrapper para batch que transporta el ConfirmationSource por par ──
+    // ── Wrapper para batch ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Un par + su contexto de confirmación para el batch.
-    /// ConfirmationSource viaja por par porque en un mismo batch puede haber
-    /// confirmaciones de sugerencias de alta confianza y confirmaciones manuales.
-    /// </summary>
     public sealed record PairConfirmationRequest(
         MatchedPair Pair,
-        ConfirmationSource ConfirmationSource = ConfirmationSource.Manual);
+        Guid CategoryId,
+        FinancialImpact FinancialImpact,
+        ProcessingSource ProcessingSource = ProcessingSource.ManualMatch);
 
-    // ── Result types ──────────────────────────────────────────────────
+    // ── Result types ──────────────────────────────────────────────────────────────
 
     public sealed record ConfirmationResult
     {
         public bool Succeeded { get; init; }
         public Guid? ExpenseId { get; init; }
         public string? ErrorMessage { get; init; }
-
         public static ConfirmationResult Success(Guid id) => new() { Succeeded = true, ExpenseId = id };
         public static ConfirmationResult Failure(string error) => new() { Succeeded = false, ErrorMessage = error };
     }
@@ -289,7 +254,6 @@ namespace FinancialSystem.Application.Reconciliation
         public int TotalSucceeded => Successes.Count;
         public int TotalFailed => Failures.Count;
         public bool HasFailures => Failures.Count > 0;
-
         public static BatchConfirmationResult AllFailed(string error) =>
             new([], [new PairFailure(null!, error)]);
     }

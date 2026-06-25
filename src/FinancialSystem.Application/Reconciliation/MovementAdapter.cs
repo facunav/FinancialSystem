@@ -4,28 +4,18 @@ using FinancialSystem.Domain.Reconciliation;
 namespace FinancialSystem.Application.Reconciliation;
 
 /// <summary>
-/// Convierte entidades del sistema existente (Transaction) al modelo
-/// unificado de conciliación (FinancialMovement).
+/// Convierte entidades del sistema (Transaction, BankStatement, ManualExpense)
+/// al modelo unificado de conciliación (FinancialMovement).
 ///
-/// PRINCIPIO: la conciliación no conoce Transaction. Este adaptador
-/// es el único punto de acoplamiento entre las dos capas.
-/// Si Transaction cambia, sólo hay que tocar este archivo.
-///
-/// DECISIONES DE MAPEO:
-///   - Source se infiere del SourceFile cuando está disponible
-///   - PaymentMethod es null para banco/tarjeta (no se carga allí)
-///   - Amount siempre positivo para gastos (la entidad ya lo normaliza)
+/// PRINCIPIO: la conciliación no conoce las entidades fuente directamente.
+/// Este adaptador es el único punto de acoplamiento entre las dos capas.
+/// Si una entidad fuente cambia, solo hay que tocar este archivo.
 /// </summary>
 public static class MovementAdapter
 {
-    /// <summary>
-    /// Convierte una Transaction a FinancialMovement infiriendo la fuente
-    /// a partir del nombre del archivo de origen.
-    /// </summary>
     public static FinancialMovement FromTransaction(Transaction transaction, MovementSource? overrideSource = null)
     {
         var source = overrideSource ?? InferSource(transaction.SourceFile);
-
         return new FinancialMovement
         {
             Id = transaction.Id,
@@ -40,10 +30,6 @@ public static class MovementAdapter
         };
     }
 
-    /// <summary>
-    /// Crea un movimiento manual con método de pago explícito.
-    /// Útil cuando el Excel tiene columna de método de pago.
-    /// </summary>
     public static FinancialMovement FromManualEntry(
         Transaction transaction,
         MovementSource source,
@@ -68,44 +54,30 @@ public static class MovementAdapter
         };
     }
 
-    // ── Inferencia de fuente ──────────────────────────────────────
-
     private static MovementSource InferSource(string? sourceFile)
     {
         if (string.IsNullOrWhiteSpace(sourceFile))
             return MovementSource.BankDebit;
 
-        var fileName = Path.GetFileNameWithoutExtension(sourceFile)
-            .ToUpperInvariant();
+        var fileName = Path.GetFileNameWithoutExtension(sourceFile).ToUpperInvariant();
         var ext = Path.GetExtension(sourceFile).ToUpperInvariant();
 
-        // PDFs son siempre tarjetas
         if (ext == ".PDF") return MovementSource.CreditCard;
-
-        // Excel: inferir por nombre de archivo
         if (fileName.Contains("MANUAL") || fileName.Contains("PERSONAL"))
             return MovementSource.ManualDynamic;
-
         if (fileName.Contains("FIJO") || fileName.Contains("FIXED") || fileName.Contains("RECURRENTE"))
             return MovementSource.ManualFixed;
-
         if (fileName.Contains("BANCO") || fileName.Contains("BANK") ||
             fileName.Contains("DEBITO") || fileName.Contains("DEBIT"))
             return MovementSource.BankDebit;
 
-        // Default: banco (la fuente más "segura" para conciliación)
         return MovementSource.BankDebit;
     }
 
-    /// <summary>
-    /// Inferencia de PaymentMethod desde texto libre (columna del Excel manual).
-    /// </summary>
     public static PaymentMethod? ParsePaymentMethod(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-
         var normalized = raw.Trim().ToUpperInvariant();
-
         return normalized switch
         {
             "DEBITO" or "DÉBITO" or "DB" or "DEB" or "DEBIT" => PaymentMethod.Debit,
@@ -116,35 +88,24 @@ public static class MovementAdapter
         };
     }
 
-    /// <summary>
-    /// Inferencia de categoría desde descripción (heurística simple, sin ML).
-    /// Extendible: agregar keywords según el vocabulario del usuario.
-    /// </summary>
     public static MovementCategory InferCategory(string description)
     {
         if (string.IsNullOrWhiteSpace(description)) return MovementCategory.Unknown;
-
         var upper = description.ToUpperInvariant();
 
         if (ContainsAny(upper, "NETFLIX", "SPOTIFY", "DISNEY", "HBO", "AMAZON PRIME", "MUBI", "GYM", "GIMNASIO"))
             return MovementCategory.Subscription;
-
         if (ContainsAny(upper, "FARMACI", "DROGUERIA", "MEDICAMENTO", "SALUD"))
             return MovementCategory.Health;
-
         if (ContainsAny(upper, "UBER", "CABIFY", "TAXI", "COLECTIVO", "SUBTE", "PEAJE", "YPF", "SHELL"))
             return MovementCategory.Transport;
-
         if (ContainsAny(upper, "SUPERMERCADO", "CARREFOUR", "COTO", "DISCO", "JUMBO", "DIA",
             "PEDIDOSYA", "RAPPI", "DELIVERY", "MCDONALD", "BURGER", "SUBWAY"))
             return MovementCategory.Food;
-
         if (ContainsAny(upper, "EDESUR", "EDENOR", "METROGAS", "AYSA", "TELECOM", "MOVISTAR", "CLARO", "PERSONAL"))
             return MovementCategory.Services;
-
         if (ContainsAny(upper, "SEGURO", "ZURICH", "SANCOR", "MAPFRE"))
             return MovementCategory.Insurance;
-
         if (ContainsAny(upper, "COLEGIO", "ESCUELA", "UNIVERSIDAD", "CUOTA"))
             return MovementCategory.Education;
 
@@ -156,7 +117,7 @@ public static class MovementAdapter
 
     /// <summary>
     /// Convierte ManualExpense → FinancialMovement para el motor de conciliación.
-    /// Único punto de acoplamiento entre ManualExpense y la capa de conciliación.
+    /// Usa expense.Description (antes llamado Category) como descripción para matching.
     /// </summary>
     public static FinancialMovement FromManualExpense(ManualExpense expense)
     {
@@ -176,12 +137,12 @@ public static class MovementAdapter
             _ => null,
         };
 
-        // La descripción para matching = Category.
+        // La descripción para matching = Description (antes: Category).
         // Si hay Notes, se concatena para que DescriptionMatchingRule
         // tenga más tokens contra los que comparar.
         var description = string.IsNullOrWhiteSpace(expense.Notes)
-            ? expense.Category
-            : $"{expense.Category} {expense.Notes}";
+            ? expense.Description
+            : $"{expense.Description} {expense.Notes}";
 
         return new FinancialMovement
         {
@@ -191,7 +152,7 @@ public static class MovementAdapter
             Amount = expense.Amount,
             Currency = expense.Currency,
             Source = source,
-            Category = InferCategoryFromManual(expense.Category),
+            Category = InferCategoryFromManual(expense.Description),
             PaymentMethod = paymentMethod,
             OriginalId = expense.ExternalId,
             SourceFile = expense.SourceFile,
@@ -199,8 +160,8 @@ public static class MovementAdapter
         };
     }
 
-    private static MovementCategory InferCategoryFromManual(string category) =>
-        category.ToUpperInvariant() switch
+    private static MovementCategory InferCategoryFromManual(string description) =>
+        description.ToUpperInvariant() switch
         {
             "ALMACEN" => MovementCategory.Food,
             "FARMACIA" => MovementCategory.Health,
@@ -211,36 +172,16 @@ public static class MovementAdapter
             "OSSE" => MovementCategory.Services,
             "CABLE / INTERNET" => MovementCategory.Services,
             "MOVISTAR FACU" or "MOVISTAR TATI" => MovementCategory.Services,
-            "SEGURO AUTO" or "SEGURO CASA"
-                          or "SEGURO VIDA" => MovementCategory.Insurance,
-            "ALQUILER" or "EXPENSAS"
-                       or "BAULERA" => MovementCategory.Other,
-            "VISA BBVA" or "VISA BAPRO"
-                           or "VISA GALICIA"
-                           or "MASTERCARD BBVA"
-                           or "MASTERCARD GALICIA"
-                           or "BBVA CUENTA" => MovementCategory.Transfer,
+            "SEGURO AUTO" or "SEGURO CASA" or "SEGURO VIDA" => MovementCategory.Insurance,
+            "ALQUILER" or "EXPENSAS" or "BAULERA" => MovementCategory.Other,
+            "VISA BBVA" or "VISA BAPRO" or "VISA GALICIA"
+                or "MASTERCARD BBVA" or "MASTERCARD GALICIA"
+                or "BBVA CUENTA" => MovementCategory.Transfer,
             _ => MovementCategory.Unknown,
         };
 
-    /// <summary>
-    /// Convierte BankStatement → FinancialMovement para el motor de conciliación.
-    ///
-    /// DECISIONES DE MAPEO:
-    ///   Source = BankDebit siempre: BankStatement es siempre referencia contable.
-    ///   Description = Concept (descripción principal del banco).
-    ///     Si existe Detail significativo, se concatena para enriquecer el matching
-    ///     de descripción contra registros manuales.
-    ///   Amount = se preserva con signo original (negativo = débito, positivo = crédito).
-    ///     El motor de matching usa Math.Abs() para comparar montos, así que el signo
-    ///     no interfiere con el score — pero preservarlo mantiene la semántica contable.
-    ///   OriginalId = ExternalId del BankStatement (su clave de idempotencia).
-    /// </summary>
     public static FinancialMovement FromBankStatement(BankStatement statement)
     {
-        // Enriquecer descripción con el detalle del canal si es significativo.
-        // "PAGO CON VISA DEBITO 96477108" + "100 - BANCA ONLINE"
-        // da más tokens al DescriptionMatchingRule para comparar.
         var description = !string.IsNullOrWhiteSpace(statement.Detail)
             ? $"{statement.Concept} {statement.Detail}"
             : statement.Concept;

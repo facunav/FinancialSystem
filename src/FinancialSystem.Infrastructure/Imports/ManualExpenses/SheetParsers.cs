@@ -142,7 +142,7 @@ public sealed class DynamicSheetParser : IManualExpenseSheetParser
             expenses.Add(new ManualExpense
             {
                 Date          = DateTime.SpecifyKind(date.Value.Date, DateTimeKind.Utc),
-                Category      = catRaw.Trim(),
+                Description      = catRaw.Trim(),
                 PaymentMethod = payment,
                 Amount        = amount.Value,
                 Currency      = "ARS",
