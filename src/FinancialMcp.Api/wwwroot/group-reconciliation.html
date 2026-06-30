@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conciliación por Grupos · FinancialSystem</title>
+    <title>Conciliación · FinancialSystem</title>
     <style>
         :root {
             --bg: #13171e;
@@ -20,6 +20,7 @@
             --red: #d95f5f;
             --red-bg: #3a1a1a;
             --blue: #5a9fd4;
+            --blue-bg: #1a2a3a;
             --mono: 'SF Mono','Cascadia Code',Consolas,monospace;
             --sans: -apple-system,system-ui,sans-serif;
         }
@@ -54,7 +55,6 @@
             .topbar h1 {
                 font-size: 14px;
                 font-weight: 600;
-                color: var(--text);
                 white-space: nowrap
             }
 
@@ -96,6 +96,7 @@
             outline-offset: 1px
         }
 
+        /* ── Buttons ── */
         button {
             background: var(--surface2);
             border: 1px solid var(--border);
@@ -128,17 +129,46 @@
                     background: #1f3d2e
                 }
 
+            button.warn {
+                background: var(--amber-bg);
+                border-color: var(--amber);
+                color: #f5dcb0
+            }
+
+                button.warn:hover:not(:disabled) {
+                    background: #4a341a
+                }
+
+            button.danger {
+                background: var(--red-bg);
+                border-color: var(--red);
+                color: #f0b8b8
+            }
+
+                button.danger:hover:not(:disabled) {
+                    background: #4a1a1a
+                }
+
+            button.blue {
+                background: var(--blue-bg);
+                border-color: var(--blue);
+                color: #b0d4f0
+            }
+
+                button.blue:hover:not(:disabled) {
+                    background: #1f3048
+                }
+
             button.sm {
                 padding: 3px 8px;
                 font-size: 12px
             }
 
-        /* ── Main area: two columns ── */
+        /* ── Layout ── */
         .main {
             display: flex;
             flex: 1;
-            overflow: hidden;
-            gap: 0
+            overflow: hidden
         }
 
         .col {
@@ -157,7 +187,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 14px;
+            padding: 8px 14px;
             border-bottom: 1px solid var(--border);
             gap: 8px;
             flex-shrink: 0;
@@ -182,6 +212,29 @@
             display: flex;
             gap: 6px;
             align-items: center
+        }
+
+        /* ── CAMBIO 1+3: Context action bar ── */
+        /* Aparece debajo del col-head cuando hay selección. Oculto por defecto. */
+        .action-bar {
+            display: none; /* ocultado cuando n=0 */
+            align-items: center;
+            gap: 8px;
+            padding: 7px 14px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+            .action-bar.visible {
+                display: flex
+            }
+
+        .action-bar-info {
+            font-size: 12px;
+            color: var(--dim);
+            margin-right: 4px
         }
 
         .filter-bar {
@@ -232,7 +285,7 @@
         }
 
         td {
-            padding: 8px 12px;
+            padding: 7px 12px;
             border-bottom: 1px solid var(--border);
             font-size: 13px;
             vertical-align: middle
@@ -242,11 +295,11 @@
             display: none
         }
 
-        tr.reconciled td {
+        tr.processed td {
             opacity: .35
         }
 
-        tr.reconciled .cb-cell input {
+        tr.processed .cb-cell input {
             cursor: not-allowed
         }
 
@@ -254,7 +307,7 @@
             background: rgba(82,184,122,.07)
         }
 
-        tr:hover:not(.reconciled) td {
+        tr:hover:not(.processed) td {
             background: var(--surface2)
         }
 
@@ -268,12 +321,12 @@
             color: var(--red)
         }
 
-        td.credit {
-            color: var(--green)
+        td.credit-amt {
+            color: var(--blue)
         }
 
         .desc {
-            max-width: 220px;
+            max-width: 240px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap
@@ -287,9 +340,14 @@
         }
 
         .badge-done {
-            font-family: var(--mono);
-            font-size: 10px;
+            font: 10px var(--mono);
             color: var(--green);
+            margin-left: 4px
+        }
+
+        .badge-disc {
+            font: 10px var(--mono);
+            color: var(--faint);
             margin-left: 4px
         }
 
@@ -307,7 +365,7 @@
             font: 12px var(--mono)
         }
 
-        /* ── Balance bar (sticky bottom) ── */
+        /* ── Balance bar ── */
         .balance-bar {
             flex-shrink: 0;
             border-top: 1px solid var(--border);
@@ -373,6 +431,7 @@
             align-items: center
         }
 
+        /* ── Toast ── */
         .toast {
             font: 12px var(--mono);
             padding: 6px 12px;
@@ -402,7 +461,7 @@
             }
         }
 
-        /* ── Row action: Mark Reviewed ── */
+        /* ── Row action ── */
         .act-cell {
             white-space: nowrap
         }
@@ -425,7 +484,7 @@
                 color: #f0d4a8
             }
 
-        tr.reconciled .btn-review {
+        tr.processed .btn-review {
             display: none
         }
 
@@ -448,7 +507,7 @@
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            width: 380px;
+            width: 420px;
             max-width: 92vw;
             box-shadow: 0 12px 40px rgba(0,0,0,.5)
         }
@@ -460,8 +519,7 @@
 
             .modal-head h2 {
                 font-size: 14px;
-                font-weight: 600;
-                color: var(--text)
+                font-weight: 600
             }
 
             .modal-head p {
@@ -491,6 +549,11 @@
             margin-bottom: 6px
         }
 
+            .modal-field label.req::after {
+                content: ' *';
+                color: var(--red)
+            }
+
         .modal-field select, .modal-field textarea {
             width: 100%;
             background: var(--surface2);
@@ -508,7 +571,7 @@
 
         .modal-field textarea {
             resize: vertical;
-            min-height: 60px;
+            min-height: 56px;
             font-family: var(--sans)
         }
 
@@ -520,15 +583,22 @@
             gap: 8px
         }
 
-        button.warn {
-            background: var(--amber-bg);
-            border-color: var(--amber);
-            color: #f5dcb0
+        .batch-list {
+            font-size: 12px;
+            color: var(--dim);
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 10px;
+            max-height: 90px;
+            overflow-y: auto;
+            line-height: 1.7
         }
 
-            button.warn:hover:not(:disabled) {
-                background: #4a341a
-            }
+        .progress-line {
+            font: 11px var(--mono);
+            color: var(--faint)
+        }
     </style>
 </head>
 <body>
@@ -536,39 +606,37 @@
     <!-- ── Top bar ── -->
     <div class="topbar">
         <h1>Conciliación <em>N↔M</em></h1>
-        <div class="field">
-            <label>Desde</label>
-            <input type="date" id="from">
-        </div>
-        <div class="field">
-            <label>Hasta</label>
-            <input type="date" id="to">
-        </div>
-        <div class="field">
-            <label>Usuario</label>
-            <input type="text" id="user" value="user@finapp.com">
-        </div>
+        <div class="field"><label>Desde</label><input type="date" id="from"></div>
+        <div class="field"><label>Hasta</label><input type="date" id="to"></div>
+        <div class="field"><label>Usuario</label><input type="text" id="user" value="user@finapp.com"></div>
         <button class="primary" id="btnLoad">Cargar movimientos</button>
         <div id="topToast"></div>
     </div>
 
-    <!-- ── Two columns ── -->
     <div class="main">
 
-        <!-- Left: Reference (banco / tarjeta) -->
+        <!-- ── Columna izquierda: Banco / Tarjeta ── -->
         <div class="col">
             <div class="col-head">
                 <div class="col-title">Banco / Tarjeta <span id="refCount"></span></div>
                 <div class="col-actions">
-                    <button class="sm" id="refSelAll">Sel. todo</button>
+                    <button class="sm" id="refSelAll">Sel. visible</button>
                     <button class="sm" id="refClear">Limpiar</button>
                 </div>
             </div>
+
+            <!-- CAMBIO 1+3: barra contextual de acciones sobre selección banco -->
+            <div class="action-bar" id="refActionBar">
+                <span class="action-bar-info" id="refSelInfo"></span>
+                <button class="warn sm" id="btnBatchReview">Marcar revisados</button>
+                <!-- "Confirmar Match" ya está en la barra inferior cuando hay selección en ambas columnas -->
+            </div>
+
             <div class="filter-bar">
-                <input type="text" id="refFilter" placeholder="Filtrar por descripción o monto…">
+                <input type="text" id="refFilter" placeholder="Filtrar descripción o monto…">
             </div>
             <div class="table-wrap">
-                <table id="refTable">
+                <table>
                     <thead>
                         <tr>
                             <th style="width:32px"></th>
@@ -579,27 +647,32 @@
                             <th>Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="refBody">
-                        <tr><td colspan="6" class="empty">Cargá un período para comenzar.</td></tr>
-                    </tbody>
+                    <tbody id="refBody"><tr><td colspan="6" class="empty">Cargá un período para comenzar.</td></tr></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Right: Candidate (manual / Excel) -->
+        <!-- ── Columna derecha: Excel / Manual ── -->
         <div class="col">
             <div class="col-head">
                 <div class="col-title">Excel / Manual <span id="candCount"></span></div>
                 <div class="col-actions">
-                    <button class="sm" id="candSelAll">Sel. todo</button>
+                    <button class="sm" id="candSelAll">Sel. visible</button>
                     <button class="sm" id="candClear">Limpiar</button>
                 </div>
             </div>
+
+            <!-- CAMBIO 2+3: barra contextual de acciones sobre selección Excel -->
+            <div class="action-bar" id="candActionBar">
+                <span class="action-bar-info" id="candSelInfo"></span>
+                <button class="danger sm" id="btnDiscard">Descartar</button>
+            </div>
+
             <div class="filter-bar">
-                <input type="text" id="candFilter" placeholder="Filtrar por descripción o monto…">
+                <input type="text" id="candFilter" placeholder="Filtrar descripción o monto…">
             </div>
             <div class="table-wrap">
-                <table id="candTable">
+                <table>
                     <thead>
                         <tr>
                             <th style="width:32px"></th>
@@ -609,9 +682,7 @@
                             <th>Origen</th>
                         </tr>
                     </thead>
-                    <tbody id="candBody">
-                        <tr><td colspan="5" class="empty">Cargá un período para comenzar.</td></tr>
-                    </tbody>
+                    <tbody id="candBody"><tr><td colspan="5" class="empty">Cargá un período para comenzar.</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -641,20 +712,39 @@
         </div>
         <div class="bal-actions">
             <div id="balToast"></div>
-            <button class="primary" id="btnConfirm" disabled>Confirmar grupo</button>
+            <button class="primary" id="btnConfirm" disabled>Confirmar Match</button>
         </div>
     </div>
 
-    <!-- ── Modal: Mark Reviewed ── -->
+    <!-- ── Modal: Review (individual o lote) ── -->
     <div class="modal-overlay" id="reviewOverlay">
         <div class="modal">
             <div class="modal-head">
-                <h2>Marcar como revisado</h2>
+                <h2 id="reviewTitle">Marcar como revisado</h2>
                 <p id="reviewSubtitle"></p>
             </div>
             <div class="modal-body">
+                <div id="batchListWrap" style="display:none">
+                    <div class="modal-field">
+                        <label>Movimientos seleccionados</label>
+                        <div class="batch-list" id="batchList"></div>
+                    </div>
+                </div>
                 <div class="modal-field">
-                    <label for="reviewReason">Motivo</label>
+                    <label for="reviewCategory" class="req">Categoría</label>
+                    <select id="reviewCategory"><option value="">Cargando…</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="reviewImpact" class="req">Impacto financiero</label>
+                    <select id="reviewImpact">
+                        <option value="1">Gasto real</option>
+                        <option value="2">Transferencia interna</option>
+                        <option value="3">Pago de deuda</option>
+                        <option value="4">Ingreso</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="reviewReason" class="req">Motivo</label>
                     <select id="reviewReason">
                         <option value="1">Transferencia personal</option>
                         <option value="2">Regalo</option>
@@ -668,6 +758,7 @@
                     <label for="reviewNotes">Notas (opcional)</label>
                     <textarea id="reviewNotes" placeholder="Detalle adicional…"></textarea>
                 </div>
+                <div id="reviewProgress" class="progress-line" style="display:none"></div>
                 <div id="reviewModalToast"></div>
             </div>
             <div class="modal-foot">
@@ -677,91 +768,152 @@
         </div>
     </div>
 
+    <!-- ── Modal: Confirm Match ── -->
+    <div class="modal-overlay" id="confirmOverlay">
+        <div class="modal">
+            <div class="modal-head">
+                <h2>Confirmar Match</h2>
+                <p id="confirmSubtitle"></p>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label for="confirmCategory" class="req">Categoría</label>
+                    <select id="confirmCategory"><option value="">Cargando…</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="confirmImpact" class="req">Impacto financiero</label>
+                    <select id="confirmImpact">
+                        <option value="1">Gasto real</option>
+                        <option value="2">Transferencia interna</option>
+                        <option value="3">Pago de deuda</option>
+                        <option value="4">Ingreso</option>
+                    </select>
+                </div>
+                <div id="confirmModalToast"></div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnConfirmCancel">Cancelar</button>
+                <button class="primary" id="btnConfirmSave">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API = '';
-        const TOLERANCE = 50;        // debe coincidir con ReconciliationOptions.AmountAbsoluteTolerance
-        const SEP = (n) => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-        const fmtDate = (iso) => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
+        const TOLERANCE = 50;
+        const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+        const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
-        // ── State ─────────────────────────────────────────────────────────────────────
-        let refs = [];   // UnmatchedMovementDto[]
-        let cands = [];
-        const selRef = new Set();  // selected Guids
+        // ── Estado ────────────────────────────────────────────────────────────────
+        let refs = [];   // UnmatchedMovementDto[] (banco/tarjeta)
+        let cands = [];   // UnmatchedMovementDto[] (Excel)
+        let categories = [];
+        const selRef = new Set();
         const selCand = new Set();
 
-        // ── Init ──────────────────────────────────────────────────────────────────────
+        // ── SourceEntityType numérico (sin JsonStringEnumConverter) ──────────────
+        const SRC_TYPE = { CreditCard: 0, BankDebit: 2, ManualDynamic: 1, ManualFixed: 1 };
+        const toSrcType = s => SRC_TYPE[s] ?? 1;
+
+        // ── Init ─────────────────────────────────────────────────────────────────
         (function initPeriod() {
-            const now = new Date();
-            const y = now.getFullYear(), m = now.getMonth();
+            const now = new Date(), y = now.getFullYear(), m = now.getMonth();
             document.getElementById('from').value = `${y}-${String(m + 1).padStart(2, '0')}-01`;
             const last = new Date(y, m + 1, 0);
             document.getElementById('to').value = `${y}-${String(m + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
         })();
 
-        // ── Load ──────────────────────────────────────────────────────────────────────
-        document.getElementById('btnLoad').addEventListener('click', load);
+        (async function loadCategories() {
+            try {
+                categories = await getJson(`${API}/api/categories`);
+                const opts = categories.map(c => `<option value="${c.id}">${c.displayName}</option>`).join('');
+                ['reviewCategory', 'confirmCategory'].forEach(id => document.getElementById(id).innerHTML = opts);
+            } catch (e) {
+                ['reviewCategory', 'confirmCategory'].forEach(id =>
+                    document.getElementById(id).innerHTML = '<option value="">Error al cargar</option>');
+            }
+        })();
 
+        // ── Load ─────────────────────────────────────────────────────────────────
+        document.getElementById('btnLoad').addEventListener('click', load);
         async function load() {
             const from = document.getElementById('from').value;
             const to = document.getElementById('to').value;
             if (!from || !to) return;
-
-            setLoading();
+            document.getElementById('refBody').innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
+            document.getElementById('candBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
             try {
                 const data = await getJson(`${API}/api/reconciliation/unmatched-movements?from=${from}&to=${to}`);
                 refs = data.references ?? [];
                 cands = data.candidates ?? [];
-                selRef.clear();
-                selCand.clear();
-                renderTable('ref', refs, selRef);
-                renderTable('cand', cands, selCand);
-                updateBalance();
-            } catch (e) {
-                showToast('topToast', `Error: ${e.message}`, 'err');
-            }
+                selRef.clear(); selCand.clear();
+                renderRefs(); renderCands();
+                updateBalance(); updateActionBars();
+            } catch (e) { showToast('topToast', `Error: ${e.message}`, 'err'); }
         }
 
-        function setLoading() {
-            document.getElementById('refBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
-            document.getElementById('candBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
-        }
+        // ── Render: columna izquierda ─────────────────────────────────────────────
+        function renderRefs() {
+            const tbody = document.getElementById('refBody');
+            document.getElementById('refCount').textContent = `(${refs.filter(m => !m.alreadyProcessed).length} pendientes)`;
 
-        // ── Render table ──────────────────────────────────────────────────────────────
-        function renderTable(side, items, selSet) {
-            const tbody = document.getElementById(side + 'Body');
-            const count = document.getElementById(side === 'ref' ? 'refCount' : 'candCount');
-            count.textContent = `(${items.length})`;
+            if (refs.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'; return; }
 
-            if (items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin movimientos en este período.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = items.map((m, i) => {
-                const debit = m.amount < 0;
-                const amtCls = debit ? 'num debit' : 'num credit';
-                const doneCls = m.alreadyReconciled ? ' reconciled' : '';
-                const srcShort = m.source.replace('Manual', '').replace('Dynamic', 'Dyn').replace('Fixed', 'Fix').replace('Debit', 'Déb').replace('Card', 'TC');
-                const actionCell = side === 'ref'
-                    ? `<td class="act-cell">${m.alreadyReconciled ? '' : `<button class="btn-review" data-id="${m.id}" data-source="${m.source}" data-amt="${Math.abs(m.amount)}" data-desc="${esc(m.description)}">Marcar revisado</button>`}</td>`
-                    : '';
-                return `<tr data-id="${m.id}" data-side="${side}" data-amt="${Math.abs(m.amount)}" data-src="${m.source}" class="row${doneCls}">
-          <td class="cb-cell"><input type="checkbox" data-id="${m.id}" data-side="${side}"${m.alreadyReconciled ? ' disabled title="Ya conciliado"' : ''}></td>
-          <td>${fmtDate(m.date)}</td>
-          <td class="desc" title="${esc(m.description)}">${esc(m.description)}${m.alreadyReconciled ? '<span class="badge-done">✓</span>' : ''}</td>
-          <td class="${amtCls}">$${SEP(Math.abs(m.amount))}</td>
-          <td class="src">${srcShort}</td>
-          ${actionCell}
-        </tr>`;
+            tbody.innerHTML = refs.map(m => {
+                const done = m.alreadyProcessed;
+                const isCredit = m.source === 'CreditCard';
+                const amtCls = isCredit ? 'num credit-amt' : 'num debit';
+                const srcLabel = isCredit ? 'TC' : 'Déb';
+                const actionCell = done
+                    ? '<td></td>'
+                    : `<td class="act-cell"><button class="btn-review" data-id="${m.id}" data-source="${m.source}" data-amt="${Math.abs(m.amount)}" data-desc="${esc(m.description)}">Revisado</button></td>`;
+                return `<tr data-id="${m.id}" data-amt="${Math.abs(m.amount)}" class="row${done ? ' processed' : ''}">
+                    <td class="cb-cell"><input type="checkbox" data-id="${m.id}" data-side="ref"${done ? ' disabled' : ''}></td>
+                    <td>${fmtDate(m.date)}</td>
+                    <td class="desc" title="${esc(m.description)}">${esc(m.description)}${done ? '<span class="badge-done">✓</span>' : ''}</td>
+                    <td class="${amtCls}">$${fmt(Math.abs(m.amount))}</td>
+                    <td class="src">${srcLabel}</td>
+                    ${actionCell}
+                </tr>`;
             }).join('');
 
-            applyFilter(side);
+            // Restaurar selección visual
+            selRef.forEach(id => {
+                const cb = tbody.querySelector(`input[data-id="${id}"]`);
+                if (cb && !cb.disabled) { cb.checked = true; cb.closest('tr').classList.add('selected'); }
+            });
+            applyFilter('ref');
         }
 
-        // ── Filter ────────────────────────────────────────────────────────────────────
+        // ── Render: columna derecha ───────────────────────────────────────────────
+        function renderCands() {
+            const tbody = document.getElementById('candBody');
+            document.getElementById('candCount').textContent = `(${cands.filter(m => !m.alreadyProcessed).length} pendientes)`;
+
+            if (cands.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin movimientos.</td></tr>'; return; }
+
+            tbody.innerHTML = cands.map(m => {
+                const done = m.alreadyProcessed;
+                const srcShort = m.source.replace('Manual', '').replace('Dynamic', 'Dyn').replace('Fixed', 'Fix');
+                return `<tr data-id="${m.id}" data-amt="${Math.abs(m.amount)}" class="row${done ? ' processed' : ''}">
+                    <td class="cb-cell"><input type="checkbox" data-id="${m.id}" data-side="cand"${done ? ' disabled' : ''}></td>
+                    <td>${fmtDate(m.date)}</td>
+                    <td class="desc" title="${esc(m.description)}">${esc(m.description)}${done ? '<span class="badge-done">✓</span>' : ''}</td>
+                    <td class="num">$${fmt(Math.abs(m.amount))}</td>
+                    <td class="src">${srcShort}</td>
+                </tr>`;
+            }).join('');
+
+            selCand.forEach(id => {
+                const cb = tbody.querySelector(`input[data-id="${id}"]`);
+                if (cb && !cb.disabled) { cb.checked = true; cb.closest('tr').classList.add('selected'); }
+            });
+            applyFilter('cand');
+        }
+
+        // ── Filtros ───────────────────────────────────────────────────────────────
         document.getElementById('refFilter').addEventListener('input', () => applyFilter('ref'));
         document.getElementById('candFilter').addEventListener('input', () => applyFilter('cand'));
-
         function applyFilter(side) {
             const val = document.getElementById(side + 'Filter').value.toLowerCase().trim();
             document.querySelectorAll(`#${side}Body tr.row`).forEach(tr => {
@@ -772,22 +924,18 @@
             });
         }
 
-        // ── Checkbox events ───────────────────────────────────────────────────────────
+        // ── Checkboxes ────────────────────────────────────────────────────────────
         document.addEventListener('change', e => {
             const cb = e.target;
             if (cb.type !== 'checkbox' || !cb.dataset.side) return;
-            const id = cb.dataset.id;
-            const side = cb.dataset.side;
+            const { id, side } = cb.dataset;
             const set = side === 'ref' ? selRef : selCand;
-
-            if (cb.checked) set.add(id); else set.delete(id);
-
-            // Highlight row
+            cb.checked ? set.add(id) : set.delete(id);
             cb.closest('tr').classList.toggle('selected', cb.checked);
-            updateBalance();
+            updateBalance(); updateActionBars();
         });
 
-        // Row click toggles checkbox (easier click target)
+        // Click en fila = toggle checkbox
         document.addEventListener('click', e => {
             const tr = e.target.closest('tr.row');
             if (!tr || e.target.type === 'checkbox' || e.target.closest('.btn-review')) return;
@@ -797,96 +945,7 @@
             cb.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
-        // ── Mark Reviewed modal ───────────────────────────────────────────────────────
-        let reviewTarget = null; // { id, source }
-
-        document.addEventListener('click', e => {
-            const btn = e.target.closest('.btn-review');
-            if (!btn) return;
-            reviewTarget = { id: btn.dataset.id, source: btn.dataset.source };
-            document.getElementById('reviewSubtitle').innerHTML =
-                `${esc(btn.dataset.desc)} · <span class="modal-amt">$${SEP(parseFloat(btn.dataset.amt))}</span>`;
-            document.getElementById('reviewReason').value = '1';
-            document.getElementById('reviewNotes').value = '';
-            document.getElementById('reviewModalToast').innerHTML = '';
-            document.getElementById('reviewOverlay').classList.add('open');
-        });
-
-        function closeReviewModal() {
-            document.getElementById('reviewOverlay').classList.remove('open');
-            reviewTarget = null;
-        }
-
-        document.getElementById('btnReviewCancel').addEventListener('click', closeReviewModal);
-        document.getElementById('reviewOverlay').addEventListener('click', e => {
-            if (e.target.id === 'reviewOverlay') closeReviewModal();
-        });
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape' && document.getElementById('reviewOverlay').classList.contains('open'))
-                closeReviewModal();
-        });
-
-        // MovementSource (motor de matching) → SourceEntityType (persistencia de ReconciledExpenseItem)
-        // El backend NO tiene JsonStringEnumConverter configurado (Program.cs confirmado sin AddJsonOptions
-        // de enums), así que System.Text.Json espera el valor numérico subyacente del enum, no el nombre.
-        // Mapeo según FinancialSystem.Domain.Enums.SourceEntityType:
-        //   Transaction = 0, ManualExpense = 1, BankStatement = 2, AccountMovement = 3
-        const SOURCE_ENTITY_TYPE = {
-            CreditCard: 0, // Transaction
-            BankDebit: 2, // BankStatement
-            ManualDynamic: 1, // ManualExpense
-            ManualFixed: 1, // ManualExpense
-        };
-        function toSourceEntityType(movementSource) {
-            return SOURCE_ENTITY_TYPE[movementSource] ?? 1; // default ManualExpense si llega algo inesperado
-        }
-
-        document.getElementById('btnReviewSave').addEventListener('click', saveReview);
-
-        async function saveReview() {
-            if (!reviewTarget) return;
-
-            const reason = parseInt(document.getElementById('reviewReason').value, 10);
-            const notes = document.getElementById('reviewNotes').value.trim();
-
-            const body = {
-                sourceEntityType: toSourceEntityType(reviewTarget.source),
-                sourceId: reviewTarget.id,
-                reason,
-                notes: notes || null,
-            };
-
-            const btn = document.getElementById('btnReviewSave');
-            btn.disabled = true;
-            btn.textContent = '…';
-
-            try {
-                const res = await postJson(`${API}/api/reconciliation/review`, body);
-
-                if (!res.success) {
-                    showToast('reviewModalToast', `Error: ${res.error ?? 'Desconocido'}`, 'err');
-                    return;
-                }
-
-                const id = reviewTarget.id;
-                markReconciled('ref', id);
-                const m = refs.find(r => r.id === id);
-                if (m) m.alreadyReconciled = true;
-                selRef.delete(id);
-                updateBalance();
-
-                closeReviewModal();
-                showToast('topToast', '✓ Movimiento marcado como revisado', 'ok');
-
-            } catch (e) {
-                showToast('reviewModalToast', `Error: ${e.message}`, 'err');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Guardar revisión';
-            }
-        }
-
-        // ── Select all / clear ────────────────────────────────────────────────────────
+        // ── Sel all / clear ───────────────────────────────────────────────────────
         document.getElementById('refSelAll').addEventListener('click', () => toggleAll('ref'));
         document.getElementById('candSelAll').addEventListener('click', () => toggleAll('cand'));
         document.getElementById('refClear').addEventListener('click', () => clearSel('ref'));
@@ -894,38 +953,240 @@
 
         function toggleAll(side) {
             const set = side === 'ref' ? selRef : selCand;
-            const boxes = [...document.querySelectorAll(`#${side}Body input[type=checkbox]:not(:disabled)`)];
-            const visibleBoxes = boxes.filter(cb => !cb.closest('tr').classList.contains('hidden-row'));
-            const allChecked = visibleBoxes.every(cb => cb.checked);
-            visibleBoxes.forEach(cb => {
-                cb.checked = !allChecked;
-                const id = cb.dataset.id;
-                if (!allChecked) set.add(id); else set.delete(id);
-                cb.closest('tr').classList.toggle('selected', !allChecked);
-            });
-            updateBalance();
+            const boxes = [...document.querySelectorAll(`#${side}Body input[type=checkbox]:not(:disabled)`)].filter(cb => !cb.closest('tr').classList.contains('hidden-row'));
+            const allOn = boxes.every(cb => cb.checked);
+            boxes.forEach(cb => { cb.checked = !allOn; allOn ? set.delete(cb.dataset.id) : set.add(cb.dataset.id); cb.closest('tr').classList.toggle('selected', !allOn); });
+            updateBalance(); updateActionBars();
         }
 
         function clearSel(side) {
             const set = side === 'ref' ? selRef : selCand;
             set.clear();
-            document.querySelectorAll(`#${side}Body input[type=checkbox]`).forEach(cb => {
-                cb.checked = false;
-                cb.closest('tr').classList.remove('selected');
-            });
-            updateBalance();
+            document.querySelectorAll(`#${side}Body input[type=checkbox]`).forEach(cb => { cb.checked = false; cb.closest('tr').classList.remove('selected'); });
+            updateBalance(); updateActionBars();
         }
 
-        // ── Balance ───────────────────────────────────────────────────────────────────
-        function updateBalance() {
-            const refTotal = sumSelected('ref', selRef);
-            const candTotal = sumSelected('cand', selCand);
+        // ── CAMBIO 3: Barras contextuales ─────────────────────────────────────────
+        function updateActionBars() {
             const nRef = selRef.size;
             const nCand = selCand.size;
+
+            // Barra banco
+            const refBar = document.getElementById('refActionBar');
+            refBar.classList.toggle('visible', nRef > 0);
+            document.getElementById('refSelInfo').textContent =
+                nRef > 0 ? `${nRef} seleccionado${nRef !== 1 ? 's' : ''}` : '';
+
+            // Barra Excel
+            const candBar = document.getElementById('candActionBar');
+            candBar.classList.toggle('visible', nCand > 0);
+            document.getElementById('candSelInfo').textContent =
+                nCand > 0 ? `${nCand} seleccionado${nCand !== 1 ? 's' : ''}` : '';
+        }
+
+        // ── CAMBIO 1: Modal Review — individual ───────────────────────────────────
+        let reviewMode = 'single';
+        let reviewSingle = null; // { id, source }
+        let reviewBatch = [];   // Guid[]
+
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('.btn-review');
+            if (!btn) return;
+            reviewMode = 'single';
+            reviewSingle = { id: btn.dataset.id, source: btn.dataset.source };
+            document.getElementById('reviewTitle').textContent = 'Marcar como revisado';
+            document.getElementById('reviewSubtitle').innerHTML =
+                `${esc(btn.dataset.desc)} · <span class="modal-amt">$${fmt(parseFloat(btn.dataset.amt))}</span>`;
+            document.getElementById('batchListWrap').style.display = 'none';
+            resetReviewFields();
+            document.getElementById('reviewOverlay').classList.add('open');
+        });
+
+        // CAMBIO 1: Modal Review — en lote desde barra contextual banco
+        document.getElementById('btnBatchReview').addEventListener('click', () => {
+            if (selRef.size === 0) return;
+            reviewMode = 'batch';
+            reviewBatch = [...selRef];
+            const items = reviewBatch.map(id => refs.find(r => r.id === id)).filter(Boolean);
+            document.getElementById('reviewTitle').textContent = `Marcar revisados (${items.length})`;
+            document.getElementById('reviewSubtitle').textContent = '';
+            document.getElementById('batchListWrap').style.display = 'block';
+            document.getElementById('batchList').innerHTML =
+                items.map(m => `<div>${fmtDate(m.date)} · ${esc(m.description)} · $${fmt(Math.abs(m.amount))}</div>`).join('');
+            resetReviewFields();
+            document.getElementById('reviewOverlay').classList.add('open');
+        });
+
+        function resetReviewFields() {
+            document.getElementById('reviewNotes').value = '';
+            document.getElementById('reviewModalToast').innerHTML = '';
+            document.getElementById('reviewProgress').style.display = 'none';
+        }
+
+        function closeReviewModal() {
+            document.getElementById('reviewOverlay').classList.remove('open');
+            reviewSingle = null; reviewBatch = [];
+        }
+
+        document.getElementById('btnReviewCancel').addEventListener('click', closeReviewModal);
+        document.getElementById('reviewOverlay').addEventListener('click', e => { if (e.target.id === 'reviewOverlay') closeReviewModal(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('reviewOverlay').classList.contains('open')) closeReviewModal(); });
+
+        document.getElementById('btnReviewSave').addEventListener('click', saveReview);
+
+        async function saveReview() {
+            const categoryId = document.getElementById('reviewCategory').value;
+            const financialImpact = parseInt(document.getElementById('reviewImpact').value, 10);
+            const reason = parseInt(document.getElementById('reviewReason').value, 10);
+            const notes = document.getElementById('reviewNotes').value.trim() || null;
+
+            if (!categoryId) { showToast('reviewModalToast', 'Seleccioná una categoría', 'err'); return; }
+
+            const btn = document.getElementById('btnReviewSave');
+            btn.disabled = true; btn.textContent = '…';
+
+            if (reviewMode === 'single') {
+                await doSingleReview(reviewSingle, { categoryId, financialImpact, reason, notes }, btn);
+            } else {
+                await doBatchReview(reviewBatch, { categoryId, financialImpact, reason, notes }, btn);
+            }
+        }
+
+        async function doSingleReview(target, opts, btn) {
+            try {
+                const res = await postJson(`${API}/api/reconciliation/review`, {
+                    sourceEntityType: toSrcType(target.source),
+                    sourceId: target.id,
+                    reason: opts.reason,
+                    categoryId: opts.categoryId,
+                    financialImpact: opts.financialImpact,
+                    notes: opts.notes,
+                });
+                if (!res.success) { showToast('reviewModalToast', `Error: ${res.error ?? 'Desconocido'}`, 'err'); return; }
+                markDone('ref', target.id);
+                closeReviewModal();
+                showToast('topToast', '✓ Movimiento marcado como revisado', 'ok');
+            } catch (e) { showToast('reviewModalToast', `Error: ${e.message}`, 'err'); }
+            finally { btn.disabled = false; btn.textContent = 'Guardar revisión'; }
+        }
+
+        async function doBatchReview(ids, opts, btn) {
+            const progress = document.getElementById('reviewProgress');
+            progress.style.display = 'block';
+            let ok = 0, fail = 0;
+
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                const m = refs.find(r => r.id === id);
+                if (!m) continue;
+                progress.textContent = `Procesando ${i + 1} de ${ids.length}…`;
+                try {
+                    const res = await postJson(`${API}/api/reconciliation/review`, {
+                        sourceEntityType: toSrcType(m.source),
+                        sourceId: id,
+                        reason: opts.reason,
+                        categoryId: opts.categoryId,
+                        financialImpact: opts.financialImpact,
+                        notes: opts.notes,
+                    });
+                    if (res.success) { markDone('ref', id); ok++; } else fail++;
+                } catch { fail++; }
+            }
+
+            btn.disabled = false; btn.textContent = 'Guardar revisión';
+            progress.style.display = 'none';
+            closeReviewModal();
+            const msg = fail === 0
+                ? `✓ ${ok} movimiento${ok !== 1 ? 's' : ''} marcado${ok !== 1 ? 's' : ''} como revisado${ok !== 1 ? 's' : ''}`
+                : `✓ ${ok} ok · ⚠ ${fail} con error`;
+            showToast('topToast', msg, fail === 0 ? 'ok' : 'err', 5000);
+        }
+
+        // ── CAMBIO 2: Descartar candidatos ────────────────────────────────────────
+        document.getElementById('btnDiscard').addEventListener('click', discardSelected);
+
+        async function discardSelected() {
+            const ids = [...selCand];
+            if (ids.length === 0) return;
+
+            const btn = document.getElementById('btnDiscard');
+            btn.disabled = true; btn.textContent = '…';
+
+            try {
+                const res = await postJson(`${API}/api/reconciliation/discard-candidates`, { ids });
+                // Quitar de la lista en memoria (no re-cargar desde servidor)
+                ids.forEach(id => {
+                    const idx = cands.findIndex(c => c.id === id);
+                    if (idx !== -1) cands.splice(idx, 1);
+                    selCand.delete(id);
+                });
+                renderCands();
+                updateBalance(); updateActionBars();
+                showToast('topToast', `✓ ${res.discarded} movimiento${res.discarded !== 1 ? 's' : ''} descartado${res.discarded !== 1 ? 's' : ''}`, 'ok');
+            } catch (e) {
+                showToast('topToast', `Error al descartar: ${e.message}`, 'err');
+            } finally {
+                btn.disabled = false; btn.textContent = 'Descartar';
+            }
+        }
+
+        // ── Modal: Confirm Match ──────────────────────────────────────────────────
+        document.getElementById('btnConfirm').addEventListener('click', () => {
+            const nRef = selRef.size;
+            const nCand = selCand.size;
+            document.getElementById('confirmSubtitle').textContent = `${nRef} banco ↔ ${nCand} Excel`;
+            document.getElementById('confirmImpact').value = '1';
+            document.getElementById('confirmModalToast').innerHTML = '';
+            document.getElementById('confirmOverlay').classList.add('open');
+        });
+
+        function closeConfirmModal() { document.getElementById('confirmOverlay').classList.remove('open'); }
+        document.getElementById('btnConfirmCancel').addEventListener('click', closeConfirmModal);
+        document.getElementById('confirmOverlay').addEventListener('click', e => { if (e.target.id === 'confirmOverlay') closeConfirmModal(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('confirmOverlay').classList.contains('open')) closeConfirmModal(); });
+
+        document.getElementById('btnConfirmSave').addEventListener('click', confirmMatch);
+
+        async function confirmMatch() {
+            const user = document.getElementById('user').value.trim();
+            const categoryId = document.getElementById('confirmCategory').value;
+            const impact = parseInt(document.getElementById('confirmImpact').value, 10);
+
+            if (!user) { showToast('confirmModalToast', 'Indicá el usuario en la barra superior', 'err'); return; }
+            if (!categoryId) { showToast('confirmModalToast', 'Seleccioná una categoría', 'err'); return; }
+
+            const refItems = [...selRef].map(id => ({ id, source: refs.find(r => r.id === id)?.source }));
+            const candItems = [...selCand].map(id => ({ id, source: cands.find(c => c.id === id)?.source }));
+
+            const btn = document.getElementById('btnConfirmSave');
+            btn.disabled = true; btn.textContent = '…';
+
+            try {
+                const res = await postJson(`${API}/api/reconciliation/confirm-group`, {
+                    confirmedBy: user, categoryId, financialImpact: impact,
+                    referenceItems: refItems, candidateItems: candItems,
+                });
+                if (!res.success) { showToast('confirmModalToast', `Error: ${res.error ?? 'Desconocido'}`, 'err'); return; }
+
+                [...selRef].forEach(id => markDone('ref', id));
+                [...selCand].forEach(id => markDone('cand', id));
+                selRef.clear(); selCand.clear();
+                updateBalance(); updateActionBars(); closeConfirmModal();
+                showToast('balToast', `✓ Match confirmado · ${refItems.length}↔${candItems.length} · $${fmt(res.referenceTotal)}`, 'ok', 4000);
+            } catch (e) { showToast('confirmModalToast', `Error: ${e.message}`, 'err'); }
+            finally { btn.disabled = false; btn.textContent = 'Confirmar'; }
+        }
+
+        // ── Balance ───────────────────────────────────────────────────────────────
+        function updateBalance() {
+            const sum = (set, arr) => [...set].reduce((s, id) => { const m = arr.find(x => x.id === id); return s + (m ? Math.abs(m.amount) : 0); }, 0);
+            const refTotal = sum(selRef, refs);
+            const candTotal = sum(selCand, cands);
+            const nRef = selRef.size, nCand = selCand.size;
             const diff = Math.abs(refTotal - candTotal);
 
-            document.getElementById('balRef').textContent = `$${SEP(refTotal)}`;
-            document.getElementById('balCand').textContent = `$${SEP(candTotal)}`;
+            document.getElementById('balRef').textContent = `$${fmt(refTotal)}`;
+            document.getElementById('balCand').textContent = `$${fmt(candTotal)}`;
             document.getElementById('balRefN').textContent = `${nRef} ítem${nRef !== 1 ? 's' : ''}`;
             document.getElementById('balCandN').textContent = `${nCand} ítem${nCand !== 1 ? 's' : ''}`;
 
@@ -934,108 +1195,45 @@
             const msgEl = document.getElementById('balDiffMsg');
 
             if (nRef === 0 && nCand === 0) {
-                diffBox.className = 'bal-item diff-empty';
-                diffEl.textContent = '—';
-                msgEl.textContent = '';
+                diffBox.className = 'bal-item diff-empty'; diffEl.textContent = '—'; msgEl.textContent = '';
             } else if (nRef === 0 || nCand === 0) {
                 diffBox.className = 'bal-item diff-empty';
                 diffEl.textContent = nRef === 0 ? 'Sin banco' : 'Sin Excel';
                 msgEl.textContent = 'Seleccioná ambos lados';
             } else if (diff <= TOLERANCE) {
                 diffBox.className = 'bal-item diff-ok';
-                diffEl.textContent = `$${SEP(diff)}`;
+                diffEl.textContent = `$${fmt(diff)}`;
                 msgEl.textContent = diff === 0 ? '✓ Balanceado' : '✓ Dentro de tolerancia';
             } else {
                 diffBox.className = 'bal-item diff-warn';
-                diffEl.textContent = `$${SEP(diff)}`;
+                diffEl.textContent = `$${fmt(diff)}`;
                 msgEl.textContent = '⚠ Diferencia fuera de tolerancia';
             }
 
-            const canConfirm = nRef > 0 && nCand > 0;
-            document.getElementById('btnConfirm').disabled = !canConfirm;
+            document.getElementById('btnConfirm').disabled = !(nRef > 0 && nCand > 0);
         }
 
-        function sumSelected(side, selSet) {
-            let total = 0;
-            const source = side === 'ref' ? refs : cands;
-            selSet.forEach(id => {
-                const m = source.find(x => x.id === id);
-                if (m) total += Math.abs(m.amount);
-            });
-            return total;
-        }
+        // ── Marcar procesado en memoria + DOM ─────────────────────────────────────
+        function markDone(side, id) {
+            const arr = side === 'ref' ? refs : cands;
+            const m = arr.find(x => x.id === id);
+            if (m) m.alreadyProcessed = true;
+            if (side === 'ref') selRef.delete(id); else selCand.delete(id);
 
-        // ── Confirm group ─────────────────────────────────────────────────────────────
-        document.getElementById('btnConfirm').addEventListener('click', confirmGroup);
-
-        async function confirmGroup() {
-            const user = document.getElementById('user').value.trim();
-            if (!user) { showToast('balToast', 'Indicá el usuario', 'err'); return; }
-
-            const refItems = [...selRef].map(id => ({ id, source: refs.find(r => r.id === id)?.source }));
-            const candItems = [...selCand].map(id => ({ id, source: cands.find(c => c.id === id)?.source }));
-
-            const body = {
-                periodStart: document.getElementById('from').value,
-                periodEnd: document.getElementById('to').value,
-                confirmedBy: user,
-                referenceItems: refItems,
-                candidateItems: candItems,
-            };
-
-            const btn = document.getElementById('btnConfirm');
-            btn.disabled = true;
-            btn.textContent = '…';
-
-            try {
-                const res = await postJson(`${API}/api/reconciliation/confirm-group`, body);
-
-                if (!res.success) {
-                    showToast('balToast', `Error: ${res.error ?? 'Desconocido'}`, 'err');
-                    return;
-                }
-
-                // Mark rows as reconciled in-place (no full reload)
-                [...selRef].forEach(id => markReconciled('ref', id));
-                [...selCand].forEach(id => markReconciled('cand', id));
-
-                // Update in-memory state
-                [...selRef].forEach(id => { const m = refs.find(r => r.id === id); if (m) m.alreadyReconciled = true; });
-                [...selCand].forEach(id => { const m = cands.find(c => c.id === id); if (m) m.alreadyReconciled = true; });
-
-                selRef.clear();
-                selCand.clear();
-                updateBalance();
-
-                const mismatch = res.hasAmountMismatch
-                    ? ` ⚠ Δ $${SEP(res.amountDelta)}`
-                    : '';
-                showToast('balToast',
-                    `✓ Grupo conciliado · ${refItems.length}↔${candItems.length} · $${SEP(res.referenceTotal)}${mismatch}`,
-                    'ok', 4000);
-
-            } catch (e) {
-                showToast('balToast', `Error: ${e.message}`, 'err');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Confirmar grupo';
-                updateBalance();
-            }
-        }
-
-        function markReconciled(side, id) {
             const tr = document.querySelector(`#${side}Body tr[data-id="${id}"]`);
             if (!tr) return;
-            tr.classList.add('reconciled');
-            tr.classList.remove('selected');
+            tr.classList.add('processed'); tr.classList.remove('selected');
             const cb = tr.querySelector('input[type=checkbox]');
             if (cb) { cb.checked = false; cb.disabled = true; }
             const desc = tr.querySelector('.desc');
             if (desc && !desc.querySelector('.badge-done'))
                 desc.insertAdjacentHTML('beforeend', '<span class="badge-done">✓</span>');
+            // Ocultar botón "Revisado" individual si existe
+            const btnRev = tr.querySelector('.btn-review');
+            if (btnRev) btnRev.remove();
         }
 
-        // ── Utils ─────────────────────────────────────────────────────────────────────
+        // ── Utils ─────────────────────────────────────────────────────────────────
         async function getJson(url) {
             const r = await fetch(url);
             if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);

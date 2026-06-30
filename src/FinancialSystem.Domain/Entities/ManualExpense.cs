@@ -22,56 +22,43 @@ public class ManualExpense
     public Guid Id { get; init; } = Guid.NewGuid();
 
     // ── Campos comunes a ambas hojas ─────────────────────────────────────────
-
     public DateTime Date { get; set; }
 
     /// <summary>
     /// Descripción del gasto tal como la escribió el usuario en el Excel.
-    /// Ejemplos reales: "Almacen", "Farmacia", "Alquiler", "Medicos", "Nafta".
-    /// No se normaliza: se preserva el vocabulario del usuario.
-    /// Usado por MovementAdapter para matching de descripción.
     /// Antes llamado "Category" — renombrado para reflejar su semántica real.
     /// </summary>
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Forma de pago declarada: "Debito", "Credito", "Efectivo".
-    /// El parser normaliza el typo "Creidito" → "Credito" antes de persistir.
-    /// </summary>
+    /// <summary>Forma de pago: "Debito", "Credito", "Efectivo".</summary>
     public string PaymentMethod { get; set; } = string.Empty;
 
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "ARS";
 
-    /// <summary>
-    /// Notas libres del usuario. Null si la celda estaba vacía.
-    /// Ejemplos: "4 patamuslos, tomate", "Abogada", "Gasto hasta el dia 9".
-    /// </summary>
     public string? Notes { get; set; }
 
     // ── Campos exclusivos de Gastos Fijos ────────────────────────────────────
-
-    /// <summary>Mes declarado (ej: "Enero"). Solo hoja Gastos Fijos.</summary>
     public string? MonthLabel { get; set; }
-
-    /// <summary>"Pagado" | "Pendiente". Solo hoja Gastos Fijos. Null si no informado.</summary>
     public string? PaymentStatus { get; set; }
-
-    /// <summary>Fecha real de pago. Solo Gastos Fijos cuando Estado = "Pagado".</summary>
     public DateTime? PaidAt { get; set; }
 
-    // ── Clasificación de origen ───────────────────────────────────────────────
-
+    // ── Clasificación de origen ──────────────────────────────────────────────
     public ManualExpenseSheet Sheet { get; set; }
 
-    // ── Trazabilidad e idempotencia ───────────────────────────────────────────
-
+    // ── Estado ──────────────────────────────────────────────────────────────
     /// <summary>
-    /// Clave de unicidad para idempotencia. Nunca cambia una vez persistida.
-    /// Calculada por el importer, validada por constraint única en DB.
+    /// Indica que el usuario descartó este movimiento explícitamente.
+    /// No se elimina físicamente: permite restaurarlo en el futuro.
+    /// Un movimiento descartado no aparece en el flujo de conciliación.
     /// </summary>
-    public string ExternalId { get; set; } = string.Empty;
+    public bool IsDiscarded { get; set; }
 
+    /// <summary>Cuándo fue descartado. Null si no está descartado.</summary>
+    public DateTime? DiscardedAt { get; set; }
+
+    // ── Trazabilidad e idempotencia ──────────────────────────────────────────
+    public string ExternalId { get; set; } = string.Empty;
     public string? SourceFile { get; set; }
     public string? SheetName { get; set; }
     public int? RowNumber { get; set; }

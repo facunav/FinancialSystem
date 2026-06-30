@@ -2,6 +2,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Imports.Parsing;
 using FinancialSystem.Application.Insights;
+using FinancialSystem.Application.Metrics;
 using FinancialSystem.Application.Parsing.Bbva;
 using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
@@ -10,6 +11,7 @@ using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Imports.ManualExpenses;
 using FinancialSystem.Infrastructure.Insights;
+using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -20,7 +22,9 @@ namespace FinancialSystem.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.");
@@ -29,38 +33,41 @@ public static class DependencyInjection
             options.UseNpgsql(
                 connectionString,
                 npgsql => npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
-        services.AddScoped<AppDbContext>(sp => sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
-        services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
-        services.Configure<FileIngestionOptions>(configuration.GetSection(FileIngestionOptions.SectionName));
+        services.AddScoped<AppDbContext>(sp =>
+            sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
+        services.AddScoped<IApplicationDbContext>(sp =>
+            sp.GetRequiredService<AppDbContext>());
 
-        services.AddSingleton<ITransactionNormalizer, Imports.Normalization.TransactionNormalizer>();
+        services.Configure<FileIngestionOptions>(
+            configuration.GetSection(FileIngestionOptions.SectionName));
 
-        // ── Parsers CSV y Excel ──────────────────────────────────────────────────
+        services.AddSingleton<ITransactionNormalizer,
+            Imports.Normalization.TransactionNormalizer>();
+
+        // ── Parsers CSV y Excel ──────────────────────────────────────────────
         services.AddSingleton<IFileParser, Imports.Parsers.CsvFileParser>();
         services.AddSingleton<IFileParser, Imports.Parsers.ExcelWorkbookParser>();
 
-        // ── Infraestructura PDF compartida ───────────────────────────────────────
+        // ── Infraestructura PDF compartida ───────────────────────────────────
         services.AddSingleton<PdfPigTextExtractor>();
-        services.AddSingleton<IPdfTextExtractor>(sp => sp.GetRequiredService<PdfPigTextExtractor>());
+        services.AddSingleton<IPdfTextExtractor>(sp =>
+            sp.GetRequiredService<PdfPigTextExtractor>());
 
-        // ── Parsers PDF: line parsers (sin estado, singleton seguros) ────────────
+        // ── Parsers PDF: line parsers (singleton) ────────────────────────────
         services.AddSingleton<BbvaTransactionLineParser>();
         services.AddSingleton<MastercardTransactionLineParser>();
 
-        // ── Parsers PDF: statement parsers (implementan IFileParser + IStatementParser)
-        // ORDEN IMPORTANTE: si un PDF puede matchear múltiples parsers,
-        // el que se registra primero gana. Registrar del más específico al más genérico.
-        // Ejemplo: "BBVA Visa" antes que un hipotético parser genérico "Visa".
+        // ── Parsers PDF: statement parsers ───────────────────────────────────
+        // ORDEN IMPORTANTE: más específico primero.
         services.AddSingleton<IFileParser, BbvaVisaStatementParser>();
         services.AddSingleton<IFileParser, BbvaMastercardStatementParser>();
         // Futuros parsers PDF van aquí:
         // services.AddSingleton<IFileParser, GaliciaVisaStatementParser>();
-        // services.AddSingleton<IFileParser, SantanderMastercardStatementParser>();
 
-        // ── Factory: routing por contenido para PDF, por extensión para el resto ──
-        services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
-
+        // ── Factory y router ─────────────────────────────────────────────────
+        services.AddSingleton<IFileParserFactory,
+            Imports.Parsers.FileParserFactory>();
         services.AddSingleton<IFileImportHandler, ManualExpenseImportHandler>();
         services.AddSingleton<XlsBankStatementReader>();
         services.AddSingleton<BbvaBankStatementParser>();
@@ -73,9 +80,14 @@ public static class DependencyInjection
         services.AddSingleton<IManualExpenseSheetParser, FixedSheetParser>();
         services.AddSingleton<IManualExpenseImporter, ExcelManualExpenseImporter>();
 
+        // Métricas financieras 
+        // Scoped porque depende de IApplicationDbContext (que es scoped).
+        // El Dashboard, el MCP y el Worker de insights consumen esta interfaz.
+        services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
 
-        // ── Insights ─────────────────────────────────────────────────────────────
-        services.Configure<OllamaOptions>(configuration.GetSection(OllamaOptions.SectionName));
+        // Insights (Ollama + OpenAI) 
+        services.Configure<OllamaOptions>(
+            configuration.GetSection(OllamaOptions.SectionName));
         services.AddHttpClient<IFinancialInsightsService, OllamaFinancialInsightsService>()
             .ConfigureHttpClient((sp, client) =>
             {
@@ -84,15 +96,14 @@ public static class DependencyInjection
                 client.Timeout = TimeSpan.FromSeconds(Math.Max(1, ollama.TimeoutSeconds));
             });
 
-        services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
+        services.Configure<OpenAIOptions>(
+            configuration.GetSection(OpenAIOptions.SectionName));
         services.PostConfigure<OpenAIOptions>(options =>
         {
             if (string.IsNullOrWhiteSpace(options.ApiKey))
-            {
                 options.ApiKey = configuration["OPENAI_API_KEY"]
                     ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                     ?? string.Empty;
-            }
         });
         services.AddHttpClient<IOpenAIFinancialInsightsService, OpenAIFinancialInsightsService>()
             .ConfigureHttpClient((sp, client) =>

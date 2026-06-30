@@ -16,7 +16,6 @@ internal sealed class ManualExpenseConfiguration : IEntityTypeConfiguration<Manu
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
-        // Antes: Category. Ahora: Description (vocabulario libre del usuario).
         builder.Property(e => e.Description)
             .IsRequired()
             .HasMaxLength(128);
@@ -43,6 +42,20 @@ internal sealed class ManualExpenseConfiguration : IEntityTypeConfiguration<Manu
         builder.Property(e => e.PaymentStatus).HasMaxLength(32);
         builder.Property(e => e.PaidAt).HasColumnType("timestamp with time zone");
 
+        // Estado de descarte
+        builder.Property(e => e.IsDiscarded)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(e => e.DiscardedAt)
+            .HasColumnType("timestamp with time zone");
+
+        // Índice para filtrar descartados eficientemente en GetByPeriodAsync
+        builder.HasIndex(e => e.IsDiscarded)
+            .HasDatabaseName("IX_ManualExpenses_IsDiscarded")
+            .HasFilter("\"IsDiscarded\" = true");
+
+        // Trazabilidad
         builder.Property(e => e.ExternalId)
             .IsRequired()
             .HasMaxLength(64);

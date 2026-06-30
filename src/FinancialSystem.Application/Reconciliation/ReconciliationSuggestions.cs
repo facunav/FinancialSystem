@@ -17,7 +17,7 @@ namespace FinancialSystem.Application.Reconciliation;
 /// PERSISTENCIA:
 ///   Nada de este objeto va a la DB directamente.
 ///   El flujo de confirmación (punto 3) toma MatchedPairs específicos
-///   y los convierte en ReconciledExpense + ReconciledExpenseItems.
+///   y los convierte en ProcessedExpense + ProcessedExpenseItems.
 /// </summary>
 public sealed record ReconciliationSuggestions
 {
