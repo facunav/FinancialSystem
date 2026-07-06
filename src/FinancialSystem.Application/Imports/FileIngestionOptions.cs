@@ -10,7 +10,7 @@ public sealed class FileIngestionOptions
 
     public static readonly string[] WatchedExtensions = [".pdf", ".csv", ".xlsx", ".xls"];
 
-    public string[] ManualExpenseFilePatterns { get; set; } = ["Cuentas*.xlsx"];
+    public string[] LegacyExpenseFilePatterns { get; set; } = ["Cuentas*.xlsx"];
 
     public string[] BbvaBankStatementFilePatterns { get; set; } =
        ["Caja*.xls", "*ahorros*.xls", "*corriente*.xls"];

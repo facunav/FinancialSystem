@@ -8,7 +8,7 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///
 /// DETECCIÓN:
 ///   Acepta cualquier archivo con extensión soportada que no fue tomado
-///   por un handler anterior (ManualExpenseImportHandler).
+///   por un handler anterior (BbvaBankStatementImportHandler).
 ///   Registrarse ÚLTIMO en DI es parte de su contrato implícito.
 ///
 /// EJECUCIÓN:
