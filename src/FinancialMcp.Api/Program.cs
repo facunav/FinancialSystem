@@ -27,7 +27,7 @@ app.UseHttpsRedirection();
 app.MapGet("/", () => Results.Redirect("/dashboard.html"));
 
 app.MapCategoryEndpoints();
-app.MapCounterPartyEndpoints();
+app.MapCounterpartyEndpoints();
 app.MapMetricsEndpoints();
 
 app.Run();

@@ -4,10 +4,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace FinancialSystem.Infrastructure.Persistence.Configuration
 {
-    public sealed class CounterPartyConfiguration : IEntityTypeConfiguration<CounterParty>
+    public sealed class CounterpartyConfiguration : IEntityTypeConfiguration<Counterparty>
     {
-        public void Configure(EntityTypeBuilder<CounterParty> builder)
+        public void Configure(EntityTypeBuilder<Counterparty> builder)
         {
+            // Nombre físico de tabla pinneado explícitamente: preserva el esquema
+            // ya migrado (CounterParties) aunque el tipo C# se llame Counterparty.
             builder.ToTable("CounterParties");
 
             builder.HasKey(x => x.Id);

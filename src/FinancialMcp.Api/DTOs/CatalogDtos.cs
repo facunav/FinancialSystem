@@ -8,7 +8,7 @@ public sealed record CategoryDto(Guid Id, string Name, string DisplayName, int S
 
 // ── GET /api/counterparties ───────────────────────────────────────────────────
 
-public sealed record CounterPartyDto(
+public sealed record CounterpartyDto(
     Guid Id,
     string Name,
     string Type,

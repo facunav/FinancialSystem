@@ -14,7 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ClassifiedMovement> ClassifiedMovements => Set<ClassifiedMovement>();
     public DbSet<ClassifiedMovementItem> ClassifiedMovementItems => Set<ClassifiedMovementItem>();
     public DbSet<LegacyImportedExpense> LegacyImportedExpenses => Set<LegacyImportedExpense>();
-    public DbSet<CounterParty> CounterParties => Set<CounterParty>();
+    public DbSet<Counterparty> Counterparties => Set<Counterparty>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +24,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new ClassifiedMovementConfiguration());
         modelBuilder.ApplyConfiguration(new ClassifiedMovementItemConfiguration());
         modelBuilder.ApplyConfiguration(new LegacyImportedExpenseConfiguration());
-        modelBuilder.ApplyConfiguration(new CounterPartyConfiguration());
+        modelBuilder.ApplyConfiguration(new CounterpartyConfiguration());
     }
 }

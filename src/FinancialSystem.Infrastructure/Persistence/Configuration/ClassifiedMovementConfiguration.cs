@@ -83,14 +83,19 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
             // Relaciones
             // --------------------------------------------------------------------
 
+            // Columna física pinneada explícitamente: preserva el esquema ya
+            // migrado (CounterPartyId) aunque la propiedad C# sea CounterpartyId.
+            builder.Property(x => x.CounterpartyId)
+                .HasColumnName("CounterPartyId");
+
             builder.HasOne(x => x.Category)
                 .WithMany()
                 .HasForeignKey(x => x.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            builder.HasOne(x => x.CounterParty)
+            builder.HasOne(x => x.Counterparty)
                 .WithMany()
-                .HasForeignKey(x => x.CounterPartyId)
+                .HasForeignKey(x => x.CounterpartyId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder.HasMany(x => x.Items)
@@ -106,7 +111,7 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
 
             builder.HasIndex(x => x.CategoryId);
 
-            builder.HasIndex(x => x.CounterPartyId);
+            builder.HasIndex(x => x.CounterpartyId);
 
             builder.HasIndex(x => x.FinancialImpact);
 
@@ -120,7 +125,7 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
 
             builder.HasIndex(x => new
             {
-                x.CounterPartyId,
+                x.CounterpartyId,
                 x.FinancialImpact
             });
         }

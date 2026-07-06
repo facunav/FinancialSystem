@@ -7,9 +7,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
-public static class CounterPartyEndpoints
+public static class CounterpartyEndpoints
 {
-    public static IEndpointRouteBuilder MapCounterPartyEndpoints(
+    public static IEndpointRouteBuilder MapCounterpartyEndpoints(
         this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/counterparties").WithTags("Counterparties");
@@ -30,7 +30,7 @@ public static class CounterPartyEndpoints
         [FromServices] IApplicationDbContext db = null!,
         CancellationToken ct = default)
     {
-        var query = db.CounterParties
+        var query = db.Counterparties
             .AsNoTracking()
             .Include(c => c.DefaultCategory);
 
@@ -55,7 +55,7 @@ public static class CounterPartyEndpoints
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
-        var c = await db.CounterParties
+        var c = await db.Counterparties
             .AsNoTracking()
             .Include(x => x.DefaultCategory)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -65,14 +65,14 @@ public static class CounterPartyEndpoints
 
     // POST /api/counterparties
     private static async Task<IResult> Create(
-        [FromBody] CreateCounterPartyRequest request,
+        [FromBody] CreateCounterpartyRequest request,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             return Results.BadRequest("name es requerido");
 
-        if (!Enum.TryParse<CounterPartyType>(request.Type, ignoreCase: true, out var type))
+        if (!Enum.TryParse<CounterpartyType>(request.Type, ignoreCase: true, out var type))
             return Results.BadRequest($"type inválido: '{request.Type}'");
 
         MovementType? defaultMovementType = null;
@@ -85,7 +85,7 @@ public static class CounterPartyEndpoints
             Enum.TryParse<FinancialImpact>(request.DefaultFinancialImpact, ignoreCase: true, out var fi))
             defaultImpact = fi;
 
-        var counterParty = new CounterParty
+        var counterparty = new Counterparty
         {
             Name = request.Name.Trim(),
             Type = type,
@@ -98,22 +98,22 @@ public static class CounterPartyEndpoints
             UpdatedAt = DateTime.UtcNow,
         };
 
-        db.CounterParties.Add(counterParty);
+        db.Counterparties.Add(counterparty);
         await db.SaveChangesAsync(ct);
 
         return Results.Created(
-            $"/api/counterparties/{counterParty.Id}",
-            new { Id = counterParty.Id, counterParty.Name });
+            $"/api/counterparties/{counterparty.Id}",
+            new { Id = counterparty.Id, counterparty.Name });
     }
 
     // PUT /api/counterparties/{id}
     private static async Task<IResult> Update(
         Guid id,
-        [FromBody] UpdateCounterPartyRequest request,
+        [FromBody] UpdateCounterpartyRequest request,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
-        var c = await db.CounterParties.FindAsync([id], ct);
+        var c = await db.Counterparties.FindAsync([id], ct);
         if (c is null) return Results.NotFound();
 
         if (!string.IsNullOrWhiteSpace(request.Name))
@@ -132,7 +132,7 @@ public static class CounterPartyEndpoints
         c.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        var updated = await db.CounterParties
+        var updated = await db.Counterparties
             .AsNoTracking()
             .Include(x => x.DefaultCategory)
             .FirstAsync(x => x.Id == id, ct);
@@ -146,7 +146,7 @@ public static class CounterPartyEndpoints
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
-        var c = await db.CounterParties.FindAsync([id], ct);
+        var c = await db.Counterparties.FindAsync([id], ct);
         if (c is null) return Results.NotFound();
         if (c.IsDeactivated) return Results.Ok(new { Message = "Ya estaba desactivada" });
 
@@ -156,7 +156,7 @@ public static class CounterPartyEndpoints
         return Results.Ok(new { Message = $"Contraparte '{c.Name}' desactivada" });
     }
 
-    private static CounterPartyDto ToDto(CounterParty c) => new(
+    private static CounterpartyDto ToDto(Counterparty c) => new(
         c.Id, c.Name, c.Type.ToString(),
         c.DefaultCategoryId,
         c.DefaultCategory?.DisplayName,
@@ -165,7 +165,7 @@ public static class CounterPartyEndpoints
         c.IsDeactivated);
 }
 
-public sealed record CreateCounterPartyRequest(
+public sealed record CreateCounterpartyRequest(
     string Name,
     string Type,
     string? Notes,
@@ -173,7 +173,7 @@ public sealed record CreateCounterPartyRequest(
     string? DefaultMovementType,
     string? DefaultFinancialImpact);
 
-public sealed record UpdateCounterPartyRequest(
+public sealed record UpdateCounterpartyRequest(
     string? Name,
     string? Notes,
     Guid? DefaultCategoryId,

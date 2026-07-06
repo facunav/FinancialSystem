@@ -12,7 +12,7 @@ public interface IApplicationDbContext
     DbSet<ClassifiedMovement> ClassifiedMovements { get; }
     DbSet<ClassifiedMovementItem> ClassifiedMovementItems { get; }
     DbSet<LegacyImportedExpense> LegacyImportedExpenses { get; }
-    DbSet<CounterParty> CounterParties { get; }
+    DbSet<Counterparty> Counterparties { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

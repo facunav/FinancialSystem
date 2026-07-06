@@ -79,8 +79,8 @@ public class ClassifiedMovement
     /// FK a Counterparty. Habilita sugerencias automáticas de clasificación
     /// en revisiones futuras del mismo emisor/receptor.
     /// </summary>
-    public Guid? CounterPartyId { get; set; }
-    public CounterParty? CounterParty { get; set; }
+    public Guid? CounterpartyId { get; set; }
+    public Counterparty? Counterparty { get; set; }
 
     // ── Estado de clasificación ──────────────────────────────────────────────
 

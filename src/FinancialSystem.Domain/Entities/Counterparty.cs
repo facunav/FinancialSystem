@@ -25,7 +25,7 @@ namespace FinancialSystem.Domain.Entities;
 ///   basándose en la similitud de descripción del movimiento con
 ///   descripciones históricas ya clasificadas.
 /// </summary>
-public class CounterParty
+public class Counterparty
 {
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -33,7 +33,7 @@ public class CounterParty
     public string Name { get; set; } = string.Empty;
 
     /// <summary>Tipo de contraparte según su naturaleza.</summary>
-    public CounterPartyType Type { get; set; }
+    public CounterpartyType Type { get; set; }
 
     /// <summary>
     /// Notas libres del usuario sobre esta contraparte.
@@ -74,7 +74,7 @@ public class CounterParty
 /// Tipo de contraparte según su naturaleza.
 /// Responde "¿qué tipo de entidad es la contraparte?".
 /// </summary>
-public enum CounterPartyType
+public enum CounterpartyType
 {
     /// <summary>Persona física (familiar, amigo, conocido).</summary>
     Person = 1,
