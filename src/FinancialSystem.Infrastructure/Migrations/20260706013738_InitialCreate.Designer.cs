@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FinancialSystem.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260705024327_InitialCreate")]
+    [Migration("20260706013738_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -345,7 +345,7 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<Guid?>("CounterpartyId")
+                    b.Property<Guid?>("CounterPartyId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -394,7 +394,7 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("CounterpartyId");
+                    b.HasIndex("CounterPartyId");
 
                     b.HasIndex("EffectiveDate");
 
@@ -402,7 +402,7 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasIndex("MovementType");
 
-                    b.HasIndex("CounterpartyId", "FinancialImpact");
+                    b.HasIndex("CounterPartyId", "FinancialImpact");
 
                     b.HasIndex("EffectiveDate", "CategoryId");
 
@@ -484,14 +484,14 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("FinancialSystem.Domain.Entities.CounterParty", "Counterparty")
+                    b.HasOne("FinancialSystem.Domain.Entities.CounterParty", "CounterParty")
                         .WithMany()
-                        .HasForeignKey("CounterpartyId")
+                        .HasForeignKey("CounterPartyId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 
-                    b.Navigation("Counterparty");
+                    b.Navigation("CounterParty");
                 });
 
             modelBuilder.Entity("FinancialSystem.Domain.Review.ClassifiedMovementItem", b =>

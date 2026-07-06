@@ -193,7 +193,7 @@ public static class CounterPartyEndpoints
 
     // POST /api/counterparties
     private static async Task<IResult> Create(
-        [FromBody] CreateCounterpartyRequest request,
+        [FromBody] CreateCounterPartyRequest request,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
@@ -213,7 +213,7 @@ public static class CounterPartyEndpoints
             Enum.TryParse<FinancialImpact>(request.DefaultFinancialImpact, ignoreCase: true, out var fi))
             defaultImpact = fi;
 
-        var counterparty = new CounterParty
+        var counterParty = new CounterParty
         {
             Name = request.Name.Trim(),
             Type = type,
@@ -226,18 +226,18 @@ public static class CounterPartyEndpoints
             UpdatedAt = DateTime.UtcNow,
         };
 
-        db.CounterParties.Add(counterparty);
+        db.CounterParties.Add(counterParty);
         await db.SaveChangesAsync(ct);
 
         return Results.Created(
-            $"/api/counterparties/{counterparty.Id}",
-            new { Id = counterparty.Id, counterparty.Name });
+            $"/api/counterparties/{counterParty.Id}",
+            new { Id = counterParty.Id, counterParty.Name });
     }
 
     // PUT /api/counterparties/{id}
     private static async Task<IResult> Update(
         Guid id,
-        [FromBody] UpdateCounterpartyRequest request,
+        [FromBody] UpdateCounterPartyRequest request,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
@@ -293,7 +293,7 @@ public static class CounterPartyEndpoints
         c.IsDeactivated);
 }
 
-public sealed record CreateCounterpartyRequest(
+public sealed record CreateCounterPartyRequest(
     string Name,
     string Type,
     string? Notes,
@@ -301,7 +301,7 @@ public sealed record CreateCounterpartyRequest(
     string? DefaultMovementType,
     string? DefaultFinancialImpact);
 
-public sealed record UpdateCounterpartyRequest(
+public sealed record UpdateCounterPartyRequest(
     string? Name,
     string? Notes,
     Guid? DefaultCategoryId,

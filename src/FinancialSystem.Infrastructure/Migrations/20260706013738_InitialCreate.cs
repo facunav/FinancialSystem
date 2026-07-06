@@ -142,7 +142,7 @@ namespace FinancialSystem.Infrastructure.Migrations
                     MovementType = table.Column<int>(type: "integer", nullable: false),
                     FinancialImpact = table.Column<int>(type: "integer", nullable: false),
                     CategoryId = table.Column<Guid>(type: "uuid", nullable: false),
-                    CounterpartyId = table.Column<Guid>(type: "uuid", nullable: true),
+                    CounterPartyId = table.Column<Guid>(type: "uuid", nullable: true),
                     Status = table.Column<int>(type: "integer", nullable: false),
                     ProcessingSource = table.Column<int>(type: "integer", nullable: false),
                     Comment = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
@@ -162,8 +162,8 @@ namespace FinancialSystem.Infrastructure.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_ClassifiedMovements_CounterParties_CounterpartyId",
-                        column: x => x.CounterpartyId,
+                        name: "FK_ClassifiedMovements_CounterParties_CounterPartyId",
+                        column: x => x.CounterPartyId,
                         principalTable: "CounterParties",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -243,14 +243,14 @@ namespace FinancialSystem.Infrastructure.Migrations
                 column: "CategoryId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ClassifiedMovements_CounterpartyId",
+                name: "IX_ClassifiedMovements_CounterPartyId",
                 table: "ClassifiedMovements",
-                column: "CounterpartyId");
+                column: "CounterPartyId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ClassifiedMovements_CounterpartyId_FinancialImpact",
+                name: "IX_ClassifiedMovements_CounterPartyId_FinancialImpact",
                 table: "ClassifiedMovements",
-                columns: new[] { "CounterpartyId", "FinancialImpact" });
+                columns: new[] { "CounterPartyId", "FinancialImpact" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_ClassifiedMovements_EffectiveDate",

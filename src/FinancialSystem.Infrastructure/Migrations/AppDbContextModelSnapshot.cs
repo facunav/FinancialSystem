@@ -342,7 +342,7 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<Guid?>("CounterpartyId")
+                    b.Property<Guid?>("CounterPartyId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -391,7 +391,7 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("CounterpartyId");
+                    b.HasIndex("CounterPartyId");
 
                     b.HasIndex("EffectiveDate");
 
@@ -399,7 +399,7 @@ namespace FinancialSystem.Infrastructure.Migrations
 
                     b.HasIndex("MovementType");
 
-                    b.HasIndex("CounterpartyId", "FinancialImpact");
+                    b.HasIndex("CounterPartyId", "FinancialImpact");
 
                     b.HasIndex("EffectiveDate", "CategoryId");
 
@@ -481,14 +481,14 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("FinancialSystem.Domain.Entities.CounterParty", "Counterparty")
+                    b.HasOne("FinancialSystem.Domain.Entities.CounterParty", "CounterParty")
                         .WithMany()
-                        .HasForeignKey("CounterpartyId")
+                        .HasForeignKey("CounterPartyId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 
-                    b.Navigation("Counterparty");
+                    b.Navigation("CounterParty");
                 });
 
             modelBuilder.Entity("FinancialSystem.Domain.Review.ClassifiedMovementItem", b =>

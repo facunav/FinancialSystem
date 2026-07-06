@@ -88,9 +88,9 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
                 .HasForeignKey(x => x.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            builder.HasOne(x => x.Counterparty)
+            builder.HasOne(x => x.CounterParty)
                 .WithMany()
-                .HasForeignKey(x => x.CounterpartyId)
+                .HasForeignKey(x => x.CounterPartyId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder.HasMany(x => x.Items)
@@ -106,7 +106,7 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
 
             builder.HasIndex(x => x.CategoryId);
 
-            builder.HasIndex(x => x.CounterpartyId);
+            builder.HasIndex(x => x.CounterPartyId);
 
             builder.HasIndex(x => x.FinancialImpact);
 
@@ -120,7 +120,7 @@ namespace FinancialSystem.Infrastructure.Persistence.Configuration
 
             builder.HasIndex(x => new
             {
-                x.CounterpartyId,
+                x.CounterPartyId,
                 x.FinancialImpact
             });
         }
