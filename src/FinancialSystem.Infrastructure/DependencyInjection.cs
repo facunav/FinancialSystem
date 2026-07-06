@@ -1,6 +1,5 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
-using FinancialSystem.Application.Imports.Parsing;
 using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Metrics;
 using FinancialSystem.Application.Parsing.Bbva;
@@ -9,7 +8,7 @@ using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
-using FinancialSystem.Infrastructure.Imports.ManualExpenses;
+using FinancialSystem.Infrastructure.Imports.Legacy;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Persistence;
@@ -45,49 +44,41 @@ public static class DependencyInjection
         services.AddSingleton<ITransactionNormalizer,
             Imports.Normalization.TransactionNormalizer>();
 
-        // ── Parsers CSV y Excel ──────────────────────────────────────────────
+        // ── Parsers genéricos ─────────────────────────────────────────────────
         services.AddSingleton<IFileParser, Imports.Parsers.CsvFileParser>();
         services.AddSingleton<IFileParser, Imports.Parsers.ExcelWorkbookParser>();
 
-        // ── Infraestructura PDF compartida ───────────────────────────────────
+        // ── Infraestructura PDF ───────────────────────────────────────────────
         services.AddSingleton<PdfPigTextExtractor>();
         services.AddSingleton<IPdfTextExtractor>(sp =>
             sp.GetRequiredService<PdfPigTextExtractor>());
 
-        // ── Parsers PDF: line parsers (singleton) ────────────────────────────
+        // ── Parsers PDF ───────────────────────────────────────────────────────
         services.AddSingleton<BbvaTransactionLineParser>();
         services.AddSingleton<MastercardTransactionLineParser>();
-
-        // ── Parsers PDF: statement parsers ───────────────────────────────────
-        // ORDEN IMPORTANTE: más específico primero.
         services.AddSingleton<IFileParser, BbvaVisaStatementParser>();
         services.AddSingleton<IFileParser, BbvaMastercardStatementParser>();
-        // Futuros parsers PDF van aquí:
-        // services.AddSingleton<IFileParser, GaliciaVisaStatementParser>();
 
-        // ── Factory y router ─────────────────────────────────────────────────
-        services.AddSingleton<IFileParserFactory,
-            Imports.Parsers.FileParserFactory>();
-        services.AddSingleton<IFileImportHandler, ManualExpenseImportHandler>();
+        // ── Factory y router de archivos ──────────────────────────────────────
+        services.AddSingleton<IFileParserFactory, Imports.Parsers.FileParserFactory>();
         services.AddSingleton<XlsBankStatementReader>();
         services.AddSingleton<BbvaBankStatementParser>();
         services.AddSingleton<BbvaBankStatementImporter>();
         services.AddSingleton<IFileImportHandler, BbvaBankStatementImportHandler>();
         services.AddSingleton<IFileImportHandler, TransactionImportHandler>();
-        services.AddSingleton<IFileImportRouter, FileImportRouter>();
-        services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
-        services.AddSingleton<IManualExpenseSheetParser, DynamicSheetParser>();
-        services.AddSingleton<IManualExpenseSheetParser, FixedSheetParser>();
-        services.AddSingleton<IManualExpenseImporter, ExcelManualExpenseImporter>();
 
-        // Métricas financieras 
-        // Scoped porque depende de IApplicationDbContext (que es scoped).
-        // El Dashboard, el MCP y el Worker de insights consumen esta interfaz.
+        // ── Importador legacy Excel (solo para migración histórica) ───────────
+        services.AddSingleton<ILegacyExpenseSheetParser, LegacyDynamicSheetParser>();
+        services.AddSingleton<ILegacyExpenseSheetParser, LegacyFixedSheetParser>();
+        services.AddSingleton<ILegacyExpenseImporter, ExcelLegacyExpenseImporter>();
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
 
-        // Insights (Ollama + OpenAI) 
-        services.Configure<OllamaOptions>(
-            configuration.GetSection(OllamaOptions.SectionName));
+        services.AddSingleton<IFileImportRouter, FileImportRouter>();
+        services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
+
+
+        // ── Insights (Ollama + OpenAI) ────────────────────────────────────────
+        services.Configure<OllamaOptions>(configuration.GetSection(OllamaOptions.SectionName));
         services.AddHttpClient<IFinancialInsightsService, OllamaFinancialInsightsService>()
             .ConfigureHttpClient((sp, client) =>
             {
@@ -96,8 +87,7 @@ public static class DependencyInjection
                 client.Timeout = TimeSpan.FromSeconds(Math.Max(1, ollama.TimeoutSeconds));
             });
 
-        services.Configure<OpenAIOptions>(
-            configuration.GetSection(OpenAIOptions.SectionName));
+        services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
         services.PostConfigure<OpenAIOptions>(options =>
         {
             if (string.IsNullOrWhiteSpace(options.ApiKey))

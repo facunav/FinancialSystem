@@ -53,7 +53,7 @@ public sealed class FinancialTools
             sb.AppendLine($"  Gastos:      {FormatArs(summary.TotalExpenses)}");
             sb.AppendLine($"  Balance:     {FormatArs(summary.NetBalance)} ({newBalance})");
             sb.AppendLine($"  Tasa ahorro: {summary.SavingsRate}%");
-            sb.AppendLine($"  Movimientos: {summary.ProcessedCount} procesados ({summary.ConfirmedCount} confirmados, {summary.ReviewedCount} revisados)");
+            sb.AppendLine($"  Movimientos: {summary.ClassifiedCount} procesados ({summary.ConfirmedCount} confirmados, {summary.ReviewedCount} revisados)");
             return sb.ToString();
         }
         catch (Exception ex)

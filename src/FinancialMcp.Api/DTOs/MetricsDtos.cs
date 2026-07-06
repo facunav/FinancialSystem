@@ -11,17 +11,16 @@ public sealed record PeriodSummaryDto(
     decimal TotalExpenses,
     decimal NetBalance,
     decimal SavingsRate,
-    int ProcessedCount,
+    int ClassifiedCount,
     int ConfirmedCount,
     int ReviewedCount,
     string Currency)
 {
-    // Renombrado de From → Create para evitar conflicto con la propiedad From del record
     public static PeriodSummaryDto Create(PeriodSummary s) => new(
         s.From.ToString("yyyy-MM-dd"),
         s.To.ToString("yyyy-MM-dd"),
         s.TotalIncome, s.TotalExpenses, s.NetBalance, s.SavingsRate,
-        s.ProcessedCount, s.ConfirmedCount, s.ReviewedCount, s.Currency);
+        s.ClassifiedCount, s.ConfirmedCount, s.ReviewedCount, s.Currency);
 }
 
 // ── GET /api/metrics/by-category ─────────────────────────────────────────────
@@ -45,7 +44,6 @@ public sealed record CategoryExpensesResponse(
     decimal GrandTotal,
     IReadOnlyList<CategoryExpenseDto> Categories)
 {
-    // Renombrado de From → Create para evitar conflicto con la propiedad From del record
     public static CategoryExpensesResponse Create(
         DateOnly from, DateOnly to,
         IReadOnlyList<CategoryExpense> categories) => new(

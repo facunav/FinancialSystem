@@ -4,7 +4,6 @@ using FinancialSystem.Application.Insights;
 using FinancialSystem.Infrastructure;
 using FinancialSystem.Infrastructure.Persistence;
 using FinancialSystem.Worker.Services;
-using FinancialSystem.Infrastructure.Reconciliation;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<FileIngestionOptions>(
@@ -15,7 +14,6 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<ImportsFolderWatcherHostedService>();
 builder.Services.AddHostedService<TransactionInsightsWorker>();
-builder.Services.AddReconciliation(builder.Configuration);
 
 var host = builder.Build();
 await DatabaseMigrationExtensions.ApplyMigrationsAsync(host.Services, "FinancialSystem.Worker");

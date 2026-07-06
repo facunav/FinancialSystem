@@ -1,33 +1,29 @@
-﻿namespace FinancialSystem.Domain.Enums
+﻿namespace FinancialSystem.Domain.Enums;
+
+/// <summary>
+/// Cómo fue procesado este movimiento. Para trazabilidad y auditoría.
+/// El MCP no lo usa para cálculos.
+/// </summary>
+public enum ProcessingSource
 {
     /// <summary>
-    /// Cómo fue procesado este gasto. Reemplaza ConfirmationSource + ReconciliationGroupingMode.
-    /// Permite auditar el origen del procesamiento sin necesitar dos campos separados.
-    /// El MCP no lo usa para cálculos, solo para trazabilidad.
+    /// El usuario armó la coincidencia manualmente sin sugerencia del motor.
     /// </summary>
-    public enum ProcessingSource
-    {
-        /// <summary>
-        /// El usuario armó el match manualmente sin sugerencia del motor.
-        /// Puede ser 1↔1, N↔M manual.
-        /// </summary>
-        ManualMatch = 1,
+    ManualMatch = 1,
 
-        /// <summary>
-        /// El usuario confirmó una sugerencia de confianza media generada por el motor.
-        /// </summary>
-        ConfirmedFromSuggestion = 2,
+    /// <summary>
+    /// El usuario confirmó una sugerencia de confianza media generada por el motor.
+    /// </summary>
+    ConfirmedFromSuggestion = 2,
 
-        /// <summary>
-        /// El usuario confirmó una sugerencia de alta confianza (AutoConfirmable).
-        /// </summary>
-        ConfirmedFromAutoSuggestion = 3,
+    /// <summary>
+    /// El usuario confirmó una sugerencia de alta confianza (auto-confirmable).
+    /// </summary>
+    ConfirmedFromHighConfidenceSuggestion = 3,
 
-        /// <summary>
-        /// El usuario marcó el movimiento como revisado manualmente, sin contraparte Excel.
-        /// Siempre corresponde a Status = Reviewed.
-        /// </summary>
-        ManualReview = 4,
-    }
-
+    /// <summary>
+    /// El usuario clasificó el movimiento manualmente, sin coincidencia externa.
+    /// Siempre corresponde a ClassificationStatus = Reviewed.
+    /// </summary>
+    ManualReview = 4,
 }

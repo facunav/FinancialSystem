@@ -2,7 +2,6 @@ namespace FinancialSystem.Application.Imports;
 
 /// <summary>
 /// Contrato para un handler de importación de archivos.
-///
 /// Cada implementación conoce:
 ///   1. Qué archivos puede procesar (CanHandle)
 ///   2. Cómo procesarlos (HandleAsync)
@@ -10,16 +9,22 @@ namespace FinancialSystem.Application.Imports;
 /// El router itera los handlers registrados en orden y delega
 /// al primero que devuelva CanHandle = true.
 ///
+/// HANDLERS ACTUALES (en orden de registro en DI):
+///   1. LegacyExpenseImportHandler  — archivos Excel históricos del usuario (migración)
+///   2. BbvaBankStatementImportHandler — extractos XLS del banco BBVA
+///   3. TransactionImportHandler    — catch-all para PDFs de tarjeta y otros
+///
 /// EXTENSIÓN:
-///   Para agregar soporte a una nueva fuente (JSON, OFX, etc.):
+///   Para agregar soporte a una nueva fuente (OFX, JSON, otro banco):
 ///   1. Implementar IFileImportHandler
-///   2. Registrar en DI antes de TransactionImportHandler
+///   2. Registrar en DI ANTES de TransactionImportHandler
 ///   Sin tocar el watcher, el router, ni los handlers existentes.
 /// </summary>
 public interface IFileImportHandler
 {
     /// <summary>
-    /// Nombre descriptivo para logging. Ejemplo: "ManualExpense", "Transaction".
+    /// Nombre descriptivo para logging.
+    /// Ejemplos: "LegacyExpense", "BbvaBankStatement", "Transaction".
     /// </summary>
     string HandlerName { get; }
 
