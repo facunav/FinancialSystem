@@ -79,6 +79,8 @@ public static class DependencyInjection
         services.AddScoped<IMovementLoader, Review.MovementLoader>();
         services.AddSingleton<IMatchingRule, Review.Matching.AmountRule>();
         services.AddSingleton<IMatchingRule, Review.Matching.DateRule>();
+        services.AddSingleton<IMatchingRule, Review.Matching.DescriptionRule>();
+        services.AddSingleton<IMatchingRule, Review.Matching.PaymentMethodRule>();
         services.AddSingleton<IMatchScorer, Review.Matching.MatchScorer>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
