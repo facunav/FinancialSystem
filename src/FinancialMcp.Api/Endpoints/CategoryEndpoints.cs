@@ -108,8 +108,6 @@ public static class CategoryEndpoints
     {
         var category = await db.Categories.FindAsync([id], ct);
         if (category is null) return Results.NotFound();
-        if (category.IsSystem)
-            return Results.BadRequest("Las categorías del sistema no pueden desactivarse");
         if (category.IsDeactivated)
             return Results.Ok(new { Message = "Ya estaba desactivada" });
 

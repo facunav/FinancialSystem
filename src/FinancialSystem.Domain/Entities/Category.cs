@@ -8,7 +8,7 @@
 /// ADMINISTRABLE POR CRUD:
 ///   El sistema inicializa un conjunto de categorías del sistema mediante seed.
 ///   El usuario puede crear categorías propias, editarlas, desactivarlas y reordenarlas.
-///   Las categorías del sistema (IsSystem=true) no pueden eliminarse ni desactivarse.
+///   Las categorías del sistema (IsSystem=true) no pueden eliminarse, pero sí desactivarse.
 ///
 /// NAMING:
 ///   Name es la clave técnica invariante (en inglés, nunca cambia).
