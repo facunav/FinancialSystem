@@ -863,13 +863,17 @@
         }
 
         // UnmatchedMovementDto -> misma forma plana que ya consume el resto del código.
+        // id = sourceId (Guid técnico real de la fila en su tabla de origen): es lo
+        // que se manda en classify/confirm-match/discard-candidates. originalId
+        // (cupón, número de fila, etc.) es solo una referencia de negocio y nunca
+        // debe usarse como identificador — hoy esta UI tampoco lo muestra.
         // alreadyProcessed siempre arranca en false: el motor ya excluye del resultado
         // los movimientos que tienen un ClassifiedMovementItem, así que todo lo que
         // llega acá es, por definición, pendiente.
         function toRow(u) {
             const m = u.movement;
             return {
-                id: m.originalId, date: m.date, description: m.description,
+                id: m.sourceId, date: m.date, description: m.description,
                 amount: m.amount, source: m.source, alreadyProcessed: false,
             };
         }
