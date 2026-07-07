@@ -76,6 +76,7 @@ public static class DependencyInjection
         services.AddSingleton<ILegacyExpenseSheetParser, LegacyFixedSheetParser>();
         services.AddSingleton<ILegacyExpenseImporter, ExcelLegacyExpenseImporter>();
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
+        services.AddScoped<IMovementLoader, Review.MovementLoader>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
