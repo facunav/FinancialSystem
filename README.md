@@ -4,22 +4,26 @@
 
 FinancialMcp is a personal financial management platform focused on building a reliable financial history from multiple data sources and enabling future AI-powered financial analysis.
 
-The project started as a reconciliation tool but evolved into a broader financial intelligence platform.
+The project started as a reconciliation tool but evolved into a broader financial intelligence platform, the Financial Copilot.
 
 The long-term goal is to provide a financial MCP (Model Context Protocol) capable of understanding personal finances, answering historical questions, generating forecasts, detecting spending patterns, and helping make better financial decisions.
+
+> **`FinancialMcp-Roadmap.md` is the source of truth for this project.** Before implementing new features, read it in full. Any decision about architecture, data model, or workflow must align with the vision defined there. This README gives a high-level orientation only.
 
 ---
 
 # Vision
 
-This is NOT a traditional accounting system.
+This is NOT a traditional accounting system, and it is NOT a bank-reconciliation tool.
+
+The system is centered on **reviewing and classifying financial movements**, not on matching them against an external record. Any movement that enters the system — regardless of its source — goes through a review process where the user classifies it along its dimensions (see "Movement Classification Model" below). Matching against an external record (a personal Excel, for example) is only an optional aid to speed up that classification when a coincidence exists — it is never the goal of the process. A reviewed movement without any external counterpart is just as valid and complete a result as one that was matched.
 
 The objective is to create a personal financial knowledge base that combines:
 
 * Bank account movements
 * Credit card transactions
-* Manual expense tracking
-* Fixed expenses
+* Legacy/manual expense records (migration aid only, see below)
+* Fixed expenses (planned, see Roadmap)
 * Historical spending behavior
 
 into a single source of truth.
@@ -37,14 +41,9 @@ Eventually the platform will power an AI assistant capable of answering question
 
 # Core Philosophy
 
-Financial movements are considered the source of truth.
+Bank and credit card movements are considered the financial source of truth.
 
-Manual records are used to:
-
-* Improve categorization
-* Validate expenses
-* Detect missing records
-* Enrich financial information
+The personal Excel spreadsheet is **not** part of the long-term vision of the system. Its role is exclusively a **migration/compatibility mechanism**, useful only while historical data is transitioned into FinancialMcp. New flows (fixed expenses, counterparties, categories) are designed without depending on Excel data.
 
 The system prioritizes what actually happened in bank accounts and credit cards over manual spreadsheets.
 
@@ -78,9 +77,9 @@ These are also considered real financial events.
 
 ---
 
-## Manual Expense Records
+## Legacy Imported Expenses
 
-Imported from personal Excel spreadsheets.
+Imported from personal Excel spreadsheets. Used only as a migration/compatibility aid for historical data — not part of the system's long-term data model.
 
 Examples:
 
@@ -108,112 +107,42 @@ Bank:
 FARMACIA AMANCAY
 $49.974
 
-Both represent the same expense.
+Both represent the same expense — the bank movement is the one that gets classified; the Excel record only helps suggest how.
 
 ---
 
-## Fixed Expenses
+## Fixed Expenses (planned)
 
-Fixed expenses represent future planning.
-
-Examples:
-
-* Internet
-* Insurance
-* Electricity
-* Gas
-* Mobile Phone
-
-The date when a fixed expense is registered does not necessarily represent the payment date.
-
-Fixed expenses are managed independently from reconciliation.
+Fixed expenses represent recurring financial commitments (rent, internet, insurance, electricity, gas, mobile phone) managed natively in the system, independent of the Excel. This module is planned — see the Roadmap's "Gastos Fijos" section for its current status.
 
 ---
 
-# Reconciliation Model
+# Movement Classification Model
 
-The reconciliation engine supports:
+Every movement that gets classified is described through **four independent dimensions**:
 
-* 1 ↔ 1
-* N ↔ 1
-* 1 ↔ N
-* N ↔ M
+* **Movement Type** — what happened (Purchase, Transfer, Payment, Receipt, Fee, Interest, Refund, Adjustment, Other).
+* **Financial Impact** — how it affects net worth (Expense, Income, Internal Movement, Debt Payment/Financing). Only Expense counts toward net spending metrics.
+* **Category** — what the money was used for. An administrable entity (CRUD), not a closed enum.
+* **Counterparty** — who or what the movement relates to. An administrable entity (CRUD) with suggested default values (category, movement type, financial impact) to speed up classification of recurring movements.
 
-Examples:
-
-## 1 ↔ 1
-
-Excel:
-
-Pharmacy $50.000
-
-Bank:
-
-FARMACIA AMANCAY $49.974
+Matching against a legacy/manual record can group movements 1↔1, N↔1, 1↔N, or N↔M as a suggestion aid, but the classification itself is always expressed through the four dimensions above.
 
 ---
 
-## N ↔ 1
+# Movement Classification States
 
-Excel:
+A classified movement (`ClassifiedMovement`) only has two possible states — there is no "Pending" state, because every row in that table represents financial truth already verified by the user:
 
-Pharmacy $20.000
+## Confirmed
 
-Pharmacy $30.000
-
-Bank:
-
-FARMACIA AMANCAY $50.000
-
----
-
-## 1 ↔ N
-
-Excel:
-
-Supermarket $100.000
-
-Bank:
-
-Purchase A $60.000
-
-Purchase B $40.000
-
----
-
-## N ↔ M
-
-Multiple records grouped together.
-
----
-
-# Movement States
-
-Every financial movement eventually falls into one of these states:
-
-## Pending
-
-Not reviewed yet.
-
----
-
-## Matched
-
-Successfully reconciled against another source.
-
----
+The user accepted a suggested match against a legacy/manual record.
 
 ## Reviewed
 
-Manually reviewed and intentionally left without a counterpart.
+The user classified the movement manually, with no external counterpart. Examples: personal transfers, gifts, internal transfers, bank fees, interests.
 
-Examples:
-
-* Personal transfers
-* Gifts
-* Internal transfers
-* Bank fees
-* Interests
+There is no hierarchy between `Confirmed` and `Reviewed` — both are, in essence, classified movements. The distinction is kept only for traceability (`ProcessingSource`), not as a functional difference.
 
 ---
 
@@ -236,48 +165,27 @@ Endpoints should remain thin and delegate behavior to commands, queries, handler
 
 # Current Priorities
 
-## Phase 1 - Reconciliation Stabilization
+See `FinancialMcp-Roadmap.md` for the full, up-to-date phase breakdown. Summary:
 
-Goals:
+## Phase 1 - Data Foundation (in progress)
 
-* Finish N↔M reconciliation support
-* Complete reconciliation UI
-* Implement Reviewed movements
-* Improve reconciliation workflows
-* Improve pending movement management
+Goals: clean, classified, correctly persisted data — bank/card import, classification model (Movement Type, Financial Impact, Category, Counterparty), N↔M review support.
 
----
+## Phase 2 - Financial Visibility
 
-## Phase 2 - Smart Matching
+Goals: metrics dashboard, fixed expenses module, budgets, deviation alerts.
 
-Goals:
+## Phase 3 - Planning
 
-* Flexible date matching
-* Flexible amount matching
-* Description similarity matching
-* Automatic suggestions
+Goals: cash flow projection, upcoming due dates, financial goals, net worth.
 
----
+## Phase 4 - Investments and Net Worth
 
-## Phase 3 - Fixed Expenses
+Goals: investment tracking, returns, asset distribution.
 
-Goals:
+## Phase 5 - AI and MCP
 
-* Fixed expense tracking
-* Automatic payment detection
-* Fixed expense analytics
-
----
-
-## Phase 4 - Financial MCP
-
-Goals:
-
-* Historical financial analysis
-* Budget recommendations
-* Spending forecasts
-* Anomaly detection
-* Personalized financial advice
+Goals: MCP tools for planning and net worth, local model integration, natural language answers, proactive recommendations.
 
 ---
 
@@ -300,11 +208,12 @@ The MCP should eventually answer questions such as:
 
 Before implementing new features:
 
-1. Read this README.
-2. Review the reconciliation workflow.
-3. Preserve the existing architecture.
-4. Avoid bypassing application services.
-5. Keep business rules inside Domain/Application layers.
-6. Use the roadmap and business rules as the source of truth.
+1. Read `FinancialMcp-Roadmap.md` in full — it is the source of truth.
+2. Verify the proposal answers at least one question from the Roadmap's philosophy.
+3. Verify it does not contradict a frozen data-model decision.
+4. Preserve the existing architecture.
+5. Avoid bypassing application services.
+6. Keep business rules inside Domain/Application layers.
+7. If something in the code contradicts the Roadmap, flag it explicitly before continuing.
 
 This document should be considered the starting context for both developers and AI assistants working on the project.
