@@ -18,6 +18,8 @@ public static class MovementReviewEndpoints
         group.MapGet("/unclassified", GetUnclassified);
         group.MapPost("/classify", Classify);
         group.MapPost("/confirm-match", ConfirmMatch);
+        group.MapPost("/discard-candidates", DiscardCandidates);
+        group.MapPost("/restore-candidates", RestoreCandidates);
 
         return app;
     }
@@ -125,5 +127,34 @@ public static class MovementReviewEndpoints
         return Results.Created(
             $"/api/movement-review/{id}",
             new ConfirmMatchResponseDto(id, "Confirmed"));
+    }
+
+    // ── POST /api/movement-review/discard-candidates ──────────────────────────
+
+    private static async Task<IResult> DiscardCandidates(
+        [FromBody] LegacyCandidatesIdsRequest request,
+        [FromServices] DiscardLegacyCandidatesHandler handler,
+        CancellationToken ct)
+    {
+        var result = await handler.Handle(new DiscardLegacyCandidatesCommand(request.Ids), ct);
+        return ToResult(result);
+    }
+
+    // ── POST /api/movement-review/restore-candidates ──────────────────────────
+
+    private static async Task<IResult> RestoreCandidates(
+        [FromBody] LegacyCandidatesIdsRequest request,
+        [FromServices] RestoreLegacyCandidatesHandler handler,
+        CancellationToken ct)
+    {
+        var result = await handler.Handle(new RestoreLegacyCandidatesCommand(request.Ids), ct);
+        return ToResult(result);
+    }
+
+    private static IResult ToResult(LegacyCandidatesBulkResult result)
+    {
+        if (!result.IsSuccess) return Results.BadRequest("ids no puede estar vacío");
+
+        return Results.Ok(new LegacyCandidatesBulkResponseDto(result.UpdatedIds, result.NotFoundIds));
     }
 }

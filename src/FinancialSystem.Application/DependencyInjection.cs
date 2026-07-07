@@ -13,6 +13,8 @@ public static class DependencyInjection
         services.AddScoped<GetUnclassifiedMovementsHandler>();
         services.AddScoped<ClassifyMovementHandler>();
         services.AddScoped<ConfirmMatchHandler>();
+        services.AddScoped<DiscardLegacyCandidatesHandler>();
+        services.AddScoped<RestoreLegacyCandidatesHandler>();
         return services;
     }
 

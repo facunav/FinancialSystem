@@ -148,3 +148,11 @@ public sealed record ConfirmMatchRequest(
     Guid? CounterpartyId);
 
 public sealed record ConfirmMatchResponseDto(Guid ClassifiedMovementId, string Status);
+
+// ── POST /api/movement-review/discard-candidates y /restore-candidates ──────
+
+public sealed record LegacyCandidatesIdsRequest(IReadOnlyList<Guid> Ids);
+
+public sealed record LegacyCandidatesBulkResponseDto(
+    IReadOnlyList<Guid> UpdatedIds,
+    IReadOnlyList<Guid> NotFoundIds);
