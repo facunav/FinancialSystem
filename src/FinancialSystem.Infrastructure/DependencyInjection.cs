@@ -77,6 +77,9 @@ public static class DependencyInjection
         services.AddSingleton<ILegacyExpenseImporter, ExcelLegacyExpenseImporter>();
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
         services.AddScoped<IMovementLoader, Review.MovementLoader>();
+        services.AddSingleton<IMatchingRule, Review.Matching.AmountRule>();
+        services.AddSingleton<IMatchingRule, Review.Matching.DateRule>();
+        services.AddSingleton<IMatchScorer, Review.Matching.MatchScorer>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
