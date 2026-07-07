@@ -8,6 +8,9 @@ namespace FinancialSystem.Api.DTOs;
 
 public sealed record FinancialMovementDto(
     Guid Id,
+    // Identificador técnico: el Guid real de la fila en su tabla de origen.
+    // Es lo que hay que enviar como sourceId en classify/confirm-match/discard-candidates.
+    Guid SourceId,
     DateTime Date,
     string Description,
     decimal Amount,
@@ -15,11 +18,13 @@ public sealed record FinancialMovementDto(
     string Source,
     string Category,
     string? PaymentMethod,
+    // Referencia de negocio (cupón, número de fila, etc.), solo para mostrar en UI.
+    // No usar como identificador técnico — para eso está SourceId.
     string? OriginalId,
     string? SourceFile)
 {
     public static FinancialMovementDto Create(FinancialMovement m) => new(
-        m.Id, m.Date, m.Description, m.Amount, m.Currency,
+        m.Id, m.SourceId, m.Date, m.Description, m.Amount, m.Currency,
         m.Source.ToString(), m.Category.ToString(),
         m.PaymentMethod?.ToString(), m.OriginalId, m.SourceFile);
 }

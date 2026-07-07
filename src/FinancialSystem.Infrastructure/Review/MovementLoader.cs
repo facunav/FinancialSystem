@@ -59,6 +59,7 @@ internal sealed class MovementLoader : IMovementLoader
 
     private static FinancialMovement ToFinancialMovement(BankStatement statement) => new()
     {
+        SourceId = statement.Id,
         Date = statement.Date,
         Description = statement.Concept,
         // BankStatement: positivo = crédito/ingreso, negativo = débito/egreso.
@@ -67,12 +68,13 @@ internal sealed class MovementLoader : IMovementLoader
         Amount = -statement.Amount,
         Currency = statement.Currency,
         Source = MovementSource.BankDebit,
-        OriginalId = statement.Id.ToString(),
+        OriginalId = statement.RowNumber?.ToString(),
         SourceFile = statement.SourceFile,
     };
 
     private static FinancialMovement ToFinancialMovement(Transaction transaction) => new()
     {
+        SourceId = transaction.Id,
         Date = transaction.Date,
         Description = transaction.Description,
         // Transaction (extracto tarjeta): ya sigue la convención de FinancialMovement
@@ -80,13 +82,14 @@ internal sealed class MovementLoader : IMovementLoader
         Amount = transaction.Amount,
         Currency = transaction.Currency,
         Source = MovementSource.CreditCard,
-        OriginalId = transaction.CouponNumber ?? transaction.Id.ToString(),
+        OriginalId = transaction.CouponNumber,
         SourceFile = transaction.SourceFile,
         RawLine = transaction.RawLine,
     };
 
     private static FinancialMovement ToFinancialMovement(LegacyImportedExpense expense) => new()
     {
+        SourceId = expense.Id,
         Date = expense.Date,
         Description = expense.Description,
         // LegacyImportedExpense: registro de gasto manual, ya sigue la convención
@@ -97,7 +100,7 @@ internal sealed class MovementLoader : IMovementLoader
             ? MovementSource.LegacyFixed
             : MovementSource.LegacyDynamic,
         PaymentMethod = ToPaymentMethod(expense.PaymentMethod),
-        OriginalId = expense.RowNumber?.ToString() ?? expense.Id.ToString(),
+        OriginalId = expense.RowNumber?.ToString(),
         SourceFile = expense.SourceFile,
         SheetName = expense.SheetName,
     };

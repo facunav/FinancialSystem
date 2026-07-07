@@ -15,6 +15,16 @@ public sealed record FinancialMovement
 {
     public Guid Id { get; init; } = Guid.NewGuid();
 
+    /// <summary>
+    /// Id real de la entidad persistida en su tabla de origen (Transaction.Id,
+    /// BankStatement.Id o LegacyImportedExpense.Id según <see cref="Source"/>).
+    /// Es el identificador técnico: el que hay que enviar como SourceId en los
+    /// comandos de escritura (ClassifyMovement, ConfirmMatch, DiscardLegacyCandidates).
+    /// No usar <see cref="OriginalId"/> para eso — esa es una referencia de negocio,
+    /// no necesariamente un Guid.
+    /// </summary>
+    public required Guid SourceId { get; init; }
+
     /// <summary>Fecha del movimiento según la fuente original.</summary>
     public required DateTime Date { get; init; }
 
@@ -40,7 +50,11 @@ public sealed record FinancialMovement
     /// </summary>
     public PaymentMethod? PaymentMethod { get; init; }
 
-    /// <summary>Identificador original en la fuente (cupón Visa, número de fila Excel, etc.).</summary>
+    /// <summary>
+    /// Referencia de negocio en la fuente (cupón Visa, número de fila Excel, etc.),
+    /// solo para mostrar en UI o trazabilidad. No es un identificador técnico
+    /// estable ni necesariamente un Guid — para eso usar <see cref="SourceId"/>.
+    /// </summary>
     public string? OriginalId { get; init; }
 
     /// <summary>Archivo de origen para trazabilidad completa.</summary>
