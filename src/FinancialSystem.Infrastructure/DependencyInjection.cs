@@ -83,6 +83,7 @@ public static class DependencyInjection
         services.AddSingleton<IMatchingRule, Review.Matching.PaymentMethodRule>();
         services.AddSingleton<IMatchScorer, Review.Matching.MatchScorer>();
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
+        services.AddScoped<IReviewEngine, Review.ReviewEngine>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
