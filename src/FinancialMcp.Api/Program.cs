@@ -29,5 +29,6 @@ app.MapGet("/", () => Results.Redirect("/dashboard.html"));
 app.MapCategoryEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapMetricsEndpoints();
+app.MapMovementReviewEndpoints();
 
 app.Run();
