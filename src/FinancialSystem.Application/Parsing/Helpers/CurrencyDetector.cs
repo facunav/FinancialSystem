@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Text.RegularExpressions;
 using FinancialSystem.Application.Imports.Parsing;
 
@@ -10,7 +10,7 @@ namespace FinancialSystem.Application.Parsing.Helpers
         private static readonly Regex UsdAmountRegex = new(@"\bUSD\s*([\d]{1,3}(?:\.[\d]{3})*,[\d]{1,2}|[\d]+,[\d]{1,2})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AnyAmountRegex = new(@"([\d]{1,3}(?:\.[\d]{3})*,[\d]{1,2}|[\d]+,[\d]{1,2})", RegexOptions.Compiled);
 
-        // Detecta la moneda básica por presencia de 'USD' en la línea. Por defecto ARS.
+        // Detecta la moneda bÃ¡sica por presencia de 'USD' en la lÃ­nea. Por defecto ARS.
         public static string Detect(string rawLine)
         {
             if (string.IsNullOrWhiteSpace(rawLine))
@@ -24,9 +24,9 @@ namespace FinancialSystem.Application.Parsing.Helpers
         public static ParseResult<decimal> TryExtractUsdAmount(string rawLine)
         {
             if (string.IsNullOrWhiteSpace(rawLine))
-                return ParseResult<decimal>.Fail("Cadena vacía");
+                return ParseResult<decimal>.Fail("Cadena vacÃ­a");
 
-            // 1) Buscamos patrón explícito: 'USD 4,99' (caso más común)
+            // 1) Buscamos patrÃ³n explÃ­cito: 'USD 4,99' (caso mÃ¡s comÃºn)
             var m = UsdAmountRegex.Match(rawLine);
             if (m.Success)
             {
@@ -34,7 +34,7 @@ namespace FinancialSystem.Application.Parsing.Helpers
                 return AmountParser.ParseFromToken(token);
             }
 
-            // 2) Si 'USD' aparece pero sin monto inmediato, buscamos el primer monto numérico tras 'USD'
+            // 2) Si 'USD' aparece pero sin monto inmediato, buscamos el primer monto numÃ©rico tras 'USD'
             var idx = rawLine.IndexOf("USD", StringComparison.OrdinalIgnoreCase);
             if (idx >= 0)
             {
@@ -44,8 +44,8 @@ namespace FinancialSystem.Application.Parsing.Helpers
                     return AmountParser.ParseFromToken(amtMatch.Value);
             }
 
-            // 3) No se encontró monto USD
-            return ParseResult<decimal>.Fail("No se encontró monto USD");
+            // 3) No se encontrÃ³ monto USD
+            return ParseResult<decimal>.Fail("No se encontrÃ³ monto USD");
         }
     }
 }

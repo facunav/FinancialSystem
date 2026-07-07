@@ -1,4 +1,4 @@
-namespace FinancialSystem.Domain.Entities;
+﻿namespace FinancialSystem.Domain.Entities;
 
 public class Transaction
 {
@@ -9,7 +9,7 @@ public class Transaction
     public string Currency { get; set; } = "ARS";
     public DateTime CreatedAtUtc { get; set; }
     public string? CouponNumber { get; set; }
-    public string? RawLine { get; set; }       // Para debugging/auditor�a
+    public string? RawLine { get; set; }       // Para debugging/auditoría
     public string? SourceFile { get; set; }    // Trazabilidad
 }
 

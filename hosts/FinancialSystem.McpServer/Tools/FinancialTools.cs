@@ -1,4 +1,4 @@
-using System.ComponentModel;
+Ôªøusing System.ComponentModel;
 using System.Text;
 using FinancialSystem.Application.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +9,7 @@ namespace FinancialSystem.McpServer.Tools;
 /// <summary>
 /// Herramientas financieras expuestas al LLM via MCP.
 ///
-/// PRINCIPIO: este archivo no contiene lÛgica de negocio.
+/// PRINCIPIO: este archivo no contiene l√≥gica de negocio.
 /// Solo delega a IFinancialMetricsService y formatea la respuesta
 /// para que el modelo pueda razonar sobre ella en lenguaje natural.
 ///
@@ -31,9 +31,9 @@ public sealed class FinancialTools
     [McpServerTool]
     [Description(
         "Devuelve el resumen financiero de un mes: ingresos, gastos, ahorro y cantidad de movimientos procesados. " +
-        "Usar cuando el usuario pregunta cu·nto gastÛ, cu·nto ahorrÛ o cÛmo le fue en un mes especÌfico.")]
+        "Usar cuando el usuario pregunta cu√°nto gast√≥, cu√°nto ahorr√≥ o c√≥mo le fue en un mes espec√≠fico.")]
     public async Task<string> GetMonthlySummary(
-        [Description("AÒo. Ejemplo: 2026")] int year,
+        [Description("A√±o. Ejemplo: 2026")] int year,
         [Description("Mes (1-12). Ejemplo: 6 para junio")] int month,
         CancellationToken ct = default)
     {
@@ -62,20 +62,20 @@ public sealed class FinancialTools
         }
     }
 
-    // ?? Gastos por categorÌa ??????????????????????????????????????????????????
+    // ?? Gastos por categor√≠a ??????????????????????????????????????????????????
 
     [McpServerTool]
     [Description(
-        "Devuelve los gastos reales agrupados por categorÌa para un perÌodo. " +
-        "Usar cuando el usuario pregunta en quÈ gasta m·s, cÛmo distribuye sus gastos, " +
-        "o cu·nto gastÛ en una categorÌa especÌfica (alimentaciÛn, salud, transporte, etc).")]
+        "Devuelve los gastos reales agrupados por categor√≠a para un per√≠odo. " +
+        "Usar cuando el usuario pregunta en qu√© gasta m√°s, c√≥mo distribuye sus gastos, " +
+        "o cu√°nto gast√≥ en una categor√≠a espec√≠fica (alimentaci√≥n, salud, transporte, etc).")]
     public async Task<string> GetExpensesByCategory(
         [Description("Fecha de inicio en formato yyyy-MM-dd. Ejemplo: 2026-06-01")] string from,
         [Description("Fecha de fin en formato yyyy-MM-dd. Ejemplo: 2026-06-30")] string to,
         CancellationToken ct = default)
     {
         if (!DateOnly.TryParse(from, out var fromDate) || !DateOnly.TryParse(to, out var toDate))
-            return "Error: formato de fecha inv·lido. Usar yyyy-MM-dd.";
+            return "Error: formato de fecha inv√°lido. Usar yyyy-MM-dd.";
         if (fromDate >= toDate)
             return "Error: la fecha de inicio debe ser anterior a la de fin.";
 
@@ -86,7 +86,7 @@ public sealed class FinancialTools
                 return $"No hay gastos registrados entre {fromDate:dd/MM/yyyy} y {toDate:dd/MM/yyyy}.";
 
             var sb = new StringBuilder();
-            sb.AppendLine($"Gastos por categorÌa ({fromDate:dd/MM/yyyy} - {toDate:dd/MM/yyyy}):");
+            sb.AppendLine($"Gastos por categor√≠a ({fromDate:dd/MM/yyyy} - {toDate:dd/MM/yyyy}):");
             var total = categories.Sum(c => c.TotalAmount);
             sb.AppendLine($"Total: {FormatArs(total)}");
             sb.AppendLine();
@@ -98,7 +98,7 @@ public sealed class FinancialTools
         }
         catch (Exception ex)
         {
-            return $"Error al obtener gastos por categorÌa: {ex.Message}";
+            return $"Error al obtener gastos por categor√≠a: {ex.Message}";
         }
     }
 
@@ -106,11 +106,11 @@ public sealed class FinancialTools
 
     [McpServerTool]
     [Description(
-        "Devuelve la evoluciÛn de gastos e ingresos mes a mes durante los ˙ltimos N meses. " +
-        "Usar cuando el usuario pregunta si sus gastos est·n subiendo, bajando, " +
-        "cÛmo evolucionaron sus finanzas o quiere ver una tendencia histÛrica.")]
+        "Devuelve la evoluci√≥n de gastos e ingresos mes a mes durante los √∫ltimos N meses. " +
+        "Usar cuando el usuario pregunta si sus gastos est√°n subiendo, bajando, " +
+        "c√≥mo evolucionaron sus finanzas o quiere ver una tendencia hist√≥rica.")]
     public async Task<string> GetMonthlyTrend(
-        [Description("Cantidad de meses hacia atr·s (1-24). Ejemplo: 6 para ver los ˙ltimos 6 meses.")] int months,
+        [Description("Cantidad de meses hacia atr√°s (1-24). Ejemplo: 6 para ver los √∫ltimos 6 meses.")] int months,
         CancellationToken ct = default)
     {
         if (months is < 1 or > 24)
@@ -123,7 +123,7 @@ public sealed class FinancialTools
                 return "No hay datos suficientes para mostrar la tendencia.";
 
             var sb = new StringBuilder();
-            sb.AppendLine($"EvoluciÛn de los ˙ltimos {months} meses:");
+            sb.AppendLine($"Evoluci√≥n de los √∫ltimos {months} meses:");
             sb.AppendLine($"{"Mes",-12} {"Gastos",14} {"Ingresos",14} {"Balance",14} {"Ahorro",8}");
             sb.AppendLine(new string('-', 64));
             foreach (var p in trend)
@@ -132,7 +132,7 @@ public sealed class FinancialTools
                 sb.AppendLine($"{p.MonthLabel,-12} {FormatArs(p.TotalExpenses),14} {FormatArs(p.TotalIncome),14} {balSign}{FormatArs(p.NetBalance),13} {p.SavingsRate,6}%");
             }
 
-            // Tendencia simple: comparar ˙ltimo mes con el primero
+            // Tendencia simple: comparar √∫ltimo mes con el primero
             if (trend.Count >= 2)
             {
                 var first = trend[0].TotalExpenses;
@@ -141,8 +141,8 @@ public sealed class FinancialTools
                 var pct = first > 0 ? Math.Round((double)(diff / first) * 100, 1) : 0.0;
                 sb.AppendLine();
                 sb.AppendLine(diff > 0
-                    ? $"Tendencia: los gastos subieron {FormatArs(diff)} ({pct}%) en el perÌodo."
-                    : $"Tendencia: los gastos bajaron {FormatArs(Math.Abs(diff))} ({Math.Abs(pct)}%) en el perÌodo.");
+                    ? $"Tendencia: los gastos subieron {FormatArs(diff)} ({pct}%) en el per√≠odo."
+                    : $"Tendencia: los gastos bajaron {FormatArs(Math.Abs(diff))} ({Math.Abs(pct)}%) en el per√≠odo.");
             }
 
             return sb.ToString();
@@ -153,15 +153,15 @@ public sealed class FinancialTools
         }
     }
 
-    // ?? ComparaciÛn con mes anterior ??????????????????????????????????????????
+    // ?? Comparaci√≥n con mes anterior ??????????????????????????????????????????
 
     [McpServerTool]
     [Description(
-        "Compara los gastos de un mes contra el mes anterior, incluyendo variaciÛn por categorÌa. " +
-        "Usar cuando el usuario pregunta si gastÛ m·s o menos que el mes pasado, " +
-        "quÈ categorÌas aumentaron, o si est· mejorando su situaciÛn financiera.")]
+        "Compara los gastos de un mes contra el mes anterior, incluyendo variaci√≥n por categor√≠a. " +
+        "Usar cuando el usuario pregunta si gast√≥ m√°s o menos que el mes pasado, " +
+        "qu√© categor√≠as aumentaron, o si est√° mejorando su situaci√≥n financiera.")]
     public async Task<string> CompareWithPreviousMonth(
-        [Description("AÒo. Ejemplo: 2026")] int year,
+        [Description("A√±o. Ejemplo: 2026")] int year,
         [Description("Mes (1-12). Ejemplo: 6 para junio")] int month,
         CancellationToken ct = default)
     {
@@ -175,7 +175,7 @@ public sealed class FinancialTools
             var prev = comparison.Previous;
 
             var sb = new StringBuilder();
-            sb.AppendLine($"ComparaciÛn: {curr.From:MMMM yyyy} vs {prev?.From.ToString("MMMM yyyy") ?? "mes anterior (sin datos)"}");
+            sb.AppendLine($"Comparaci√≥n: {curr.From:MMMM yyyy} vs {prev?.From.ToString("MMMM yyyy") ?? "mes anterior (sin datos)"}");
             sb.AppendLine();
             sb.AppendLine($"  Gastos actuales:   {FormatArs(curr.TotalExpenses)}");
 
@@ -183,7 +183,7 @@ public sealed class FinancialTools
             {
                 sb.AppendLine($"  Gastos anteriores: {FormatArs(prev.TotalExpenses)}");
                 var sign = comparison.ExpenseVariation >= 0 ? "+" : "";
-                sb.AppendLine($"  VariaciÛn:         {sign}{FormatArs(comparison.ExpenseVariation)} ({sign}{comparison.ExpenseVariationPct}%)");
+                sb.AppendLine($"  Variaci√≥n:         {sign}{FormatArs(comparison.ExpenseVariation)} ({sign}{comparison.ExpenseVariationPct}%)");
                 sb.AppendLine();
 
                 var trending = comparison.ExpenseVariationPct > 2 ? "subieron" :
@@ -191,7 +191,7 @@ public sealed class FinancialTools
                 sb.AppendLine($"Los gastos {trending} respecto al mes anterior.");
                 sb.AppendLine();
 
-                // Top 3 categorÌas con mayor variaciÛn
+                // Top 3 categor√≠as con mayor variaci√≥n
                 var topVariations = comparison.CategoryVariations
                     .Where(v => v.Variation != 0)
                     .Take(5)
@@ -199,7 +199,7 @@ public sealed class FinancialTools
 
                 if (topVariations.Count > 0)
                 {
-                    sb.AppendLine("CategorÌas con mayor variaciÛn:");
+                    sb.AppendLine("Categor√≠as con mayor variaci√≥n:");
                     foreach (var v in topVariations)
                     {
                         var s = v.Variation >= 0 ? "+" : "";
