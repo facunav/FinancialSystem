@@ -744,18 +744,25 @@
                     </select>
                 </div>
                 <div class="modal-field">
-                    <label for="reviewReason" class="req">Motivo</label>
-                    <select id="reviewReason">
-                        <option value="1">Transferencia personal</option>
-                        <option value="2">Regalo</option>
-                        <option value="3">Movimiento interno</option>
-                        <option value="4">Comisión bancaria</option>
-                        <option value="5">Interés</option>
-                        <option value="99">Otro</option>
+                    <label for="reviewMovementType" class="req">Tipo de movimiento</label>
+                    <select id="reviewMovementType">
+                        <option value="Purchase">Compra</option>
+                        <option value="Transfer">Transferencia</option>
+                        <option value="Payment">Pago</option>
+                        <option value="Receipt">Cobro</option>
+                        <option value="Fee">Comisión</option>
+                        <option value="Interest">Interés</option>
+                        <option value="Refund">Reintegro</option>
+                        <option value="Adjustment">Ajuste</option>
+                        <option value="Other">Otro</option>
                     </select>
                 </div>
                 <div class="modal-field">
-                    <label for="reviewNotes">Notas (opcional)</label>
+                    <label for="reviewCounterparty">Contraparte (opcional)</label>
+                    <select id="reviewCounterparty"><option value="">Cargando…</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="reviewNotes">Comentario (opcional)</label>
                     <textarea id="reviewNotes" placeholder="Detalle adicional…"></textarea>
                 </div>
                 <div id="reviewProgress" class="progress-line" style="display:none"></div>
@@ -788,6 +795,24 @@
                         <option value="DebtPayment">Pago de deuda</option>
                         <option value="Income">Ingreso</option>
                     </select>
+                </div>
+                <div class="modal-field">
+                    <label for="confirmMovementType" class="req">Tipo de movimiento</label>
+                    <select id="confirmMovementType">
+                        <option value="Purchase">Compra</option>
+                        <option value="Transfer">Transferencia</option>
+                        <option value="Payment">Pago</option>
+                        <option value="Receipt">Cobro</option>
+                        <option value="Fee">Comisión</option>
+                        <option value="Interest">Interés</option>
+                        <option value="Refund">Reintegro</option>
+                        <option value="Adjustment">Ajuste</option>
+                        <option value="Other">Otro</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="confirmCounterparty">Contraparte (opcional)</label>
+                    <select id="confirmCounterparty"><option value="">Cargando…</option></select>
                 </div>
                 <div id="confirmModalToast"></div>
             </div>
@@ -840,6 +865,18 @@
             } catch (e) {
                 ['reviewCategory', 'confirmCategory'].forEach(id =>
                     document.getElementById(id).innerHTML = '<option value="">Error al cargar</option>');
+            }
+        })();
+
+        (async function loadCounterparties() {
+            try {
+                const counterparties = await getJson(`${API}/api/counterparties`);
+                const opts = '<option value="">— Sin contraparte —</option>' +
+                    counterparties.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+                ['reviewCounterparty', 'confirmCounterparty'].forEach(id => document.getElementById(id).innerHTML = opts);
+            } catch (e) {
+                ['reviewCounterparty', 'confirmCounterparty'].forEach(id =>
+                    document.getElementById(id).innerHTML = '<option value="">— Sin contraparte —</option>');
             }
         })();
 
@@ -1063,6 +1100,8 @@
         async function saveReview() {
             const categoryId = document.getElementById('reviewCategory').value;
             const financialImpact = document.getElementById('reviewImpact').value;
+            const movementType = document.getElementById('reviewMovementType').value;
+            const counterpartyId = document.getElementById('reviewCounterparty').value || null;
             const notes = document.getElementById('reviewNotes').value.trim() || null;
 
             if (!categoryId) { showToast('reviewModalToast', 'Seleccioná una categoría', 'err'); return; }
@@ -1071,9 +1110,9 @@
             btn.disabled = true; btn.textContent = '…';
 
             if (reviewMode === 'single') {
-                await doSingleReview(reviewSingle, { categoryId, financialImpact, notes }, btn);
+                await doSingleReview(reviewSingle, { categoryId, financialImpact, movementType, counterpartyId, notes }, btn);
             } else {
-                await doBatchReview(reviewBatch, { categoryId, financialImpact, notes }, btn);
+                await doBatchReview(reviewBatch, { categoryId, financialImpact, movementType, counterpartyId, notes }, btn);
             }
         }
 
@@ -1083,8 +1122,9 @@
                     sourceEntityType: SOURCE_TO_ENTITY_TYPE[target.source] ?? 'BankStatement',
                     sourceId: target.id,
                     categoryId: opts.categoryId,
-                    movementType: 'Other',
+                    movementType: opts.movementType,
                     financialImpact: opts.financialImpact,
+                    counterpartyId: opts.counterpartyId,
                     comment: opts.notes,
                 });
                 markDone('ref', target.id);
@@ -1109,8 +1149,9 @@
                         sourceEntityType: SOURCE_TO_ENTITY_TYPE[m.source] ?? 'BankStatement',
                         sourceId: id,
                         categoryId: opts.categoryId,
-                        movementType: 'Other',
+                        movementType: opts.movementType,
                         financialImpact: opts.financialImpact,
+                        counterpartyId: opts.counterpartyId,
                         comment: opts.notes,
                     });
                     markDone('ref', id); ok++;
@@ -1175,6 +1216,8 @@
         async function confirmMatch() {
             const categoryId = document.getElementById('confirmCategory').value;
             const financialImpact = document.getElementById('confirmImpact').value;
+            const movementType = document.getElementById('confirmMovementType').value;
+            const counterpartyId = document.getElementById('confirmCounterparty').value || null;
 
             if (!categoryId) { showToast('confirmModalToast', 'Seleccioná una categoría', 'err'); return; }
 
@@ -1194,7 +1237,7 @@
             try {
                 await postJson(`${API}/api/movement-review/confirm-match`, {
                     items: [...refItems, ...candItems],
-                    categoryId, movementType: 'Other', financialImpact,
+                    categoryId, movementType, financialImpact, counterpartyId,
                 });
 
                 [...selRef].forEach(id => markDone('ref', id));
