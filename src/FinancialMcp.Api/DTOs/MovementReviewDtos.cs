@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
 
 namespace FinancialSystem.Api.DTOs;
@@ -117,3 +119,16 @@ public sealed record ReviewResultDto(
         ReviewSummaryDto.Create(r.Summary),
         r.Elapsed.TotalMilliseconds);
 }
+
+// ── POST /api/movement-review/classify ───────────────────────────────────────
+
+public sealed record ClassifyMovementRequest(
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] SourceEntityType SourceEntityType,
+    Guid SourceId,
+    Guid CategoryId,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] MovementType MovementType,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] FinancialImpact FinancialImpact,
+    Guid? CounterpartyId,
+    string? Comment);
+
+public sealed record ClassifyMovementResponseDto(Guid ClassifiedMovementId, string Status);

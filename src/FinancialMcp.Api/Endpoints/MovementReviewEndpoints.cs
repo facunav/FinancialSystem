@@ -1,4 +1,5 @@
 using FinancialSystem.Api.DTOs;
+using FinancialSystem.Application.Review.Commands;
 using FinancialSystem.Application.Review.Queries;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,6 +16,7 @@ public static class MovementReviewEndpoints
         var group = app.MapGroup("/api/movement-review").WithTags("MovementReview");
 
         group.MapGet("/unclassified", GetUnclassified);
+        group.MapPost("/classify", Classify);
 
         return app;
     }
@@ -35,5 +37,43 @@ public static class MovementReviewEndpoints
 
         var result = await handler.Handle(new GetUnclassifiedMovementsQuery(from, to), ct);
         return Results.Ok(ReviewResultDto.Create(result));
+    }
+
+    // ── POST /api/movement-review/classify ────────────────────────────────────
+
+    private static async Task<IResult> Classify(
+        [FromBody] ClassifyMovementRequest request,
+        [FromServices] ClassifyMovementHandler handler,
+        CancellationToken ct)
+    {
+        var command = new ClassifyMovementCommand(
+            request.SourceEntityType,
+            request.SourceId,
+            request.CategoryId,
+            request.MovementType,
+            request.FinancialImpact,
+            request.CounterpartyId,
+            request.Comment);
+
+        var result = await handler.Handle(command, ct);
+
+        if (!result.IsSuccess)
+        {
+            return result.FailureReason switch
+            {
+                ClassifyMovementFailureReason.SourceNotFound =>
+                    Results.NotFound("No existe un movimiento con ese sourceEntityType+sourceId"),
+                ClassifyMovementFailureReason.CategoryNotFound =>
+                    Results.BadRequest("categoryId no corresponde a ninguna categoría existente"),
+                ClassifyMovementFailureReason.CounterpartyNotFound =>
+                    Results.BadRequest("counterpartyId no corresponde a ninguna contraparte existente"),
+                _ => Results.Problem("Error desconocido al clasificar el movimiento"),
+            };
+        }
+
+        var id = result.ClassifiedMovementId!.Value;
+        return Results.Created(
+            $"/api/movement-review/{id}",
+            new ClassifyMovementResponseDto(id, "Reviewed"));
     }
 }
