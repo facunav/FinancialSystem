@@ -12,6 +12,7 @@ public static class DependencyInjection
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddScoped<GetUnclassifiedMovementsHandler>();
         services.AddScoped<ClassifyMovementHandler>();
+        services.AddScoped<ConfirmMatchHandler>();
         return services;
     }
 

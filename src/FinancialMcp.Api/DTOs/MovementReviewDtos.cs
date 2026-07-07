@@ -132,3 +132,19 @@ public sealed record ClassifyMovementRequest(
     string? Comment);
 
 public sealed record ClassifyMovementResponseDto(Guid ClassifiedMovementId, string Status);
+
+// ── POST /api/movement-review/confirm-match ──────────────────────────────────
+
+public sealed record ConfirmMatchItemRequest(
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] SourceEntityType SourceEntityType,
+    Guid SourceId,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] MovementRole Role);
+
+public sealed record ConfirmMatchRequest(
+    IReadOnlyList<ConfirmMatchItemRequest> Items,
+    Guid CategoryId,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] MovementType MovementType,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] FinancialImpact FinancialImpact,
+    Guid? CounterpartyId);
+
+public sealed record ConfirmMatchResponseDto(Guid ClassifiedMovementId, string Status);

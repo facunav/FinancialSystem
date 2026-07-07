@@ -17,6 +17,7 @@ public static class MovementReviewEndpoints
 
         group.MapGet("/unclassified", GetUnclassified);
         group.MapPost("/classify", Classify);
+        group.MapPost("/confirm-match", ConfirmMatch);
 
         return app;
     }
@@ -75,5 +76,54 @@ public static class MovementReviewEndpoints
         return Results.Created(
             $"/api/movement-review/{id}",
             new ClassifyMovementResponseDto(id, "Reviewed"));
+    }
+
+    // ── POST /api/movement-review/confirm-match ───────────────────────────────
+
+    private static async Task<IResult> ConfirmMatch(
+        [FromBody] ConfirmMatchRequest request,
+        [FromServices] ConfirmMatchHandler handler,
+        CancellationToken ct)
+    {
+        var command = new ConfirmMatchCommand(
+            request.Items
+                .Select(i => new ConfirmMatchItem(i.SourceEntityType, i.SourceId, i.Role))
+                .ToList(),
+            request.CategoryId,
+            request.MovementType,
+            request.FinancialImpact,
+            request.CounterpartyId);
+
+        var result = await handler.Handle(command, ct);
+
+        if (!result.IsSuccess)
+        {
+            return result.FailureReason switch
+            {
+                ConfirmMatchFailureReason.EmptyItems =>
+                    Results.BadRequest("items no puede estar vacío"),
+                ConfirmMatchFailureReason.MissingReference =>
+                    Results.BadRequest("El grupo debe incluir al menos un item con role=Reference"),
+                ConfirmMatchFailureReason.MissingCandidate =>
+                    Results.BadRequest("El grupo debe incluir al menos un item con role=Candidate"),
+                ConfirmMatchFailureReason.DuplicateItem =>
+                    Results.BadRequest("items contiene el mismo sourceEntityType+sourceId repetido"),
+                ConfirmMatchFailureReason.RoleSourceMismatch =>
+                    Results.BadRequest(
+                        $"Role inconsistente con sourceEntityType para: {result.FailureDetail}"),
+                ConfirmMatchFailureReason.SourceNotFound =>
+                    Results.NotFound($"No existe un movimiento para: {result.FailureDetail}"),
+                ConfirmMatchFailureReason.CategoryNotFound =>
+                    Results.BadRequest("categoryId no corresponde a ninguna categoría existente"),
+                ConfirmMatchFailureReason.CounterpartyNotFound =>
+                    Results.BadRequest("counterpartyId no corresponde a ninguna contraparte existente"),
+                _ => Results.Problem("Error desconocido al confirmar el match"),
+            };
+        }
+
+        var id = result.ClassifiedMovementId!.Value;
+        return Results.Created(
+            $"/api/movement-review/{id}",
+            new ConfirmMatchResponseDto(id, "Confirmed"));
     }
 }
