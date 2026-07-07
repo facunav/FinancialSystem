@@ -6,6 +6,7 @@ using FinancialSystem.Application.Parsing.Bbva;
 using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
+using FinancialSystem.Application.Review;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Imports.Legacy;
@@ -40,6 +41,9 @@ public static class DependencyInjection
 
         services.Configure<FileIngestionOptions>(
             configuration.GetSection(FileIngestionOptions.SectionName));
+
+        services.Configure<ReviewEngineOptions>(
+            configuration.GetSection(ReviewEngineOptions.SectionName));
 
         services.AddSingleton<ITransactionNormalizer,
             Imports.Normalization.TransactionNormalizer>();
