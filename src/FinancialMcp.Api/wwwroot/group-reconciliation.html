@@ -737,10 +737,10 @@
                 <div class="modal-field">
                     <label for="reviewImpact" class="req">Impacto financiero</label>
                     <select id="reviewImpact">
-                        <option value="1">Gasto real</option>
-                        <option value="2">Transferencia interna</option>
-                        <option value="3">Pago de deuda</option>
-                        <option value="4">Ingreso</option>
+                        <option value="Expense">Gasto real</option>
+                        <option value="InternalMovement">Transferencia interna</option>
+                        <option value="DebtPayment">Pago de deuda</option>
+                        <option value="Income">Ingreso</option>
                     </select>
                 </div>
                 <div class="modal-field">
@@ -783,10 +783,10 @@
                 <div class="modal-field">
                     <label for="confirmImpact" class="req">Impacto financiero</label>
                     <select id="confirmImpact">
-                        <option value="1">Gasto real</option>
-                        <option value="2">Transferencia interna</option>
-                        <option value="3">Pago de deuda</option>
-                        <option value="4">Ingreso</option>
+                        <option value="Expense">Gasto real</option>
+                        <option value="InternalMovement">Transferencia interna</option>
+                        <option value="DebtPayment">Pago de deuda</option>
+                        <option value="Income">Ingreso</option>
                     </select>
                 </div>
                 <div id="confirmModalToast"></div>
@@ -805,15 +805,24 @@
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
         // ── Estado ────────────────────────────────────────────────────────────────
-        let refs = [];   // UnmatchedMovementDto[] (banco/tarjeta)
-        let cands = [];   // UnmatchedMovementDto[] (Excel)
+        let refs = [];   // fila plana derivada de ReviewResultDto.unmatched (banco/tarjeta)
+        let cands = [];   // fila plana derivada de ReviewResultDto.unmatched (Excel/legacy)
         let categories = [];
         const selRef = new Set();
         const selCand = new Set();
 
-        // ── SourceEntityType numérico (sin JsonStringEnumConverter) ──────────────
-        const SRC_TYPE = { CreditCard: 0, BankDebit: 2, ManualDynamic: 1, ManualFixed: 1 };
-        const toSrcType = s => SRC_TYPE[s] ?? 1;
+        // ── FinancialMovement.Source -> SourceEntityType (nombres string, la Api
+        // usa JsonStringEnumConverter en los endpoints de movement-review) ────────
+        const SOURCE_TO_ENTITY_TYPE = {
+            BankDebit: 'BankStatement',
+            CreditCard: 'Transaction',
+            LegacyDynamic: 'LegacyImport',
+            LegacyFixed: 'LegacyImport',
+        };
+        const isReferenceSource = s => s === 'BankDebit' || s === 'CreditCard';
+        const sumSelected = (set, arr) => [...set].reduce((s, id) => {
+            const m = arr.find(x => x.id === id); return s + (m ? Math.abs(m.amount) : 0);
+        }, 0);
 
         // ── Init ─────────────────────────────────────────────────────────────────
         (function initPeriod() {
@@ -843,13 +852,26 @@
             document.getElementById('refBody').innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
             document.getElementById('candBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
             try {
-                const data = await getJson(`${API}/api/reconciliation/unmatched-movements?from=${from}&to=${to}`);
-                refs = data.references ?? [];
-                cands = data.candidates ?? [];
+                const data = await getJson(`${API}/api/movement-review/unclassified?from=${from}&to=${to}`);
+                const unmatched = (data.unmatched ?? []).map(toRow);
+                refs = unmatched.filter(m => isReferenceSource(m.source));
+                cands = unmatched.filter(m => !isReferenceSource(m.source));
                 selRef.clear(); selCand.clear();
                 renderRefs(); renderCands();
                 updateBalance(); updateActionBars();
             } catch (e) { showToast('topToast', `Error: ${e.message}`, 'err'); }
+        }
+
+        // UnmatchedMovementDto -> misma forma plana que ya consume el resto del código.
+        // alreadyProcessed siempre arranca en false: el motor ya excluye del resultado
+        // los movimientos que tienen un ClassifiedMovementItem, así que todo lo que
+        // llega acá es, por definición, pendiente.
+        function toRow(u) {
+            const m = u.movement;
+            return {
+                id: m.originalId, date: m.date, description: m.description,
+                amount: m.amount, source: m.source, alreadyProcessed: false,
+            };
         }
 
         // ── Render: columna izquierda ─────────────────────────────────────────────
@@ -894,7 +916,7 @@
 
             tbody.innerHTML = cands.map(m => {
                 const done = m.alreadyProcessed;
-                const srcShort = m.source.replace('Manual', '').replace('Dynamic', 'Dyn').replace('Fixed', 'Fix');
+                const srcShort = m.source.replace('Legacy', '').replace('Dynamic', 'Dyn').replace('Fixed', 'Fix');
                 return `<tr data-id="${m.id}" data-amt="${Math.abs(m.amount)}" class="row${done ? ' processed' : ''}">
                     <td class="cb-cell"><input type="checkbox" data-id="${m.id}" data-side="cand"${done ? ' disabled' : ''}></td>
                     <td>${fmtDate(m.date)}</td>
@@ -1036,8 +1058,7 @@
 
         async function saveReview() {
             const categoryId = document.getElementById('reviewCategory').value;
-            const financialImpact = parseInt(document.getElementById('reviewImpact').value, 10);
-            const reason = parseInt(document.getElementById('reviewReason').value, 10);
+            const financialImpact = document.getElementById('reviewImpact').value;
             const notes = document.getElementById('reviewNotes').value.trim() || null;
 
             if (!categoryId) { showToast('reviewModalToast', 'Seleccioná una categoría', 'err'); return; }
@@ -1046,23 +1067,22 @@
             btn.disabled = true; btn.textContent = '…';
 
             if (reviewMode === 'single') {
-                await doSingleReview(reviewSingle, { categoryId, financialImpact, reason, notes }, btn);
+                await doSingleReview(reviewSingle, { categoryId, financialImpact, notes }, btn);
             } else {
-                await doBatchReview(reviewBatch, { categoryId, financialImpact, reason, notes }, btn);
+                await doBatchReview(reviewBatch, { categoryId, financialImpact, notes }, btn);
             }
         }
 
         async function doSingleReview(target, opts, btn) {
             try {
-                const res = await postJson(`${API}/api/reconciliation/review`, {
-                    sourceEntityType: toSrcType(target.source),
+                await postJson(`${API}/api/movement-review/classify`, {
+                    sourceEntityType: SOURCE_TO_ENTITY_TYPE[target.source] ?? 'BankStatement',
                     sourceId: target.id,
-                    reason: opts.reason,
                     categoryId: opts.categoryId,
+                    movementType: 'Other',
                     financialImpact: opts.financialImpact,
-                    notes: opts.notes,
+                    comment: opts.notes,
                 });
-                if (!res.success) { showToast('reviewModalToast', `Error: ${res.error ?? 'Desconocido'}`, 'err'); return; }
                 markDone('ref', target.id);
                 closeReviewModal();
                 showToast('topToast', '✓ Movimiento marcado como revisado', 'ok');
@@ -1081,15 +1101,15 @@
                 if (!m) continue;
                 progress.textContent = `Procesando ${i + 1} de ${ids.length}…`;
                 try {
-                    const res = await postJson(`${API}/api/reconciliation/review`, {
-                        sourceEntityType: toSrcType(m.source),
+                    await postJson(`${API}/api/movement-review/classify`, {
+                        sourceEntityType: SOURCE_TO_ENTITY_TYPE[m.source] ?? 'BankStatement',
                         sourceId: id,
-                        reason: opts.reason,
                         categoryId: opts.categoryId,
+                        movementType: 'Other',
                         financialImpact: opts.financialImpact,
-                        notes: opts.notes,
+                        comment: opts.notes,
                     });
-                    if (res.success) { markDone('ref', id); ok++; } else fail++;
+                    markDone('ref', id); ok++;
                 } catch { fail++; }
             }
 
@@ -1113,7 +1133,8 @@
             btn.disabled = true; btn.textContent = '…';
 
             try {
-                const res = await postJson(`${API}/api/reconciliation/discard-candidates`, { ids });
+                const res = await postJson(`${API}/api/movement-review/discard-candidates`, { ids });
+                const discarded = res.updatedIds?.length ?? 0;
                 // Quitar de la lista en memoria (no re-cargar desde servidor)
                 ids.forEach(id => {
                     const idx = cands.findIndex(c => c.id === id);
@@ -1122,7 +1143,7 @@
                 });
                 renderCands();
                 updateBalance(); updateActionBars();
-                showToast('topToast', `✓ ${res.discarded} movimiento${res.discarded !== 1 ? 's' : ''} descartado${res.discarded !== 1 ? 's' : ''}`, 'ok');
+                showToast('topToast', `✓ ${discarded} movimiento${discarded !== 1 ? 's' : ''} descartado${discarded !== 1 ? 's' : ''}`, 'ok');
             } catch (e) {
                 showToast('topToast', `Error al descartar: ${e.message}`, 'err');
             } finally {
@@ -1135,7 +1156,7 @@
             const nRef = selRef.size;
             const nCand = selCand.size;
             document.getElementById('confirmSubtitle').textContent = `${nRef} banco ↔ ${nCand} Excel`;
-            document.getElementById('confirmImpact').value = '1';
+            document.getElementById('confirmImpact').value = 'Expense';
             document.getElementById('confirmModalToast').innerHTML = '';
             document.getElementById('confirmOverlay').classList.add('open');
         });
@@ -1148,40 +1169,43 @@
         document.getElementById('btnConfirmSave').addEventListener('click', confirmMatch);
 
         async function confirmMatch() {
-            const user = document.getElementById('user').value.trim();
             const categoryId = document.getElementById('confirmCategory').value;
-            const impact = parseInt(document.getElementById('confirmImpact').value, 10);
+            const financialImpact = document.getElementById('confirmImpact').value;
 
-            if (!user) { showToast('confirmModalToast', 'Indicá el usuario en la barra superior', 'err'); return; }
             if (!categoryId) { showToast('confirmModalToast', 'Seleccioná una categoría', 'err'); return; }
 
-            const refItems = [...selRef].map(id => ({ id, source: refs.find(r => r.id === id)?.source }));
-            const candItems = [...selCand].map(id => ({ id, source: cands.find(c => c.id === id)?.source }));
+            const refItems = [...selRef].map(id => ({
+                sourceEntityType: SOURCE_TO_ENTITY_TYPE[refs.find(r => r.id === id)?.source] ?? 'BankStatement',
+                sourceId: id, role: 'Reference',
+            }));
+            const candItems = [...selCand].map(id => ({
+                sourceEntityType: SOURCE_TO_ENTITY_TYPE[cands.find(c => c.id === id)?.source] ?? 'LegacyImport',
+                sourceId: id, role: 'Candidate',
+            }));
+            const refTotal = sumSelected(selRef, refs);
 
             const btn = document.getElementById('btnConfirmSave');
             btn.disabled = true; btn.textContent = '…';
 
             try {
-                const res = await postJson(`${API}/api/reconciliation/confirm-group`, {
-                    confirmedBy: user, categoryId, financialImpact: impact,
-                    referenceItems: refItems, candidateItems: candItems,
+                await postJson(`${API}/api/movement-review/confirm-match`, {
+                    items: [...refItems, ...candItems],
+                    categoryId, movementType: 'Other', financialImpact,
                 });
-                if (!res.success) { showToast('confirmModalToast', `Error: ${res.error ?? 'Desconocido'}`, 'err'); return; }
 
                 [...selRef].forEach(id => markDone('ref', id));
                 [...selCand].forEach(id => markDone('cand', id));
                 selRef.clear(); selCand.clear();
                 updateBalance(); updateActionBars(); closeConfirmModal();
-                showToast('balToast', `✓ Match confirmado · ${refItems.length}↔${candItems.length} · $${fmt(res.referenceTotal)}`, 'ok', 4000);
+                showToast('balToast', `✓ Match confirmado · ${refItems.length}↔${candItems.length} · $${fmt(refTotal)}`, 'ok', 4000);
             } catch (e) { showToast('confirmModalToast', `Error: ${e.message}`, 'err'); }
             finally { btn.disabled = false; btn.textContent = 'Confirmar'; }
         }
 
         // ── Balance ───────────────────────────────────────────────────────────────
         function updateBalance() {
-            const sum = (set, arr) => [...set].reduce((s, id) => { const m = arr.find(x => x.id === id); return s + (m ? Math.abs(m.amount) : 0); }, 0);
-            const refTotal = sum(selRef, refs);
-            const candTotal = sum(selCand, cands);
+            const refTotal = sumSelected(selRef, refs);
+            const candTotal = sumSelected(selCand, cands);
             const nRef = selRef.size, nCand = selCand.size;
             const diff = Math.abs(refTotal - candTotal);
 
@@ -1242,7 +1266,12 @@
         async function postJson(url, body) {
             const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const d = await r.json().catch(() => null);
-            if (!r.ok) throw new Error(d?.title ?? `${r.status} ${r.statusText}`);
+            if (!r.ok) {
+                // Los endpoints de movement-review devuelven un string plano
+                // (BadRequest/NotFound) o un ProblemDetails con .detail (Problem).
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
             return d;
         }
         function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
