@@ -15,6 +15,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ClassifiedMovementItem> ClassifiedMovementItems => Set<ClassifiedMovementItem>();
     public DbSet<LegacyImportedExpense> LegacyImportedExpenses => Set<LegacyImportedExpense>();
     public DbSet<Counterparty> Counterparties => Set<Counterparty>();
+    public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
+    public DbSet<ImportBatchLine> ImportBatchLines => Set<ImportBatchLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,5 +27,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new ClassifiedMovementItemConfiguration());
         modelBuilder.ApplyConfiguration(new LegacyImportedExpenseConfiguration());
         modelBuilder.ApplyConfiguration(new CounterpartyConfiguration());
+        modelBuilder.ApplyConfiguration(new ImportBatchConfiguration());
+        modelBuilder.ApplyConfiguration(new ImportBatchLineConfiguration());
     }
 }

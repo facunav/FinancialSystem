@@ -57,6 +57,25 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
         string sourceFile,
         CancellationToken ct = default)
     {
+        var outcome = ParseLines(documentLines, sourceFile, ct);
+        return Task.FromResult(outcome.Transactions);
+    }
+
+    /// <summary>
+    /// Resultado interno de <see cref="ParseLines"/>: transacciones extraídas más el
+    /// diagnóstico real (líneas ignoradas y fallidas) que <see cref="ParseAsync(string, CancellationToken)"/>
+    /// necesita para completar <see cref="FileParseResult"/>.
+    /// </summary>
+    private readonly record struct ParseOutcome(
+        IReadOnlyList<Transaction> Transactions,
+        int SkippedLines,
+        IReadOnlyList<string> Diagnostics);
+
+    private ParseOutcome ParseLines(
+        IReadOnlyList<string> documentLines,
+        string sourceFile,
+        CancellationToken ct)
+    {
         var transactions = new List<Transaction>();
         var state = SectionState.Scanning;
         var lineNumber = 0;
@@ -142,7 +161,11 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
                 ParserId, sourceFile);
         }
 
-        return Task.FromResult<IReadOnlyList<Transaction>>(transactions.AsReadOnly());
+        var diagnostics = failedLines
+            .Select(f => $"L{f.Line}: {f.Text} → {f.Reason}")
+            .ToList();
+
+        return new ParseOutcome(transactions.AsReadOnly(), skippedLines, diagnostics);
     }
 
     // ── Contrato IFileParser ──────────────────────────────────────
@@ -172,8 +195,8 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
                 sw.Elapsed);
         }
 
-        var transactions = await ParseAsync(lines, filePath, ct);
-        var extracted = transactions
+        var outcome = ParseLines(lines, filePath, ct);
+        var extracted = outcome.Transactions
             .Select(t => new ExtractedTransaction(
                 t.Date,
                 t.Description,
@@ -185,7 +208,7 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
             .ToList();
 
         sw.Stop();
-        return new FileParseResult(extracted, 0, [], sw.Elapsed);
+        return new FileParseResult(extracted, outcome.SkippedLines, outcome.Diagnostics, sw.Elapsed);
     }
 
     // ── API para subclases ────────────────────────────────────────
