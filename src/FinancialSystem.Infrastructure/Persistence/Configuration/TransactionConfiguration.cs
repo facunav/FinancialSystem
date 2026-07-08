@@ -38,5 +38,17 @@ internal sealed class TransactionConfiguration : IEntityTypeConfiguration<Transa
             .HasDefaultValueSql("timezone('utc', now())");
 
         builder.HasIndex(t => t.Date);
+
+        // ── Idempotencia: índice único sobre ExternalId ───────────
+        // Nullable a nivel de columna: filas existentes antes de esta migración quedan sin
+        // valor. Postgres no considera NULL == NULL en un índice único, así que no chocan
+        // entre sí ni bloquean la migración en una tabla ya poblada. Toda fila nueva la recibe
+        // (ver ImportFileProcessingSink), y esas sí quedan protegidas por la unicidad.
+        builder.Property(t => t.ExternalId)
+            .HasMaxLength(64); // SHA256 hex = exactamente 64 chars
+
+        builder.HasIndex(t => t.ExternalId)
+            .IsUnique()
+            .HasDatabaseName("IX_Transactions_ExternalId");
     }
 }

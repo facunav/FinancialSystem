@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Helpers;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,7 +104,9 @@ internal sealed class ImportFileProcessingSink(
                 CreatedAtUtc = dateTimeProvider.UtcNow,
                 CouponNumber = parsed.CouponNumber,
                 RawLine = parsed.RawLine,
-                SourceFile = filePath
+                SourceFile = filePath,
+                ExternalId = SheetParserHelpers.BuildTransactionExternalId(
+                    filePath, parsed.Date, parsed.Amount, parsed.Description, parsed.CouponNumber)
             });
             inserted++;
         }

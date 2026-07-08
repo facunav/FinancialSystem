@@ -33,5 +33,27 @@ namespace FinancialSystem.Application.Helpers
             var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
             return Convert.ToHexString(bytes).ToLowerInvariant();
         }
+
+        /// <summary>
+        /// Calcula el ExternalId determinístico para idempotencia de Transaction (tarjeta).
+        /// Preferencia: CouponNumber (identificador de operación real que da el banco) cuando existe.
+        /// Fallback: SHA256("{sourceFile}|{date}|{amount}|{description}") cuando no está disponible.
+        /// En ambos casos el resultado es SHA256 → hex lowercase de 64 chars, igual formato que
+        /// BuildExternalId, para mantener compatibilidad con el resto de las columnas ExternalId.
+        /// </summary>
+        public static string BuildTransactionExternalId(
+            string sourceFile,
+            DateTime date,
+            decimal amount,
+            string description,
+            string? couponNumber)
+        {
+            var raw = !string.IsNullOrWhiteSpace(couponNumber)
+                ? $"{Path.GetFileName(sourceFile)}|coupon|{couponNumber}"
+                : $"{Path.GetFileName(sourceFile)}|{date:O}|{amount}|{description}";
+
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+            return Convert.ToHexString(bytes).ToLowerInvariant();
+        }
     }
 }
