@@ -8,7 +8,7 @@ The project started as a reconciliation tool but evolved into a broader financia
 
 The long-term goal is to provide a financial MCP (Model Context Protocol) capable of understanding personal finances, answering historical questions, generating forecasts, detecting spending patterns, and helping make better financial decisions.
 
-> **`FinancialMcp-Roadmap.md` is the source of truth for this project.** Before implementing new features, read it in full. Any decision about architecture, data model, or workflow must align with the vision defined there. This README gives a high-level orientation only.
+> **`docs/RoadMaps/FinancialMcp-vNext.md` is the source of truth for this project.** Before implementing new features, read it in full. Any decision about architecture, data model, or workflow must align with the vision defined there. This README gives a high-level orientation only.
 
 ---
 
@@ -23,7 +23,7 @@ The objective is to create a personal financial knowledge base that combines:
 * Bank account movements
 * Credit card transactions
 * Legacy/manual expense records (migration aid only, see below)
-* Fixed expenses (planned, see Roadmap)
+* Fixed expenses (planned, see `docs/RoadMaps/FinancialMcp-vNext.md`)
 * Historical spending behavior
 
 into a single source of truth.
@@ -113,7 +113,7 @@ Both represent the same expense — the bank movement is the one that gets class
 
 ## Fixed Expenses (planned)
 
-Fixed expenses represent recurring financial commitments (rent, internet, insurance, electricity, gas, mobile phone) managed natively in the system, independent of the Excel. This module is planned — see the Roadmap's "Gastos Fijos" section for its current status.
+Fixed expenses represent recurring financial commitments (rent, internet, insurance, electricity, gas, mobile phone) managed natively in the system, independent of the Excel. This module is planned — see `docs/RoadMaps/FinancialMcp-vNext.md` for its current status.
 
 ---
 
@@ -165,7 +165,7 @@ Endpoints should remain thin and delegate behavior to commands, queries, handler
 
 # Current Priorities
 
-See `FinancialMcp-Roadmap.md` for the full, up-to-date phase breakdown. Summary:
+See `docs/RoadMaps/FinancialMcp-vNext.md` for the full, up-to-date roadmap (organized by épicas I-N, not by the phases below — this section is kept for historical orientation only).
 
 ## Phase 1 - Data Foundation (in progress)
 
@@ -208,7 +208,7 @@ The MCP should eventually answer questions such as:
 
 Before implementing new features:
 
-1. Read `FinancialMcp-Roadmap.md` in full — it is the source of truth.
+1. Read `docs/RoadMaps/FinancialMcp-vNext.md` in full — it is the source of truth.
 2. Verify the proposal answers at least one question from the Roadmap's philosophy.
 3. Verify it does not contradict a frozen data-model decision.
 4. Preserve the existing architecture.
