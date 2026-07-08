@@ -1,4 +1,5 @@
-﻿using System.Security.Cryptography;
+﻿using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace FinancialSystem.Application.Helpers
@@ -48,9 +49,11 @@ namespace FinancialSystem.Application.Helpers
             string description,
             string? couponNumber)
         {
+            var normalizedDescription = description.Trim().ToUpperInvariant();
+
             var raw = !string.IsNullOrWhiteSpace(couponNumber)
-                ? $"{Path.GetFileName(sourceFile)}|coupon|{couponNumber}"
-                : $"{Path.GetFileName(sourceFile)}|{date:O}|{amount}|{description}";
+                            ? $"coupon|{couponNumber.Trim()}"
+                            : $"{date:O}|{amount.ToString(CultureInfo.InvariantCulture)}|{normalizedDescription}";
 
             var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
             return Convert.ToHexString(bytes).ToLowerInvariant();
