@@ -2,5 +2,5 @@ namespace FinancialSystem.Application.Imports;
 
 public interface IImportFileSink
 {
-    Task HandleFileAsync(string filePath, CancellationToken cancellationToken = default);
+    Task<ImportRunResult> HandleFileAsync(string filePath, CancellationToken cancellationToken = default);
 }

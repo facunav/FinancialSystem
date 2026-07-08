@@ -36,8 +36,11 @@ public interface IFileImportHandler
 
     /// <summary>
     /// Procesa el archivo. Solo se llama si CanHandle devolvió true.
+    /// Devuelve el resultado de la corrida (insertados/duplicados/fallidos/omitidos +
+    /// diagnóstico) para que el router pueda persistir un ImportBatch — el handler no
+    /// administra ImportBatch directamente (ver PR I4).
     /// </summary>
-    Task HandleAsync(string filePath, CancellationToken ct = default);
+    Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default);
 }
 
 /// <summary>

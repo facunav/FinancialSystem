@@ -15,7 +15,7 @@ internal sealed class ImportFileProcessingSink(
     IDateTimeProvider dateTimeProvider,
     ILogger<ImportFileProcessingSink> logger) : IImportFileSink
 {
-    public async Task HandleFileAsync(string filePath, CancellationToken cancellationToken = default)
+    public async Task<ImportRunResult> HandleFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
         var totalSw = Stopwatch.StartNew();
         logger.LogInformation("Import file detected: {FilePath}", filePath);
@@ -26,7 +26,8 @@ internal sealed class ImportFileProcessingSink(
                 "No parser registered for {FilePath} (extension {Extension})",
                 filePath,
                 Path.GetExtension(filePath));
-            return;
+            return ImportRunResult.Failure(
+                $"No hay parser registrado para la extensión '{Path.GetExtension(filePath)}'.");
         }
 
         logger.LogInformation(
@@ -42,7 +43,7 @@ internal sealed class ImportFileProcessingSink(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to parse import file {FilePath}", filePath);
-            return;
+            return ImportRunResult.Failure($"Excepción parseando el archivo: {ex.Message}");
         }
 
         logger.LogInformation(
@@ -70,7 +71,8 @@ internal sealed class ImportFileProcessingSink(
         if (parseResult.Transactions.Count == 0)
         {
             logger.LogWarning("No transactions extracted from {FilePath}", filePath);
-            return;
+            return new ImportRunResult(
+                0, 0, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics);
         }
 
         var normalized = normalizer.NormalizeAll(parseResult.Transactions);
@@ -120,5 +122,8 @@ internal sealed class ImportFileProcessingSink(
             inserted,
             duplicates,
             totalSw.ElapsedMilliseconds);
+
+        return new ImportRunResult(
+            inserted, duplicates, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics);
     }
 }

@@ -42,7 +42,7 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
                 .Any(pattern => MatchesGlob(fileName, pattern));
         }
 
-        public async Task HandleAsync(string filePath, CancellationToken ct = default)
+        public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
         {
             var result = await _importer.ImportAsync(filePath, ct);
 
@@ -57,6 +57,13 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
             }
 
             _logger.LogInformation("[BbvaBankStatement] {Result}", result.ToString());
+
+            return new ImportRunResult(
+                result.Inserted,
+                result.Duplicates,
+                result.ParseErrors,
+                result.SkippedRows,
+                result.Diagnostics);
         }
 
         private static bool MatchesGlob(string fileName, string pattern)
