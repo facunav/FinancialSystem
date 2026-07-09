@@ -64,5 +64,13 @@ internal sealed class BankStatementConfiguration : IEntityTypeConfiguration<Bank
 
         builder.HasIndex(e => new { e.Date, e.BankName })
             .HasDatabaseName("IX_BankStatements_Date_Bank");
+
+        // ── Cuenta financiera (opcional) ───────────────────────────
+        builder.HasOne(e => e.FinancialAccount)
+            .WithMany()
+            .HasForeignKey(e => e.FinancialAccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(e => e.FinancialAccountId);
     }
 }

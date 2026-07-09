@@ -18,5 +18,13 @@ public class Transaction
     /// considera duplicadas entre sí en el índice único (NULL != NULL). Toda fila nueva la recibe.
     /// </summary>
     public string? ExternalId { get; set; }
+
+    /// <summary>
+    /// Cuenta financiera asociada a este movimiento. Nullable: la asignación es manual
+    /// por ahora — no hay wiring automático desde el pipeline de importación (ver
+    /// docs/RoadMaps/FinancialMcp-vNext.md, Épica J).
+    /// </summary>
+    public Guid? FinancialAccountId { get; set; }
+    public FinancialAccount? FinancialAccount { get; set; }
 }
 

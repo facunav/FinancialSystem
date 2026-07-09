@@ -58,4 +58,14 @@ public class BankStatement
     public string? SheetName { get; set; }
     public int? RowNumber { get; set; }
     public DateTime ImportedAtUtc { get; set; }
+
+    // ── Cuenta financiera ────────────────────────────────────────
+
+    /// <summary>
+    /// Cuenta financiera asociada a este movimiento. Nullable: la asignación es manual
+    /// por ahora — no hay wiring automático desde el pipeline de importación (ver
+    /// docs/RoadMaps/FinancialMcp-vNext.md, Épica J).
+    /// </summary>
+    public Guid? FinancialAccountId { get; set; }
+    public FinancialAccount? FinancialAccount { get; set; }
 }

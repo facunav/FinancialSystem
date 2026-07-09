@@ -50,5 +50,13 @@ internal sealed class TransactionConfiguration : IEntityTypeConfiguration<Transa
         builder.HasIndex(t => t.ExternalId)
             .IsUnique()
             .HasDatabaseName("IX_Transactions_ExternalId");
+
+        // ── Cuenta financiera (opcional) ───────────────────────────
+        builder.HasOne(t => t.FinancialAccount)
+            .WithMany()
+            .HasForeignKey(t => t.FinancialAccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(t => t.FinancialAccountId);
     }
 }
