@@ -26,10 +26,10 @@ public static class FinancialAccountEndpoints
 
     // GET /api/accounts
     private static async Task<IResult> GetAll(
-        [FromQuery] bool includeDeactivated,
-        [FromQuery] string? search,
-        [FromServices] IFinancialAccountQueryService service,
-        CancellationToken ct)
+        [FromQuery] bool includeDeactivated = false,
+        [FromQuery] string? search = null,
+        [FromServices] IFinancialAccountQueryService service = null!,
+        CancellationToken ct = default)
     {
         var accounts = await service.GetAllAsync(includeDeactivated, search, ct);
         return Results.Ok(accounts.Select(FinancialAccountDto.Create));
