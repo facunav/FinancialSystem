@@ -89,8 +89,14 @@ internal sealed class ImportFileProcessingSink(
 
         foreach (var parsed in normalized)
         {
-            var dedupKey = $"{parsed.Date:yyyy-MM-dd}|{parsed.Amount}|{parsed.Description}";
-            if (!seen.Add(dedupKey))
+            // ExternalId es la única fuente de verdad sobre la identidad de una transacción
+            // (ver SheetParserHelpers.BuildTransactionExternalId) — el mismo valor que se
+            // persiste en la columna con índice único se usa acá para dedupear dentro del
+            // archivo, para que ambas nociones de "duplicado" no puedan volver a divergir.
+            var externalId = SheetParserHelpers.BuildTransactionExternalId(
+                parsed.Date, parsed.Amount, parsed.Description, parsed.CouponNumber);
+
+            if (!seen.Add(externalId))
             {
                 duplicates++;
                 continue;
@@ -107,8 +113,7 @@ internal sealed class ImportFileProcessingSink(
                 CouponNumber = parsed.CouponNumber,
                 RawLine = parsed.RawLine,
                 SourceFile = filePath,
-                ExternalId = SheetParserHelpers.BuildTransactionExternalId(
-                    filePath, parsed.Date, parsed.Amount, parsed.Description, parsed.CouponNumber)
+                ExternalId = externalId
             });
             inserted++;
         }

@@ -38,12 +38,16 @@ namespace FinancialSystem.Application.Helpers
         /// <summary>
         /// Calcula el ExternalId determinístico para idempotencia de Transaction (tarjeta).
         /// Preferencia: CouponNumber (identificador de operación real que da el banco) cuando existe.
-        /// Fallback: SHA256("{sourceFile}|{date}|{amount}|{description}") cuando no está disponible.
+        /// Fallback: SHA256("{date}|{amount}|{description}") cuando no está disponible.
         /// En ambos casos el resultado es SHA256 → hex lowercase de 64 chars, igual formato que
         /// BuildExternalId, para mantener compatibilidad con el resto de las columnas ExternalId.
+        ///
+        /// Única fuente de verdad para la identidad de una Transaction: tanto la idempotencia
+        /// entre corridas (columna ExternalId, índice único) como la deduplicación dentro de un
+        /// mismo archivo (ver ImportFileProcessingSink) usan este mismo cálculo — dos filas con
+        /// el mismo ExternalId son, por definición, la misma transacción.
         /// </summary>
         public static string BuildTransactionExternalId(
-            string sourceFile,
             DateTime date,
             decimal amount,
             string description,
