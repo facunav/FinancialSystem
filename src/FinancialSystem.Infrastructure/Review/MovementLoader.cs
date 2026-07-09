@@ -70,6 +70,7 @@ internal sealed class MovementLoader : IMovementLoader
         Source = MovementSource.BankDebit,
         OriginalId = statement.RowNumber?.ToString(),
         SourceFile = statement.SourceFile,
+        FinancialAccountId = statement.FinancialAccountId,
     };
 
     private static FinancialMovement ToFinancialMovement(Transaction transaction) => new()
@@ -85,6 +86,7 @@ internal sealed class MovementLoader : IMovementLoader
         OriginalId = transaction.CouponNumber,
         SourceFile = transaction.SourceFile,
         RawLine = transaction.RawLine,
+        FinancialAccountId = transaction.FinancialAccountId,
     };
 
     private static FinancialMovement ToFinancialMovement(LegacyImportedExpense expense) => new()

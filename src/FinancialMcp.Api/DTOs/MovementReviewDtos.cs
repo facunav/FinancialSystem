@@ -21,12 +21,16 @@ public sealed record FinancialMovementDto(
     // Referencia de negocio (cupón, número de fila, etc.), solo para mostrar en UI.
     // No usar como identificador técnico — para eso está SourceId.
     string? OriginalId,
-    string? SourceFile)
+    string? SourceFile,
+    // Cuenta financiera asignada al movimiento de origen. Null en movimientos
+    // legacy/manuales (no soportan esta asignación) o si no se asignó ninguna.
+    Guid? FinancialAccountId)
 {
     public static FinancialMovementDto Create(FinancialMovement m) => new(
         m.Id, m.SourceId, m.Date, m.Description, m.Amount, m.Currency,
         m.Source.ToString(), m.Category.ToString(),
-        m.PaymentMethod?.ToString(), m.OriginalId, m.SourceFile);
+        m.PaymentMethod?.ToString(), m.OriginalId, m.SourceFile,
+        m.FinancialAccountId);
 }
 
 public sealed record MatchScoreDto(

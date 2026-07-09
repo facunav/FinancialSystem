@@ -66,6 +66,14 @@ public sealed record FinancialMovement
     /// <summary>Nombre de hoja (solo aplica a movimientos importados desde Excel legacy).</summary>
     public string? SheetName { get; init; }
 
+    /// <summary>
+    /// Cuenta financiera asignada al movimiento de origen (Transaction/BankStatement).
+    /// Pasamano de solo lectura: no participa en ninguna regla de matching — el motor
+    /// de sugerencias no lo usa. Null en movimientos legacy/manuales, que no soportan
+    /// esta asignación (ver docs/RoadMaps/FinancialMcp-vNext.md, Épica J).
+    /// </summary>
+    public Guid? FinancialAccountId { get; init; }
+
     public override string ToString() =>
         $"[{Source}] {Date:dd/MM/yy} | {Description} | {Currency} {Amount:N2}";
 }

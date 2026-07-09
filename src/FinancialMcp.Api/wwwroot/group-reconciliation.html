@@ -351,6 +351,18 @@
             margin-left: 4px
         }
 
+        .acct-select {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 3px 5px;
+            font: 11px var(--sans);
+            max-width: 130px
+        }
+            .acct-select:disabled { opacity: .5 }
+            .acct-select option:disabled { color: var(--faint) }
+
         .empty {
             padding: 32px;
             text-align: center;
@@ -644,10 +656,11 @@
                             <th>Descripción</th>
                             <th>Monto</th>
                             <th>Origen</th>
+                            <th>Cuenta</th>
                             <th>Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="refBody"><tr><td colspan="6" class="empty">Cargá un período para comenzar.</td></tr></tbody>
+                    <tbody id="refBody"><tr><td colspan="7" class="empty">Cargá un período para comenzar.</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -833,6 +846,8 @@
         let refs = [];   // fila plana derivada de ReviewResultDto.unmatched (banco/tarjeta)
         let cands = [];   // fila plana derivada de ReviewResultDto.unmatched (Excel/legacy)
         let categories = [];
+        let activeAccounts = [];      // para el <select> de asignación — solo activas
+        let accountNameById = {};     // para mostrar el nombre aunque la cuenta esté desactivada
         const selRef = new Set();
         const selCand = new Set();
 
@@ -880,13 +895,49 @@
             }
         })();
 
+        // Cuentas: se piden con includeDeactivated=true para poder resolver el
+        // nombre de una cuenta ya desactivada que haya quedado asignada a un
+        // movimiento histórico, pero solo las activas se ofrecen como opción
+        // nueva en el <select> (activeAccounts).
+        (async function loadAccounts() {
+            try {
+                const all = await getJson(`${API}/api/accounts?includeDeactivated=true`);
+                accountNameById = Object.fromEntries(all.map(a => [a.id, a.name]));
+                activeAccounts = all.filter(a => !a.isDeactivated).sort((a, b) => a.name.localeCompare(b.name));
+                // Solo re-renderiza si ya hay movimientos cargados (evita pisar el
+                // placeholder inicial "Cargá un período para comenzar" con "Sin movimientos").
+                if (refs.length > 0) renderRefs();
+            } catch (e) {
+                // Sin bloquear el resto de la pantalla: el select de cuenta queda
+                // vacío hasta el próximo "Cargar movimientos".
+            }
+        })();
+
+        // Opciones del <select> de cuenta para un movimiento puntual. Si la cuenta
+        // asignada actualmente no está en activeAccounts (fue desactivada después
+        // de asignarse), se agrega igual como opción deshabilitada para no perder
+        // la referencia visual de cuál es.
+        function accountOptionsFor(currentId) {
+            let html = '<option value="">— Sin cuenta —</option>';
+            let currentIsActive = false;
+            for (const a of activeAccounts) {
+                if (a.id === currentId) currentIsActive = true;
+                html += `<option value="${a.id}"${a.id === currentId ? ' selected' : ''}>${esc(a.name)}</option>`;
+            }
+            if (currentId && !currentIsActive) {
+                const name = accountNameById[currentId] ?? 'Cuenta';
+                html += `<option value="${currentId}" selected disabled>${esc(name)} (desactivada)</option>`;
+            }
+            return html;
+        }
+
         // ── Load ─────────────────────────────────────────────────────────────────
         document.getElementById('btnLoad').addEventListener('click', load);
         async function load() {
             const from = document.getElementById('from').value;
             const to = document.getElementById('to').value;
             if (!from || !to) return;
-            document.getElementById('refBody').innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
+            document.getElementById('refBody').innerHTML = '<tr><td colspan="7" class="loading">Cargando…</td></tr>';
             document.getElementById('candBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
             try {
                 const data = await getJson(`${API}/api/movement-review/unclassified?from=${from}&to=${to}`);
@@ -912,6 +963,7 @@
             return {
                 id: m.sourceId, date: m.date, description: m.description,
                 amount: m.amount, source: m.source, alreadyProcessed: false,
+                financialAccountId: m.financialAccountId ?? null,
             };
         }
 
@@ -920,7 +972,7 @@
             const tbody = document.getElementById('refBody');
             document.getElementById('refCount').textContent = `(${refs.filter(m => !m.alreadyProcessed).length} pendientes)`;
 
-            if (refs.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'; return; }
+            if (refs.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin movimientos.</td></tr>'; return; }
 
             tbody.innerHTML = refs.map(m => {
                 const done = m.alreadyProcessed;
@@ -930,12 +982,14 @@
                 const actionCell = done
                     ? '<td></td>'
                     : `<td class="act-cell"><button class="btn-review" data-id="${m.id}" data-source="${m.source}" data-amt="${Math.abs(m.amount)}" data-desc="${esc(m.description)}">Revisado</button></td>`;
+                const acctCell = `<td><select class="acct-select" data-id="${m.id}" data-source="${m.source}"${done ? ' disabled' : ''}>${accountOptionsFor(m.financialAccountId)}</select></td>`;
                 return `<tr data-id="${m.id}" data-amt="${Math.abs(m.amount)}" class="row${done ? ' processed' : ''}">
                     <td class="cb-cell"><input type="checkbox" data-id="${m.id}" data-side="ref"${done ? ' disabled' : ''}></td>
                     <td>${fmtDate(m.date)}</td>
                     <td class="desc" title="${esc(m.description)}">${esc(m.description)}${done ? '<span class="badge-done">✓</span>' : ''}</td>
                     <td class="${amtCls}">$${fmt(Math.abs(m.amount))}</td>
                     <td class="src">${srcLabel}</td>
+                    ${acctCell}
                     ${actionCell}
                 </tr>`;
             }).join('');
@@ -1001,12 +1055,37 @@
         // Click en fila = toggle checkbox
         document.addEventListener('click', e => {
             const tr = e.target.closest('tr.row');
-            if (!tr || e.target.type === 'checkbox' || e.target.closest('.btn-review')) return;
+            if (!tr || e.target.type === 'checkbox' || e.target.closest('.btn-review') || e.target.closest('.acct-select')) return;
             const cb = tr.querySelector('input[type=checkbox]');
             if (!cb || cb.disabled) return;
             cb.checked = !cb.checked;
             cb.dispatchEvent(new Event('change', { bubbles: true }));
         });
+
+        // ── Asignación de cuenta financiera (columna Cuenta, solo banco/tarjeta) ────
+        document.getElementById('refBody').addEventListener('change', e => {
+            const sel = e.target.closest('.acct-select');
+            if (!sel) return;
+            assignFinancialAccount(sel.dataset.id, sel.dataset.source, sel.value || null, sel);
+        });
+
+        async function assignFinancialAccount(id, source, financialAccountId, selectEl) {
+            const entityType = SOURCE_TO_ENTITY_TYPE[source];
+            const path = entityType === 'Transaction' ? 'transactions' : 'bank-statements';
+
+            selectEl.disabled = true;
+            try {
+                await putJson(`${API}/api/${path}/${id}/financial-account`, { financialAccountId });
+                const row = refs.find(r => r.id === id);
+                if (row) row.financialAccountId = financialAccountId;
+                showToast('topToast', 'Cuenta actualizada', 'ok');
+            } catch (e) {
+                showToast('topToast', `No se pudo actualizar la cuenta: ${e.message}`, 'err');
+                renderRefs(); // revierte el <select> al valor real
+            } finally {
+                selectEl.disabled = false;
+            }
+        }
 
         // ── Sel all / clear ───────────────────────────────────────────────────────
         document.getElementById('refSelAll').addEventListener('click', () => toggleAll('ref'));
@@ -1312,10 +1391,17 @@
         }
         async function postJson(url, body) {
             const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            return handleWriteResponse(r);
+        }
+        async function putJson(url, body) {
+            const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            return handleWriteResponse(r);
+        }
+        async function handleWriteResponse(r) {
             const d = await r.json().catch(() => null);
             if (!r.ok) {
-                // Los endpoints de movement-review devuelven un string plano
-                // (BadRequest/NotFound) o un ProblemDetails con .detail (Problem).
+                // Los endpoints de movement-review y financial-account devuelven un
+                // string plano (BadRequest/NotFound) o un ProblemDetails con .detail.
                 const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
                 throw new Error(msg);
             }
