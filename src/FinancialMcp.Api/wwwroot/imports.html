@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importaciones · FinancialMcp</title>
+    <style>
+        /* ── Design tokens (mismos valores que dashboard.html) ── */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --amber: #fbbf24;
+            --amber-bg: #2d1f07;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+            .topbar h1 { font-size: 16px; font-weight: 700 }
+            .topbar a {
+                color: var(--dim);
+                text-decoration: none;
+                font-size: 13px;
+            }
+                .topbar a:hover { color: var(--text) }
+
+        .content { padding: 20px 24px; max-width: 1100px; margin: 0 auto }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+            .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+
+        button {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 12px;
+            font: 13px var(--sans);
+            cursor: pointer;
+        }
+            button:hover:not(:disabled) { background: #2a3348; border-color: #3a4560 }
+            button:disabled { opacity: .35; cursor: not-allowed }
+            button.sm { padding: 3px 8px; font-size: 12px }
+
+        table { width: 100%; border-collapse: collapse }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--faint);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        tbody tr[data-id] { cursor: pointer }
+        tbody tr[data-id]:hover { background: var(--surface2) }
+
+        td.mono { font-family: var(--mono); font-size: 12px }
+        td.num { text-align: right; font-family: var(--mono) }
+
+        .empty, .loading {
+            padding: 32px;
+            text-align: center;
+            color: var(--faint);
+            font-size: 13px;
+            white-space: normal;
+        }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+            .status-badge.status-ok { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+            .status-badge.status-warn { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
+            .status-badge.status-err { color: #f0b0b0; background: var(--red-bg); border-color: var(--red) }
+
+        /* ── Modal de detalle ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 24px;
+        }
+            .modal-overlay.open { display: flex }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 640px;
+            max-width: 100%;
+            max-height: 84vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,.5);
+        }
+
+        .modal-head {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+            .modal-head h2 { font-size: 14px; font-weight: 600; word-break: break-all }
+            .modal-head p { font-size: 12px; color: var(--faint); margin-top: 4px }
+
+        .modal-body { padding: 16px 18px; overflow-y: auto }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .detail-field label {
+            display: block;
+            font-size: 10px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 3px;
+        }
+        .detail-field .value { font-family: var(--mono); font-size: 13px }
+
+        .lines-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dim);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 8px;
+        }
+
+        .line-row {
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+            .line-row .line-num { color: var(--faint); font-family: var(--mono); margin-right: 6px }
+            .line-row .line-raw { font-family: var(--mono); color: var(--text); word-break: break-word }
+            .line-row .line-reason { color: var(--dim); margin-top: 3px }
+
+        .modal-foot {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .close-x {
+            background: transparent;
+            border: none;
+            color: var(--faint);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+            .close-x:hover { color: var(--text) }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <h1>Historial de importaciones</h1>
+        <a href="/dashboard.html">← Dashboard</a>
+    </header>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Corridas de importación <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                <button class="sm" id="btnRefresh">Actualizar</button>
+            </div>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Archivo</th>
+                            <th>Handler</th>
+                            <th>Fecha/hora</th>
+                            <th>Estado</th>
+                            <th style="text-align:right">Insertados</th>
+                            <th style="text-align:right">Duplicados</th>
+                            <th style="text-align:right">Omitidos</th>
+                            <th style="text-align:right">Fallidos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal de detalle ── -->
+    <div class="modal-overlay" id="detailOverlay">
+        <div class="modal">
+            <div class="modal-head">
+                <div>
+                    <h2 id="detailTitle">—</h2>
+                    <p id="detailSubtitle"></p>
+                </div>
+                <button class="close-x" id="btnCloseDetail" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="modal-body" id="detailBody">
+                <div class="loading">Cargando…</div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnCloseDetailFoot">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const state = { batches: [] };
+
+        const STATUS_LABELS = { Success: 'Exitosa', PartialSuccess: 'Parcial', Failed: 'Fallida' };
+        const STATUS_CLASSES = { Success: 'status-ok', PartialSuccess: 'status-warn', Failed: 'status-err' };
+
+        // ── View models — desacoplados de los DTOs de /api/imports/* ──────────────
+        // No se usa la respuesta de la API directamente como estado de la UI: cada
+        // objeto se mapea acá antes de guardarse/renderizarse.
+
+        function toBatchViewModel(dto) {
+            return {
+                id: dto.id,
+                fileName: shortFileName(dto.sourceFile),
+                fullPath: dto.sourceFile,
+                handler: dto.handlerName,
+                startedLabel: formatDateTime(dto.startedAtUtc),
+                completedLabel: formatDateTime(dto.completedAtUtc),
+                inserted: dto.insertedCount,
+                duplicates: dto.duplicateCount,
+                skipped: dto.skippedCount,
+                failed: dto.failedCount,
+                statusLabel: STATUS_LABELS[dto.status] ?? dto.status,
+                statusClass: STATUS_CLASSES[dto.status] ?? ''
+            };
+        }
+
+        function toLineViewModel(dto) {
+            return {
+                lineNumber: dto.lineNumber,
+                rawText: dto.rawText,
+                reason: dto.reason
+            };
+        }
+
+        // ── Carga del historial: GET /api/imports/history ─────────────────────────
+
+        async function loadHistory() {
+            const tbody = document.getElementById('historyBody');
+            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando…</td></tr>';
+            try {
+                const data = await getJson(`${API}/api/imports/history?take=100`);
+                state.batches = (data.batches ?? []).map(toBatchViewModel);
+                renderHistory();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar el historial: ${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById('historyBody');
+            document.getElementById('countLabel').textContent =
+                state.batches.length > 0 ? `(${state.batches.length})` : '';
+
+            if (state.batches.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay importaciones.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.batches.map(b => `
+                <tr data-id="${b.id}">
+                    <td class="mono" title="${esc(b.fullPath)}">${esc(b.fileName)}</td>
+                    <td>${esc(b.handler)}</td>
+                    <td class="mono">${b.startedLabel}</td>
+                    <td><span class="status-badge ${b.statusClass}">${esc(b.statusLabel)}</span></td>
+                    <td class="num">${b.inserted}</td>
+                    <td class="num">${b.duplicates}</td>
+                    <td class="num">${b.skipped}</td>
+                    <td class="num">${b.failed}</td>
+                </tr>`).join('');
+        }
+
+        document.getElementById('historyBody').addEventListener('click', e => {
+            const tr = e.target.closest('tr[data-id]');
+            if (!tr) return;
+            openDetail(tr.dataset.id);
+        });
+
+        document.getElementById('btnRefresh').addEventListener('click', loadHistory);
+
+        // ── Detalle: GET /api/imports/{id} ─────────────────────────────────────────
+
+        function openModal() { document.getElementById('detailOverlay').classList.add('open'); }
+        function closeModal() { document.getElementById('detailOverlay').classList.remove('open'); }
+
+        document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
+        document.getElementById('btnCloseDetailFoot').addEventListener('click', closeModal);
+        document.getElementById('detailOverlay').addEventListener('click', e => {
+            if (e.target.id === 'detailOverlay') closeModal();
+        });
+
+        async function openDetail(id) {
+            openModal();
+            document.getElementById('detailTitle').textContent = 'Cargando…';
+            document.getElementById('detailSubtitle').textContent = '';
+            document.getElementById('detailBody').innerHTML = '<div class="loading">Cargando detalle…</div>';
+
+            try {
+                const data = await getJson(`${API}/api/imports/${id}`);
+                const summary = toBatchViewModel(data.batch);
+                const lines = (data.lines ?? []).map(toLineViewModel);
+                renderDetail(summary, lines);
+            } catch (e) {
+                document.getElementById('detailTitle').textContent = 'Error';
+                document.getElementById('detailBody').innerHTML =
+                    `<div class="empty">No se pudo cargar el detalle: ${esc(e.message)}</div>`;
+            }
+        }
+
+        function renderDetail(summary, lines) {
+            document.getElementById('detailTitle').textContent = summary.fileName;
+            document.getElementById('detailSubtitle').textContent = summary.fullPath;
+
+            const grid = `
+                <div class="detail-grid">
+                    <div class="detail-field"><label>Handler</label><div class="value">${esc(summary.handler)}</div></div>
+                    <div class="detail-field"><label>Estado</label><div class="value"><span class="status-badge ${summary.statusClass}">${esc(summary.statusLabel)}</span></div></div>
+                    <div class="detail-field"><label>Inicio</label><div class="value">${summary.startedLabel}</div></div>
+                    <div class="detail-field"><label>Fin</label><div class="value">${summary.completedLabel}</div></div>
+                    <div class="detail-field"><label>Insertados</label><div class="value">${summary.inserted}</div></div>
+                    <div class="detail-field"><label>Duplicados</label><div class="value">${summary.duplicates}</div></div>
+                    <div class="detail-field"><label>Omitidos</label><div class="value">${summary.skipped}</div></div>
+                    <div class="detail-field"><label>Fallidos</label><div class="value">${summary.failed}</div></div>
+                </div>`;
+
+            const linesHtml = lines.length === 0
+                ? '<div class="empty" style="padding:16px">Sin diagnósticos para esta corrida.</div>'
+                : `<div class="lines-title">Diagnósticos (${lines.length})</div>` +
+                  lines.map(l => `
+                    <div class="line-row">
+                        <span class="line-num">#${l.lineNumber}</span><span class="line-raw">${esc(l.rawText)}</span>
+                        <div class="line-reason">${esc(l.reason)}</div>
+                    </div>`).join('');
+
+            document.getElementById('detailBody').innerHTML = grid + linesHtml;
+        }
+
+        // ── Utils ────────────────────────────────────────────────────────────────
+
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function shortFileName(path) {
+            if (!path) return '—';
+            const parts = String(path).replaceAll('\\', '/').split('/');
+            return parts[parts.length - 1] || path;
+        }
+
+        function formatDateTime(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return String(iso);
+            return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>
