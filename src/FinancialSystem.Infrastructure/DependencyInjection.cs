@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Accounts;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Metrics;
@@ -7,6 +8,7 @@ using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Application.Review;
+using FinancialSystem.Infrastructure.Accounts;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Imports.Legacy;
@@ -88,6 +90,7 @@ public static class DependencyInjection
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();
+        services.AddScoped<IFinancialAccountQueryService, FinancialAccountQueryService>();
 
 
         // ── Insights (Ollama + OpenAI) ────────────────────────────────────────
