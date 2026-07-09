@@ -15,6 +15,7 @@ public interface IApplicationDbContext
     DbSet<Counterparty> Counterparties { get; }
     DbSet<ImportBatch> ImportBatches { get; }
     DbSet<ImportBatchLine> ImportBatchLines { get; }
+    DbSet<FinancialAccount> FinancialAccounts { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
