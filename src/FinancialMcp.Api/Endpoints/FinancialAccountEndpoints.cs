@@ -3,6 +3,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts;
 using FinancialSystem.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
@@ -18,6 +19,7 @@ public static class FinancialAccountEndpoints
         group.MapPost("/", Create);
         group.MapPut("/{id:guid}", Update);
         group.MapDelete("/{id:guid}", Deactivate);
+        group.MapPost("/{id:guid}/reactivate", Reactivate);
 
         return app;
     }
@@ -55,9 +57,13 @@ public static class FinancialAccountEndpoints
         if (!Enum.TryParse<FinancialAccountType>(request.Type, ignoreCase: true, out var type))
             return Results.BadRequest($"type inválido: '{request.Type}'");
 
+        var name = request.Name.Trim();
+        if (await NameIsTakenByActiveAccount(db, name, excludeId: null, ct))
+            return Results.Conflict($"Ya existe una cuenta activa con Name='{name}'");
+
         var account = new FinancialAccount
         {
-            Name = request.Name.Trim(),
+            Name = name,
             Type = type,
             AccountNumber = string.IsNullOrWhiteSpace(request.AccountNumber) ? null : request.AccountNumber.Trim(),
             Currency = string.IsNullOrWhiteSpace(request.Currency) ? "ARS" : request.Currency.Trim().ToUpperInvariant(),
@@ -84,7 +90,12 @@ public static class FinancialAccountEndpoints
         if (account is null) return Results.NotFound();
 
         if (!string.IsNullOrWhiteSpace(request.Name))
-            account.Name = request.Name.Trim();
+        {
+            var name = request.Name.Trim();
+            if (await NameIsTakenByActiveAccount(db, name, excludeId: id, ct))
+                return Results.Conflict($"Ya existe una cuenta activa con Name='{name}'");
+            account.Name = name;
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Type))
         {
@@ -122,6 +133,36 @@ public static class FinancialAccountEndpoints
         account.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { Message = $"Cuenta '{account.Name}' desactivada" });
+    }
+
+    // POST /api/accounts/{id}/reactivate
+    private static async Task<IResult> Reactivate(
+        Guid id,
+        [FromServices] IApplicationDbContext db,
+        CancellationToken ct)
+    {
+        var account = await db.FinancialAccounts.FindAsync([id], ct);
+        if (account is null) return Results.NotFound();
+        if (!account.IsDeactivated) return Results.Ok(new { Message = "Ya estaba activa" });
+
+        // Reactivar no debe romper la invariante de nombre único entre cuentas
+        // activas que este mismo PR introduce en Create/Update.
+        if (await NameIsTakenByActiveAccount(db, account.Name, excludeId: id, ct))
+            return Results.Conflict(
+                $"No se puede reactivar: ya existe una cuenta activa con Name='{account.Name}'");
+
+        account.IsDeactivated = false;
+        account.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { Message = $"Cuenta '{account.Name}' reactivada" });
+    }
+
+    private static Task<bool> NameIsTakenByActiveAccount(
+        IApplicationDbContext db, string name, Guid? excludeId, CancellationToken ct)
+    {
+        var normalized = name.ToLower();
+        return db.FinancialAccounts.AnyAsync(
+            a => !a.IsDeactivated && a.Id != excludeId && a.Name.ToLower() == normalized, ct);
     }
 
     private static FinancialAccountDto ToDto(FinancialAccount a) => new(
