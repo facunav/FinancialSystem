@@ -30,5 +30,6 @@ app.MapCategoryEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapMetricsEndpoints();
 app.MapMovementReviewEndpoints();
+app.MapImportBatchEndpoints();
 
 app.Run();

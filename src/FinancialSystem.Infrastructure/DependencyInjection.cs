@@ -87,6 +87,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
+        services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();
 
 
         // ── Insights (Ollama + OpenAI) ────────────────────────────────────────
