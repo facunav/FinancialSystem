@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuentas · FinancialMcp</title>
+    <style>
+        /* ── Design tokens (mismos valores que imports.html) ── */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --amber: #fbbf24;
+            --amber-bg: #2d1f07;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+            .topbar h1 { font-size: 16px; font-weight: 700 }
+            .topbar a {
+                color: var(--dim);
+                text-decoration: none;
+                font-size: 13px;
+            }
+                .topbar a:hover { color: var(--text) }
+
+        .content { padding: 20px 24px; max-width: 1100px; margin: 0 auto }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+            .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+
+        .filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+            .filter-bar input[type=text] {
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text);
+                padding: 6px 10px;
+                font: 13px var(--sans);
+                width: 240px;
+            }
+                .filter-bar input[type=text]:focus { outline: 2px solid var(--green); outline-offset: 1px }
+
+            .filter-bar label.checkbox {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: var(--dim);
+                cursor: pointer;
+                white-space: nowrap;
+            }
+
+            .filter-bar .spacer { flex: 1 }
+
+        button {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 12px;
+            font: 13px var(--sans);
+            cursor: pointer;
+        }
+            button:hover:not(:disabled) { background: #2a3348; border-color: #3a4560 }
+            button:disabled { opacity: .35; cursor: not-allowed }
+            button.sm { padding: 3px 8px; font-size: 12px }
+            button.primary { background: var(--green-bg); border-color: var(--green); color: #c0f0d0 }
+                button.primary:hover:not(:disabled) { background: #0a4020 }
+            button.danger { background: var(--red-bg); border-color: var(--red); color: #f0b8b8 }
+                button.danger:hover:not(:disabled) { background: #4a1a1a }
+
+        table { width: 100%; border-collapse: collapse }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--faint);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        tr.row-off td { color: var(--faint) }
+
+        td.mono { font-family: var(--mono); font-size: 12px }
+
+        td.truncate {
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .empty, .loading {
+            padding: 32px;
+            text-align: center;
+            color: var(--faint);
+            font-size: 13px;
+            white-space: normal;
+        }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+            .status-badge.status-ok { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+            .status-badge.status-off { color: var(--dim); background: var(--surface2); border-color: var(--border) }
+
+        .act-cell { display: flex; gap: 6px }
+
+        /* ── Toast ── */
+        .toast {
+            font: 12px var(--mono);
+            padding: 6px 12px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+            .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
+            .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
+        /* ── Modal alta/edición ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 24px;
+        }
+            .modal-overlay.open { display: flex }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 460px;
+            max-width: 100%;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,.5);
+        }
+
+        .modal-head {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+            .modal-head h2 { font-size: 14px; font-weight: 600 }
+
+        .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px }
+
+        .modal-field label {
+            display: block;
+            font-size: 11px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 6px;
+        }
+            .modal-field label.req::after { content: ' *'; color: var(--red) }
+
+        .modal-field input[type=text], .modal-field select, .modal-field textarea {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 8px 10px;
+            font: 13px var(--sans);
+        }
+            .modal-field input[type=text]:focus, .modal-field select:focus, .modal-field textarea:focus {
+                outline: 2px solid var(--green);
+                outline-offset: 1px;
+            }
+
+        .modal-field textarea { resize: vertical; min-height: 56px }
+
+        .modal-foot {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .close-x {
+            background: transparent;
+            border: none;
+            color: var(--faint);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+            .close-x:hover { color: var(--text) }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <h1>Cuentas financieras</h1>
+        <a href="/dashboard.html">← Dashboard</a>
+    </header>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Cuentas <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                <button class="primary sm" id="btnNew">+ Nueva cuenta</button>
+            </div>
+            <div class="filter-bar">
+                <input type="text" id="searchInput" placeholder="Buscar por nombre…">
+                <label class="checkbox"><input type="checkbox" id="chkIncludeDeactivated"> Mostrar desactivadas</label>
+                <div class="spacer"></div>
+                <div id="listToast"></div>
+            </div>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Tipo</th>
+                            <th>Número</th>
+                            <th>Moneda</th>
+                            <th>Notas</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsBody"><tr><td colspan="7" class="loading">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: alta/edición ── -->
+    <div class="modal-overlay" id="formOverlay">
+        <div class="modal">
+            <div class="modal-head">
+                <h2 id="formTitle">Nueva cuenta</h2>
+                <button class="close-x" id="btnCloseForm" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label for="fName" class="req">Nombre</label>
+                    <input type="text" id="fName" placeholder="Ej: BBVA Caja de Ahorro">
+                </div>
+                <div class="modal-field">
+                    <label for="fType" class="req">Tipo</label>
+                    <select id="fType">
+                        <option value="Bank">Banco</option>
+                        <option value="Card">Tarjeta</option>
+                        <option value="Cash">Efectivo</option>
+                        <option value="Investment">Inversión</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="fAccountNumber">Número de cuenta (opcional)</label>
+                    <input type="text" id="fAccountNumber" placeholder="Ej: 214-45099/4">
+                </div>
+                <div class="modal-field">
+                    <label for="fCurrency">Moneda</label>
+                    <input type="text" id="fCurrency" placeholder="ARS" maxlength="3">
+                </div>
+                <div class="modal-field">
+                    <label for="fNotes">Notas (opcional)</label>
+                    <textarea id="fNotes" placeholder="Notas libres…"></textarea>
+                </div>
+                <div id="formToast"></div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnFormCancel">Cancelar</button>
+                <button class="primary" id="btnFormSave">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const state = { accounts: [], editingId: null };
+
+        const TYPE_LABELS = { Bank: 'Banco', Card: 'Tarjeta', Cash: 'Efectivo', Investment: 'Inversión' };
+
+        // ── View model — desacoplado del FinancialAccountDto de /api/accounts ─────
+
+        function toAccountViewModel(dto) {
+            return {
+                id: dto.id,
+                name: dto.name,
+                type: dto.type,
+                typeLabel: TYPE_LABELS[dto.type] ?? dto.type,
+                accountNumber: dto.accountNumber,
+                currency: dto.currency,
+                notes: dto.notes,
+                isDeactivated: dto.isDeactivated,
+            };
+        }
+
+        // ── Listado: GET /api/accounts ─────────────────────────────────────────────
+
+        let searchDebounce = null;
+        function scheduleReload() {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(loadAccounts, 300);
+        }
+
+        async function loadAccounts() {
+            const tbody = document.getElementById('accountsBody');
+            tbody.innerHTML = '<tr><td colspan="7" class="loading">Cargando…</td></tr>';
+
+            const search = document.getElementById('searchInput').value.trim();
+            const includeDeactivated = document.getElementById('chkIncludeDeactivated').checked;
+            const params = new URLSearchParams();
+            if (search) params.set('search', search);
+            if (includeDeactivated) params.set('includeDeactivated', 'true');
+
+            try {
+                const data = await getJson(`${API}/api/accounts?${params.toString()}`);
+                state.accounts = (data ?? []).map(toAccountViewModel);
+                renderAccounts();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderAccounts() {
+            const tbody = document.getElementById('accountsBody');
+            document.getElementById('countLabel').textContent =
+                state.accounts.length > 0 ? `(${state.accounts.length})` : '';
+
+            if (state.accounts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay cuentas.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.accounts.map(a => `
+                <tr class="${a.isDeactivated ? 'row-off' : ''}">
+                    <td>${esc(a.name)}</td>
+                    <td>${esc(a.typeLabel)}</td>
+                    <td class="mono">${esc(a.accountNumber ?? '—')}</td>
+                    <td class="mono">${esc(a.currency)}</td>
+                    <td class="truncate" title="${esc(a.notes ?? '')}">${esc(a.notes ?? '—')}</td>
+                    <td><span class="status-badge ${a.isDeactivated ? 'status-off' : 'status-ok'}">${a.isDeactivated ? 'Desactivada' : 'Activa'}</span></td>
+                    <td class="act-cell">
+                        <button class="sm" data-action="edit" data-id="${a.id}">Editar</button>
+                        ${a.isDeactivated
+                            ? `<button class="sm" data-action="reactivate" data-id="${a.id}">Reactivar</button>`
+                            : `<button class="sm danger" data-action="deactivate" data-id="${a.id}">Desactivar</button>`}
+                    </td>
+                </tr>`).join('');
+        }
+
+        document.getElementById('accountsBody').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const { action, id } = btn.dataset;
+            if (action === 'edit') openEditModal(id);
+            else if (action === 'deactivate') deactivateAccount(id);
+            else if (action === 'reactivate') reactivateAccount(id);
+        });
+
+        document.getElementById('searchInput').addEventListener('input', scheduleReload);
+        document.getElementById('chkIncludeDeactivated').addEventListener('change', loadAccounts);
+        document.getElementById('btnNew').addEventListener('click', () => openFormModal(null));
+
+        // ── Modal alta/edición ───────────────────────────────────────────────────
+
+        function openFormModal(account) {
+            state.editingId = account ? account.id : null;
+            document.getElementById('formTitle').textContent = account ? 'Editar cuenta' : 'Nueva cuenta';
+            document.getElementById('fName').value = account?.name ?? '';
+            document.getElementById('fType').value = account?.type ?? 'Bank';
+            document.getElementById('fAccountNumber').value = account?.accountNumber ?? '';
+            document.getElementById('fCurrency').value = account?.currency ?? 'ARS';
+            document.getElementById('fNotes').value = account?.notes ?? '';
+            document.getElementById('formToast').innerHTML = '';
+            document.getElementById('formOverlay').classList.add('open');
+            document.getElementById('fName').focus();
+        }
+
+        function closeFormModal() { document.getElementById('formOverlay').classList.remove('open'); }
+
+        function openEditModal(id) {
+            const account = state.accounts.find(a => a.id === id);
+            if (account) openFormModal(account);
+        }
+
+        document.getElementById('btnCloseForm').addEventListener('click', closeFormModal);
+        document.getElementById('btnFormCancel').addEventListener('click', closeFormModal);
+        document.getElementById('formOverlay').addEventListener('click', e => {
+            if (e.target.id === 'formOverlay') closeFormModal();
+        });
+
+        document.getElementById('btnFormSave').addEventListener('click', saveAccount);
+
+        async function saveAccount() {
+            const name = document.getElementById('fName').value.trim();
+            if (!name) {
+                showToast('formToast', 'El nombre es requerido', 'err');
+                return;
+            }
+
+            // accountNumber/notes van como "" (no null) cuando están vacíos: el
+            // endpoint PUT distingue null ("no tocar el campo") de "" ("vaciarlo") —
+            // enviar "" es lo único que permite borrar un valor previo desde acá.
+            const body = {
+                name,
+                type: document.getElementById('fType').value,
+                accountNumber: document.getElementById('fAccountNumber').value.trim(),
+                currency: document.getElementById('fCurrency').value.trim() || null,
+                notes: document.getElementById('fNotes').value.trim(),
+            };
+
+            const btn = document.getElementById('btnFormSave');
+            btn.disabled = true;
+            try {
+                if (state.editingId) {
+                    await putJson(`${API}/api/accounts/${state.editingId}`, body);
+                } else {
+                    await postJson(`${API}/api/accounts`, body);
+                }
+                closeFormModal();
+                await loadAccounts();
+            } catch (e) {
+                showToast('formToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ── Desactivar / reactivar ──────────────────────────────────────────────
+
+        async function deactivateAccount(id) {
+            const account = state.accounts.find(a => a.id === id);
+            if (!account) return;
+            if (!confirm(`¿Desactivar la cuenta "${account.name}"? Podés reactivarla después.`)) return;
+
+            try {
+                await deleteJson(`${API}/api/accounts/${id}`);
+                await loadAccounts();
+            } catch (e) {
+                showToast('listToast', e.message, 'err');
+            }
+        }
+
+        async function reactivateAccount(id) {
+            try {
+                await postJson(`${API}/api/accounts/${id}/reactivate`);
+                await loadAccounts();
+            } catch (e) {
+                showToast('listToast', e.message, 'err');
+            }
+        }
+
+        // ── Utils ────────────────────────────────────────────────────────────────
+
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
+        async function postJson(url, body) {
+            const opts = { method: 'POST' };
+            if (body !== undefined) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify(body);
+            }
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function putJson(url, body) {
+            const opts = {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            };
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function deleteJson(url) {
+            return handleWriteResponse(await fetch(url, { method: 'DELETE' }));
+        }
+
+        async function handleWriteResponse(r) {
+            const d = await r.json().catch(() => null);
+            if (!r.ok) {
+                // Los endpoints de /api/accounts devuelven un string plano
+                // (BadRequest/Conflict/NotFound) o un ProblemDetails con .detail.
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return d;
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function showToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
+
+        loadAccounts();
+    </script>
+</body>
+</html>
