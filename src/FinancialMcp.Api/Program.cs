@@ -29,6 +29,8 @@ app.MapGet("/", () => Results.Redirect("/dashboard.html"));
 app.MapCategoryEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapFinancialAccountEndpoints();
+app.MapTransactionEndpoints();
+app.MapBankStatementEndpoints();
 app.MapMetricsEndpoints();
 app.MapMovementReviewEndpoints();
 app.MapImportBatchEndpoints();

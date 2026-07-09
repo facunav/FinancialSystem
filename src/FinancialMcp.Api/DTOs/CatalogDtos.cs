@@ -40,3 +40,11 @@ public sealed record FinancialAccountDto(
         s.Notes,
         s.IsDeactivated);
 }
+
+// ── PUT .../financial-account (Transaction y BankStatement) ────────────────────
+
+/// <summary>
+/// Null desasigna la cuenta. Compartido entre TransactionEndpoints y
+/// BankStatementEndpoints — misma semántica en ambos casos.
+/// </summary>
+public sealed record AssignFinancialAccountRequest(Guid? FinancialAccountId);
