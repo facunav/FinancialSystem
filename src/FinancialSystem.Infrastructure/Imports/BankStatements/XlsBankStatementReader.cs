@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FinancialSystem.Domain.Entities;
 using Microsoft.Extensions.Logging;
-using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
 using NPOI.SS.Util;
 
@@ -13,12 +12,16 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements;
 // ════════════════════════════════════════════════════════════════
 // XLS READER
 //
-// Responsabilidad: abrir el XLS con NPOI y convertir cada celda
+// Responsabilidad: abrir el extracto con NPOI y convertir cada celda
 // a string normalizado. No sabe nada de qué significa cada celda.
 //
 // POR QUÉ NPOI Y NO CLOSEDXML:
-//   ClosedXML soporta .xlsx (OOXML). El archivo del BBVA es .xls
-//   (BIFF8/OLE2 — formato Excel 97-2003). NPOI soporta ambos.
+//   ClosedXML soporta .xlsx (OOXML). Los extractos bancarios llegan como
+//   .xls (BIFF8/OLE2 — Excel 97-2003) o, pese a la extensión .xls, como
+//   OOXML real (algunos exports de homebanking generan XLSX y conservan
+//   la extensión histórica). NPOI soporta ambos formatos — por eso se
+//   abre con WorkbookFactory.Create, que detecta el formato real del
+//   archivo (sniffing de la cabecera) en vez de asumir uno fijo.
 //   ClosedXML puede abrir .xls básicos pero con pérdida de fidelidad.
 //
 // POR QUÉ NO OLEDB:
@@ -40,7 +43,10 @@ public sealed class XlsBankStatementReader
     public (string?[][] Rows, string SheetName) ReadFirstSheet(string filePath)
     {
         using var stream   = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var workbook = new HSSFWorkbook(stream);
+        // WorkbookFactory detecta el formato real del archivo (BIFF8/OLE2 vs. OOXML)
+        // en vez de asumir BIFF8 — necesario porque no todo archivo .xls es binario
+        // legacy: algunos extractos traen contenido XLSX con extensión .xls.
+        using var workbook = WorkbookFactory.Create(stream);
 
         var sheet = workbook.GetSheetAt(0)
             ?? throw new InvalidOperationException($"El archivo XLS no tiene hojas: {filePath}");
