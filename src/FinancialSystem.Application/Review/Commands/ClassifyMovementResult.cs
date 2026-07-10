@@ -10,6 +10,13 @@ public enum ClassifyMovementFailureReason
 
     /// <summary>CounterpartyId (si se informó) no corresponde a ninguna contraparte existente.</summary>
     CounterpartyNotFound,
+
+    /// <summary>
+    /// El movimiento ya tiene un ClassifiedMovementItem, pero como parte de un grupo de
+    /// más de un item (confirmado vía ConfirmMatchCommand) — no se puede reclasificar
+    /// individualmente sin decidir qué pasa con el resto del grupo.
+    /// </summary>
+    AlreadyPartOfMatchGroup,
 }
 
 /// <summary>Resultado de <see cref="ClassifyMovementCommand"/>: éxito con el id creado, o motivo de fallo.</summary>

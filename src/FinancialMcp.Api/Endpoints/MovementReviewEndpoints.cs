@@ -70,6 +70,9 @@ public static class MovementReviewEndpoints
                     Results.BadRequest("categoryId no corresponde a ninguna categoría existente"),
                 ClassifyMovementFailureReason.CounterpartyNotFound =>
                     Results.BadRequest("counterpartyId no corresponde a ninguna contraparte existente"),
+                ClassifyMovementFailureReason.AlreadyPartOfMatchGroup =>
+                    Results.Conflict("Este movimiento es parte de un grupo de conciliación (match N↔M); " +
+                        "no se puede reclasificar individualmente desde acá"),
                 _ => Results.Problem("Error desconocido al clasificar el movimiento"),
             };
         }

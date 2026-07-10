@@ -10,13 +10,13 @@
 
 Punto de entrada. Ya existe como `dashboard.html`. Hoy tiene navegación con placeholders deshabilitados ("pronto": Movimientos, Gastos fijos, Presupuestos, Patrimonio, Inversiones, Copilot) y un badge `navPending` declarado pero nunca poblado por ningún script. Objetivo: que cada entrada de navegación apunte a una pantalla real de esta lista, y que el badge muestre la cantidad de movimientos pendientes de clasificar (dato que ya puede obtenerse de `GetUnclassifiedMovementsQuery`).
 
-### 2. Movimientos pendientes
+### 2. Movimientos
 
-Pantalla nueva (Épica K). Lista de `FinancialMovement` de banco/tarjeta (Transaction/BankStatement), resultado de `GET /api/movements` (PR K1) — un endpoint propio que depende directamente de `IMovementLoader`, sin pasar por `IReviewEngine`/`GetUnclassifiedMovementsQuery`: no calcula sugerencias de matching ni sospechosos, solo lista y filtra (por cuenta, texto, período). `GetUnclassifiedMovementsQuery` sigue siendo exclusivo de `group-reconciliation.html` (Migración desde Excel), que sí necesita las sugerencias del motor para el cruce N↔M. Reemplaza la lectura mental de "columna Banco/Tarjeta" de `group-reconciliation.html` como vista principal de trabajo diario — pero no es una pantalla de reconciliación 1:1, es una cola de pendientes con selección y filtro, pensada para clasificar rápido, no para conciliar montos entre dos fuentes.
+Pantalla nueva (Épica K), implementada en `movements.html`. Lista movimientos de banco/tarjeta (Transaction/BankStatement), tanto pendientes como ya clasificados (PR K3) — resultado de `GET /api/movements`, un endpoint que depende de `IMovementsQueryService` (Application), que orquesta `IMovementLoader` (pendientes) con `ClassifiedMovement`/`ClassifiedMovementItem` (clasificados) sin pasar por `IReviewEngine`/`GetUnclassifiedMovementsQuery`: no calcula sugerencias de matching ni sospechosos, solo lista, filtra (por cuenta, texto, período) y muestra el estado de cada movimiento (Pendiente/Revisado/Confirmado). `GetUnclassifiedMovementsQuery` sigue siendo exclusivo de `group-reconciliation.html` (Migración desde Excel), que sí necesita las sugerencias del motor para el cruce N↔M. Reemplaza la lectura mental de "columna Banco/Tarjeta" de `group-reconciliation.html` como vista principal de trabajo diario — pero no es una pantalla de reconciliación 1:1, es un listado con filtro, pensado para clasificar (y reclasificar) rápido, no para conciliar montos entre dos fuentes.
 
 ### 3. Clasificación
 
-Pantalla/modal nueva (Épica K), disparada desde "Movimientos pendientes". Es la evolución directa del modal de clasificación ya existente en `group-reconciliation.html` (`ClassifyMovementCommand`), pero como flujo primario en vez de acción secundaria dentro de una pantalla de reconciliación. Debe completar las 4 dimensiones (`Category`, `FinancialImpact`, `MovementType`, `Counterparty`) y, cuando se elige `Counterparty`, pre-cargar sus valores por defecto (`DefaultCategoryId`/`DefaultMovementType`/`DefaultFinancialImpact` — mecanismo ya modelado en el dominio, sin wiring en ninguna UI hoy; PR K4).
+Modal en `movements.html`, disparado desde "Movimientos". Es la evolución directa del modal de clasificación ya existente en `group-reconciliation.html` (`ClassifyMovementCommand`), pero como flujo primario en vez de acción secundaria dentro de una pantalla de reconciliación. Debe completar las 4 dimensiones (`Category`, `FinancialImpact`, `MovementType`, `Counterparty`) y, cuando se elige `Counterparty`, pre-cargar sus valores por defecto (`DefaultCategoryId`/`DefaultMovementType`/`DefaultFinancialImpact` — mecanismo ya modelado en el dominio, sin wiring en ninguna UI hoy; PR K4). Desde K3 también permite reclasificar un movimiento ya clasificado (precarga sus valores actuales); `ClassifyMovementHandler` actualiza el `ClassifiedMovement` existente en vez de duplicarlo, siempre que no forme parte de un grupo de matching N↔M confirmado (más de un `ClassifiedMovementItem`) — ese caso devuelve error y debe resolverse desde Migración desde Excel.
 
 ### 4. Importaciones
 
@@ -30,11 +30,11 @@ Pantalla nueva (Épica J). CRUD de `FinancialAccount` (`Bank`/`Card`/`Investment
 
 ## 2. Qué pasa con `group-reconciliation.html`
 
-No se borra en la Épica K. Se mantiene como pantalla secundaria de **conciliación banco vs. Excel** — un caso de uso real y distinto de "clasificar un movimiento": comparar dos fuentes que deberían coincidir en monto y marcar diferencias. Deja de ser la pantalla principal de trabajo diario cuando existan "Movimientos pendientes" y "Clasificación". Se revisita en la Épica N (simplificación del formulario) para decidir si su modal de clasificación se unifica con el nuevo, o si se elimina la duplicación de lógica entre ambos.
+No se borra en la Épica K. Se mantiene como pantalla secundaria de **conciliación banco vs. Excel** — un caso de uso real y distinto de "clasificar un movimiento": comparar dos fuentes que deberían coincidir en monto y marcar diferencias. Deja de ser la pantalla principal de trabajo diario ahora que existen "Movimientos" y "Clasificación" (`movements.html`, PRs K1-K3). Se revisita en la Épica N (simplificación del formulario) para decidir si su modal de clasificación se unifica con el nuevo, o si se elimina la duplicación de lógica entre ambos.
 
 ## 3. Qué partes se reutilizan
 
-* El patrón de **selección + filtro + action bar** (`refSelAll`/`refClear`/`refFilter`/`action-bar` con contador de seleccionados) de `group-reconciliation.html` — aplica igual de bien a "Movimientos pendientes".
+* El patrón de **selección + filtro + action bar** (`refSelAll`/`refClear`/`refFilter`/`action-bar` con contador de seleccionados) de `group-reconciliation.html` — aplica igual de bien a "Movimientos".
 * El **modal de clasificación** (`ClassifyMovementCommand` ya integrado) — se traslada como flujo primario, no se reescribe desde cero.
 * El **modal "Marcar como revisado" en modo batch** (`batchList`, `btnBatchReview`) — el patrón de acción en lote sobre una selección es reutilizable para cualquier acción masiva futura.
 * `FinancialMetricsService` y los endpoints de `MetricsEndpoints` — el Dashboard no necesita nueva lógica de agregación, ya existe.
@@ -49,4 +49,4 @@ No se borra en la Épica K. Se mantiene como pantalla secundaria de **conciliaci
 
 * **Confirmar Match** (`btnConfirm`, `ConfirmMatchCommand`) — sigue existiendo, pero como acción dentro de "conciliación" (`group-reconciliation.html`), no como parte del flujo de clasificación individual.
 * **Descartar candidato legacy** (`btnDiscard`, `DiscardLegacyCandidatesCommand`/`RestoreLegacyCandidatesCommand`) — acción secundaria de mantenimiento sobre datos importados de Excel, no una acción que un usuario nuevo necesite ver en su flujo diario.
-* **Marcar revisados en lote** — se mantiene como utilidad, pero no es el objetivo principal de "Movimientos pendientes" (el objetivo principal ahí es clasificar, no revisar).
+* **Marcar revisados en lote** — se mantiene como utilidad, pero no es el objetivo principal de "Movimientos" (el objetivo principal ahí es clasificar, no revisar).

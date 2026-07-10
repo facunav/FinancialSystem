@@ -9,6 +9,15 @@ namespace FinancialSystem.Application.Review.Commands;
 /// Crea un ClassifiedMovement (Status=Reviewed) + ClassifiedMovementItem (Role=Reference)
 /// a partir de un movimiento crudo (Transaction, BankStatement o LegacyImportedExpense),
 /// sin depender del motor de sugerencias.
+///
+/// RECLASIFICACIÓN (K3): si el origen ya tiene un ClassifiedMovementItem y ese
+/// ClassifiedMovement tiene un único item (fue creado por este mismo handler, nunca
+/// por ConfirmMatchCommand — ese siempre exige al menos un Reference y un Candidate,
+/// dos items como mínimo), se actualiza en el lugar en vez de crear uno nuevo. Sin
+/// esto, reclasificar duplicaría el movimiento en las métricas — no hay índice único
+/// sobre (SourceEntityType, SourceId) que lo evite a nivel de base.
+/// Si el ClassifiedMovement tiene más de un item (parte de un grupo confirmado por
+/// matching), se rechaza: decidir qué pasa con el resto del grupo excede este caso de uso.
 /// </summary>
 public sealed class ClassifyMovementHandler
 {
@@ -41,6 +50,30 @@ public sealed class ClassifyMovementHandler
         }
 
         var now = _dateTimeProvider.UtcNow;
+
+        var existingItem = await _db.ClassifiedMovementItems
+            .Include(i => i.ClassifiedMovement)
+            .ThenInclude(cm => cm!.Items)
+            .FirstOrDefaultAsync(
+                i => i.SourceEntityType == command.SourceEntityType && i.SourceId == command.SourceId,
+                cancellationToken);
+
+        if (existingItem is not null)
+        {
+            var existing = existingItem.ClassifiedMovement!;
+            if (existing.Items.Count > 1)
+                return ClassifyMovementResult.Failure(ClassifyMovementFailureReason.AlreadyPartOfMatchGroup);
+
+            existing.MovementType = command.MovementType;
+            existing.FinancialImpact = command.FinancialImpact;
+            existing.CategoryId = command.CategoryId;
+            existing.CounterpartyId = command.CounterpartyId;
+            existing.Comment = command.Comment;
+            existing.ProcessedAt = now;
+
+            await _db.SaveChangesAsync(cancellationToken);
+            return ClassifyMovementResult.Success(existing.Id);
+        }
 
         var classifiedMovement = new ClassifiedMovement
         {

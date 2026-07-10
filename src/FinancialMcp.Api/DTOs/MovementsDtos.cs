@@ -1,4 +1,4 @@
-using FinancialSystem.Domain.Review;
+using FinancialSystem.Application.Movements;
 
 namespace FinancialSystem.Api.DTOs;
 
@@ -6,7 +6,7 @@ namespace FinancialSystem.Api.DTOs;
 // DTO propio de este endpoint — deliberadamente no reutiliza FinancialMovementDto
 // (ese pertenece a /api/movement-review/*, pensado para la pantalla de Migración
 // desde Excel). Contiene solo lo que la pantalla Movimientos necesita: listar,
-// clasificar y asignar/reasignar cuenta.
+// clasificar y asignar/reasignar cuenta — pendientes y ya clasificados (K3).
 
 public sealed record MovementListItemDto(
     Guid SourceId,
@@ -15,14 +15,26 @@ public sealed record MovementListItemDto(
     decimal Amount,
     string Currency,
     string Source,
-    Guid? FinancialAccountId)
+    Guid? FinancialAccountId,
+    // "Pending" cuando el movimiento todavía no tiene ClassifiedMovementItem.
+    // Si no, el Status real del ClassifiedMovement ("Reviewed"/"Confirmed").
+    string Status,
+    Guid? CategoryId,
+    Guid? CounterpartyId,
+    string? MovementType,
+    string? FinancialImpact)
 {
-    public static MovementListItemDto Create(FinancialMovement m) => new(
+    public static MovementListItemDto Create(MovementView m) => new(
         m.SourceId,
         m.Date,
         m.Description,
         m.Amount,
         m.Currency,
         m.Source.ToString(),
-        m.FinancialAccountId);
+        m.FinancialAccountId,
+        m.Status?.ToString() ?? "Pending",
+        m.CategoryId,
+        m.CounterpartyId,
+        m.MovementType?.ToString(),
+        m.FinancialImpact?.ToString());
 }

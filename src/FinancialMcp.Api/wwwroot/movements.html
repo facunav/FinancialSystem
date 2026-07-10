@@ -175,6 +175,18 @@
             .acct-select:disabled { opacity: .5 }
             .acct-select option:disabled { color: var(--faint) }
 
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+            .status-badge.status-pending { color: var(--dim); background: var(--surface2); border-color: var(--border) }
+            .status-badge.status-reviewed { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
+            .status-badge.status-confirmed { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+
         .act-cell { display: flex; gap: 6px }
 
         /* ── Toast ── */
@@ -281,7 +293,7 @@
     <div class="content">
         <div class="panel">
             <div class="panel-head">
-                <h2>Movimientos pendientes <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                <h2>Movimientos <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
             </div>
             <div class="filter-bar">
                 <div class="field"><label for="fFrom">Desde</label><input type="date" id="fFrom"></div>
@@ -299,11 +311,12 @@
                             <th>Fecha</th>
                             <th>Descripción</th>
                             <th>Importe</th>
+                            <th>Estado</th>
                             <th>Cuenta financiera</th>
                             <th></th>
                         </tr>
                     </thead>
-                    <tbody id="movementsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="movementsBody"><tr><td colspan="6" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -368,10 +381,10 @@
         const API = '';
 
         // ── Estado ───────────────────────────────────────────────────────────────
-        // Nombrado en términos generales (no "pendingMovements") a propósito: hoy
-        // GET /api/movements solo devuelve pendientes (K1), pero el modelo debe
-        // poder crecer en K3 (incluir clasificados), K4 (sugerencias) y K5
-        // (advertencias) sin rediseñarse.
+        // Nombrado en términos generales (no "pendingMovements") a propósito: desde
+        // K3, GET /api/movements devuelve pendientes y clasificados. El modelo debe
+        // poder seguir creciendo en K4 (sugerencias) y K5 (advertencias) sin
+        // rediseñarse.
         const state = {
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
@@ -388,6 +401,9 @@
         const SOURCE_TO_ENTITY_TYPE = { BankDebit: 'BankStatement', CreditCard: 'Transaction' };
         const SOURCE_TO_ACCOUNT_PATH = { BankDebit: 'bank-statements', CreditCard: 'transactions' };
 
+        const STATUS_LABELS = { Pending: 'Pendiente', Reviewed: 'Revisado', Confirmed: 'Confirmado' };
+        const STATUS_CLASSES = { Pending: 'status-pending', Reviewed: 'status-reviewed', Confirmed: 'status-confirmed' };
+
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
@@ -402,6 +418,11 @@
                 currency: dto.currency,
                 source: dto.source,
                 financialAccountId: dto.financialAccountId ?? null,
+                status: dto.status,
+                categoryId: dto.categoryId ?? null,
+                counterpartyId: dto.counterpartyId ?? null,
+                movementType: dto.movementType ?? null,
+                financialImpact: dto.financialImpact ?? null,
             };
         }
 
@@ -464,7 +485,7 @@
 
         async function loadMovements() {
             const tbody = document.getElementById('movementsBody');
-            tbody.innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
 
             const params = new URLSearchParams();
             if (state.movementFilters.from) params.set('from', state.movementFilters.from);
@@ -477,14 +498,15 @@
                 state.movements = (data ?? []).map(toMovementViewModel);
                 renderMovements();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="5" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
             }
         }
 
         // ── Render ───────────────────────────────────────────────────────────────
-        // Separado en piezas por columna (renderAccountCell/renderActionsCell) a
-        // propósito: agregar una columna de estado/sugerencia/advertencia en K3-K5
-        // debe ser insertar una función de celda nueva, no reescribir renderMovementRow.
+        // Separado en piezas por columna (renderStatusCell/renderAccountCell/
+        // renderActionsCell) a propósito: agregar sugerencias (K4) o advertencias
+        // (K5) debe ser insertar una función de celda nueva, no reescribir
+        // renderMovementRow.
 
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
@@ -492,7 +514,7 @@
                 state.movements.length > 0 ? `(${state.movements.length})` : '';
 
             if (state.movements.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty">No hay movimientos pendientes para este período.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay movimientos para este período.</td></tr>';
                 return;
             }
 
@@ -505,9 +527,16 @@
                     <td>${fmtDate(m.date)}</td>
                     <td class="truncate" title="${esc(m.description)}">${esc(m.description)}</td>
                     <td class="mono">$${fmt(m.amount)}</td>
+                    <td>${renderStatusCell(m)}</td>
                     <td>${renderAccountCell(m)}</td>
                     <td class="act-cell">${renderActionsCell(m)}</td>
                 </tr>`;
+        }
+
+        function renderStatusCell(m) {
+            const cls = STATUS_CLASSES[m.status] ?? 'status-pending';
+            const label = STATUS_LABELS[m.status] ?? m.status;
+            return `<span class="status-badge ${cls}">${esc(label)}</span>`;
         }
 
         function renderAccountCell(m) {
@@ -515,7 +544,8 @@
         }
 
         function renderActionsCell(m) {
-            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">Clasificar</button>`;
+            const label = m.status === 'Pending' ? 'Clasificar' : 'Cambiar categoría';
+            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
         }
 
         // Si la cuenta asignada actualmente no está entre las activas (se
@@ -597,9 +627,12 @@
 
             document.getElementById('classifySubtitle').textContent =
                 `${fmtDate(movement.date)} · ${movement.description} · $${fmt(movement.amount)}`;
-            document.getElementById('cImpact').value = 'Expense';
-            document.getElementById('cMovementType').value = 'Purchase';
-            document.getElementById('cCounterparty').value = '';
+            // Si ya está clasificado, precarga los valores actuales — "cambiar la
+            // categoría" parte de lo que ya eligió el usuario, no de un formulario vacío.
+            document.getElementById('cCategory').value = movement.categoryId ?? '';
+            document.getElementById('cImpact').value = movement.financialImpact ?? 'Expense';
+            document.getElementById('cMovementType').value = movement.movementType ?? 'Purchase';
+            document.getElementById('cCounterparty').value = movement.counterpartyId ?? '';
             document.getElementById('cComment').value = '';
             document.getElementById('classifyToast').innerHTML = '';
             document.getElementById('classifyOverlay').classList.add('open');
@@ -643,14 +676,18 @@
             try {
                 await postJson(`${API}/api/movement-review/classify`, body);
                 closeClassifyModal();
-                // GET /api/movements solo devuelve pendientes (K1): un movimiento
-                // recién clasificado deja de pertenecer a esta lista. Se saca del
-                // estado en memoria en vez de recargar todo el período. Cuando K3
-                // permita ver también clasificados, esta línea pasa a actualizar
-                // el estado del movimiento en vez de eliminarlo.
-                state.movements = state.movements.filter(m => m.sourceId !== movement.sourceId);
+                // GET /api/movements incluye pendientes y clasificados (K3): el
+                // movimiento sigue en la lista, solo cambia su estado. El resultado
+                // de este endpoint (clasificar o reclasificar) siempre queda en
+                // Status=Reviewed — Confirmed solo se genera por confirm-match, un
+                // flujo que esta pantalla no expone (ver group-reconciliation.html).
+                movement.status = 'Reviewed';
+                movement.categoryId = body.categoryId;
+                movement.counterpartyId = body.counterpartyId;
+                movement.movementType = body.movementType;
+                movement.financialImpact = body.financialImpact;
                 renderMovements();
-                showToast('listToast', 'Movimiento clasificado', 'ok');
+                showToast('listToast', 'Clasificación guardada', 'ok');
             } catch (e) {
                 showToast('classifyToast', e.message, 'err');
             } finally {
