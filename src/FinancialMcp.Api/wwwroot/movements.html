@@ -205,6 +205,24 @@
             .suggestion-chip.confidence-medium { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
             .suggestion-chip.confidence-low { color: var(--dim); background: var(--surface2); border-color: var(--border) }
 
+        /* Columna "Alerta" (K6): grupo sospechoso detectado por ISuspicionDetector
+           (posible duplicado / posible split) — igual que la sugerencia, solo
+           informativo, sin acción propia en esta pantalla. */
+        .warning-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--red);
+            color: #f0b0b0;
+            background: var(--red-bg);
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
         .act-cell { display: flex; gap: 6px }
 
         /* ── Toast ── */
@@ -332,10 +350,11 @@
                             <th>Estado</th>
                             <th>Cuenta financiera</th>
                             <th>Sugerencia</th>
+                            <th>Alerta</th>
                             <th></th>
                         </tr>
                     </thead>
-                    <tbody id="movementsBody"><tr><td colspan="7" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="movementsBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -408,7 +427,8 @@
         // ── Estado ───────────────────────────────────────────────────────────────
         // Nombrado en términos generales (no "pendingMovements") a propósito: desde
         // K3, GET /api/movements devuelve pendientes y clasificados. El modelo siguió
-        // creciendo en K4 (sugerencias) y K5 (confirmar sugerencia) sin rediseñarse.
+        // creciendo en K4 (sugerencias), K5 (confirmar sugerencia) y K6 (grupos
+        // sospechosos) sin rediseñarse.
         // modalMode distingue qué comando dispara btnClassifySave: 'classify' (default)
         // o 'confirm' — mismo modal, mismos campos comunes, dos flujos de dominio ya
         // existentes (ClassifyMovementCommand / ConfirmMatchCommand).
@@ -443,6 +463,13 @@
         const CONFIDENCE_LABELS = { High: 'Alta', Medium: 'Media', Low: 'Baja' };
         const CONFIDENCE_CLASSES = { High: 'confidence-high', Medium: 'confidence-medium', Low: 'confidence-low' };
 
+        // K6: motivo por el que ISuspicionDetector marcó el grupo (SuspicionReason).
+        const SUSPICION_LABELS = {
+            PossibleDuplicate: 'Posible duplicado',
+            SplitTransaction: 'Posible división',
+            RoundingAnomaly: 'Anomalía de redondeo',
+        };
+
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
@@ -469,6 +496,11 @@
                     candidateDate: dto.suggestion.candidateDate,
                     candidateSource: dto.suggestion.candidateSource,
                     confidence: dto.suggestion.confidence,
+                } : null,
+                warning: dto.warning ? {
+                    reason: dto.warning.reason,
+                    description: dto.warning.description,
+                    groupSize: dto.warning.groupSize,
                 } : null,
             };
         }
@@ -532,7 +564,7 @@
 
         async function loadMovements() {
             const tbody = document.getElementById('movementsBody');
-            tbody.innerHTML = '<tr><td colspan="7" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando…</td></tr>';
 
             const params = new URLSearchParams();
             if (state.movementFilters.from) params.set('from', state.movementFilters.from);
@@ -545,16 +577,17 @@
                 state.movements = (data ?? []).map(toMovementViewModel);
                 renderMovements();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="7" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
             }
         }
 
         // ── Render ───────────────────────────────────────────────────────────────
         // Separado en piezas por columna (renderStatusCell/renderAccountCell/
-        // renderSuggestionCell/renderActionsCell) a propósito: agregar sugerencias
-        // (K4) o una acción de confirmar (K5) fue insertar una función de celda
-        // nueva / un botón más en renderActionsCell, no reescribir renderMovementRow.
-        // Futuras ampliaciones (p.ej. advertencias de sospecha) siguen el mismo patrón.
+        // renderSuggestionCell/renderWarningCell/renderActionsCell) a propósito:
+        // agregar sugerencias (K4), una acción de confirmar (K5) o grupos sospechosos
+        // (K6) fue siempre insertar una función de celda nueva / un botón más en
+        // renderActionsCell, nunca reescribir renderMovementRow. Futuras ampliaciones
+        // siguen el mismo patrón.
 
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
@@ -562,7 +595,7 @@
                 state.movements.length > 0 ? `(${state.movements.length})` : '';
 
             if (state.movements.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay movimientos para este período.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay movimientos para este período.</td></tr>';
                 return;
             }
 
@@ -578,6 +611,7 @@
                     <td>${renderStatusCell(m)}</td>
                     <td>${renderAccountCell(m)}</td>
                     <td>${renderSuggestionCell(m)}</td>
+                    <td>${renderWarningCell(m)}</td>
                     <td class="act-cell">${renderActionsCell(m)}</td>
                 </tr>`;
         }
@@ -601,6 +635,16 @@
             const label = CONFIDENCE_LABELS[s.confidence] ?? s.confidence;
             const title = `${esc(s.candidateDescription)} · $${fmt(s.candidateAmount)} · ${fmtDate(s.candidateDate)}`;
             return `<span class="suggestion-chip ${cls}" title="${title}">${esc(label)}: ${esc(s.candidateDescription)}</span>`;
+        }
+
+        // K6: solo información — mismo criterio que la sugerencia, sin acción propia.
+        // Resolver el grupo (marcar como no-duplicado, descartar, etc.) sigue siendo
+        // exclusivo de group-reconciliation.html.
+        function renderWarningCell(m) {
+            if (!m.warning) return '<span style="color: var(--dim)">—</span>';
+            const w = m.warning;
+            const label = SUSPICION_LABELS[w.reason] ?? w.reason;
+            return `<span class="warning-badge" title="${esc(w.description)}">⚠ ${esc(label)}</span>`;
         }
 
         // K5: solo sugerencias de alta confianza ofrecen el atajo de un clic. Media/baja

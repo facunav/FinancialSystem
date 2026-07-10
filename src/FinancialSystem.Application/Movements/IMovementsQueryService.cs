@@ -12,10 +12,11 @@ namespace FinancialSystem.Application.Movements;
 /// <summary>
 /// Status null = pendiente (sin ClassifiedMovementItem todavía). No-null = clasificado,
 /// con el Status real de su ClassifiedMovement (Reviewed/Confirmed).
-/// Suggestion (K4): contexto de solo lectura tomado de IReviewEngine — nunca existe en
-/// movimientos clasificados (el motor solo considera pendientes, por diseño de
-/// MovementLoader). No implica ninguna acción; confirmar un match sigue siendo
-/// exclusivo de group-reconciliation.html.
+/// Suggestion (K4) y Warning (K6): contexto de solo lectura tomado de IReviewEngine —
+/// ninguno de los dos existe nunca en movimientos clasificados (el motor solo considera
+/// pendientes, por diseño de MovementLoader). Ninguno implica una acción propia:
+/// confirmar un match N↔M real, o resolver un grupo sospechoso, sigue siendo exclusivo
+/// de group-reconciliation.html.
 /// </summary>
 public sealed record MovementView(
     Guid SourceId,
@@ -30,7 +31,20 @@ public sealed record MovementView(
     Guid? CounterpartyId,
     MovementType? MovementType,
     FinancialImpact? FinancialImpact,
-    MovementSuggestion? Suggestion);
+    MovementSuggestion? Suggestion,
+    MovementWarning? Warning);
+
+/// <summary>
+/// Grupo sospechoso (K6) al que pertenece este movimiento, según ISuspicionDetector —
+/// posible duplicado o posible split. GroupSize es el tamaño total del grupo (incluyendo
+/// este movimiento), no la lista completa de FinancialMovement del grupo: alcanza para
+/// que el usuario entienda que no está solo, sin reconstruir la pantalla de reconciliación
+/// acá. Sin acción asociada — ver group-reconciliation.html para resolver el grupo.
+/// </summary>
+public sealed record MovementWarning(
+    SuspicionReason Reason,
+    string Description,
+    int GroupSize);
 
 /// <summary>
 /// Mejor candidato que IReviewEngine encontró para este movimiento — ya sea la
@@ -54,9 +68,11 @@ public sealed record MovementSuggestion(
 
 /// <summary>
 /// Lectura combinada de movimientos de banco/tarjeta (Transaction/BankStatement)
-/// para la pantalla Movimientos (Épica K): pendientes (vía IMovementLoader) +
-/// ya clasificados (vía ClassifiedMovement/ClassifiedMovementItem). Nunca persiste
-/// nada. No usa IReviewEngine — sin sugerencias, sin matching, sin sospechosos.
+/// para la pantalla Movimientos (Épica K): pendientes + sugerencias + sospechosos
+/// (vía IReviewEngine, una sola ejecución por request) y ya clasificados (vía
+/// ClassifiedMovement/ClassifiedMovementItem). Nunca persiste nada. No expone
+/// confirmación de match N↔M ni resolución de grupos sospechosos — eso sigue
+/// siendo exclusivo de group-reconciliation.html.
 /// </summary>
 public interface IMovementsQueryService
 {
