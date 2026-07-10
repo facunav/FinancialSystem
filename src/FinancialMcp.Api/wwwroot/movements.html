@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movimientos · FinancialMcp</title>
+    <style>
+        /* ── Design tokens (mismos valores que accounts.html/imports.html) ── */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --amber: #fbbf24;
+            --amber-bg: #2d1f07;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+            .topbar h1 { font-size: 16px; font-weight: 700 }
+            .topbar a {
+                color: var(--dim);
+                text-decoration: none;
+                font-size: 13px;
+            }
+                .topbar a:hover { color: var(--text) }
+
+        .content { padding: 20px 24px; max-width: 1200px; margin: 0 auto }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+            .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+
+        .filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+            .filter-bar .field {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+                .filter-bar .field label {
+                    font-size: 11px;
+                    color: var(--faint);
+                    text-transform: uppercase;
+                    letter-spacing: .05em;
+                    white-space: nowrap;
+                }
+
+            .filter-bar input[type=text],
+            .filter-bar input[type=date],
+            .filter-bar select {
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text);
+                padding: 6px 10px;
+                font: 13px var(--sans);
+            }
+                .filter-bar input[type=text] { width: 220px }
+                .filter-bar input[type=date] { font-family: var(--mono); font-size: 12px }
+                .filter-bar input[type=text]:focus,
+                .filter-bar input[type=date]:focus,
+                .filter-bar select:focus { outline: 2px solid var(--green); outline-offset: 1px }
+
+            .filter-bar .spacer { flex: 1 }
+
+        button {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 12px;
+            font: 13px var(--sans);
+            cursor: pointer;
+        }
+            button:hover:not(:disabled) { background: #2a3348; border-color: #3a4560 }
+            button:disabled { opacity: .35; cursor: not-allowed }
+            button.sm { padding: 3px 8px; font-size: 12px }
+            button.primary { background: var(--green-bg); border-color: var(--green); color: #c0f0d0 }
+                button.primary:hover:not(:disabled) { background: #0a4020 }
+
+        table { width: 100%; border-collapse: collapse }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--faint);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        td.mono { font-family: var(--mono); font-size: 12px }
+
+        td.truncate {
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .empty, .loading {
+            padding: 32px;
+            text-align: center;
+            color: var(--faint);
+            font-size: 13px;
+            white-space: normal;
+        }
+
+        .acct-select {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 4px 6px;
+            font: 12px var(--sans);
+            max-width: 160px;
+        }
+            .acct-select:disabled { opacity: .5 }
+            .acct-select option:disabled { color: var(--faint) }
+
+        .act-cell { display: flex; gap: 6px }
+
+        /* ── Toast ── */
+        .toast {
+            font: 12px var(--mono);
+            padding: 6px 12px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+            .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
+            .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
+        /* ── Modal de clasificación ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 24px;
+        }
+            .modal-overlay.open { display: flex }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 460px;
+            max-width: 100%;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,.5);
+        }
+
+        .modal-head {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+            .modal-head h2 { font-size: 14px; font-weight: 600 }
+            .modal-head p { font-size: 12px; color: var(--faint); margin-top: 4px }
+
+        .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px }
+
+        .modal-field label {
+            display: block;
+            font-size: 11px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 6px;
+        }
+            .modal-field label.req::after { content: ' *'; color: var(--red) }
+
+        .modal-field select, .modal-field textarea {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 8px 10px;
+            font: 13px var(--sans);
+        }
+            .modal-field select:focus, .modal-field textarea:focus {
+                outline: 2px solid var(--green);
+                outline-offset: 1px;
+            }
+
+        .modal-field textarea { resize: vertical; min-height: 56px }
+
+        .modal-foot {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .close-x {
+            background: transparent;
+            border: none;
+            color: var(--faint);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+            .close-x:hover { color: var(--text) }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <h1>Movimientos</h1>
+        <a href="/dashboard.html">← Dashboard</a>
+    </header>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Movimientos pendientes <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+            </div>
+            <div class="filter-bar">
+                <div class="field"><label for="fFrom">Desde</label><input type="date" id="fFrom"></div>
+                <div class="field"><label for="fTo">Hasta</label><input type="date" id="fTo"></div>
+                <input type="text" id="searchInput" placeholder="Buscar por descripción…">
+                <select id="accountFilter"><option value="">Todas las cuentas</option></select>
+                <button class="sm" id="btnApplyFilters">Aplicar</button>
+                <div class="spacer"></div>
+                <div id="listToast"></div>
+            </div>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Descripción</th>
+                            <th>Importe</th>
+                            <th>Cuenta financiera</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="movementsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: clasificar movimiento ── -->
+    <div class="modal-overlay" id="classifyOverlay">
+        <div class="modal">
+            <div class="modal-head">
+                <div>
+                    <h2>Clasificar movimiento</h2>
+                    <p id="classifySubtitle"></p>
+                </div>
+                <button class="close-x" id="btnCloseClassify" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label for="cCategory" class="req">Categoría</label>
+                    <select id="cCategory"><option value="">Cargando…</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="cImpact" class="req">Impacto financiero</label>
+                    <select id="cImpact">
+                        <option value="Expense">Gasto real</option>
+                        <option value="InternalMovement">Transferencia interna</option>
+                        <option value="DebtPayment">Pago de deuda</option>
+                        <option value="Income">Ingreso</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="cMovementType" class="req">Tipo de movimiento</label>
+                    <select id="cMovementType">
+                        <option value="Purchase">Compra</option>
+                        <option value="Transfer">Transferencia</option>
+                        <option value="Payment">Pago</option>
+                        <option value="Receipt">Cobro</option>
+                        <option value="Fee">Comisión</option>
+                        <option value="Interest">Interés</option>
+                        <option value="Refund">Reintegro</option>
+                        <option value="Adjustment">Ajuste</option>
+                        <option value="Other">Otro</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="cCounterparty">Contraparte (opcional)</label>
+                    <select id="cCounterparty"><option value="">— Sin contraparte —</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="cComment">Comentario (opcional)</label>
+                    <textarea id="cComment" placeholder="Detalle adicional…"></textarea>
+                </div>
+                <div id="classifyToast"></div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnClassifyCancel">Cancelar</button>
+                <button class="primary" id="btnClassifySave">Guardar clasificación</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+
+        // ── Estado ───────────────────────────────────────────────────────────────
+        // Nombrado en términos generales (no "pendingMovements") a propósito: hoy
+        // GET /api/movements solo devuelve pendientes (K1), pero el modelo debe
+        // poder crecer en K3 (incluir clasificados), K4 (sugerencias) y K5
+        // (advertencias) sin rediseñarse.
+        const state = {
+            movements: [],
+            movementFilters: { from: null, to: null, financialAccountId: null, search: null },
+            accounts: [],
+            activeAccounts: [],
+            categories: [],
+            counterparties: [],
+            selectedMovement: null,
+        };
+
+        // FinancialMovement.Source -> SourceEntityType / segmento de ruta REST.
+        // Esta pantalla solo trabaja con banco/tarjeta — GET /api/movements ya
+        // excluye legacy (ver K1) — por eso el mapa no incluye LegacyImport.
+        const SOURCE_TO_ENTITY_TYPE = { BankDebit: 'BankStatement', CreditCard: 'Transaction' };
+        const SOURCE_TO_ACCOUNT_PATH = { BankDebit: 'bank-statements', CreditCard: 'transactions' };
+
+        const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+        const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
+
+        // ── View model — desacoplado de MovementListItemDto ────────────────────────
+
+        function toMovementViewModel(dto) {
+            return {
+                sourceId: dto.sourceId,
+                date: dto.date,
+                description: dto.description,
+                amount: dto.amount,
+                currency: dto.currency,
+                source: dto.source,
+                financialAccountId: dto.financialAccountId ?? null,
+            };
+        }
+
+        // ── Init: período por defecto = mes actual (mismo default que el propio
+        // endpoint aplica del lado servidor cuando se omiten from/to) ─────────────
+        (function initPeriod() {
+            const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+            const from = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+            const lastDay = new Date(y, m + 1, 0).getDate();
+            const to = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+            document.getElementById('fFrom').value = from;
+            document.getElementById('fTo').value = to;
+            state.movementFilters.from = from;
+            state.movementFilters.to = to;
+        })();
+
+        (async function loadAccounts() {
+            try {
+                const all = await getJson(`${API}/api/accounts?includeDeactivated=true`);
+                state.accounts = all;
+                state.activeAccounts = all.filter(a => !a.isDeactivated).sort((a, b) => a.name.localeCompare(b.name));
+                populateAccountFilter();
+            } catch (e) {
+                // El filtro y el selector de cuenta quedan vacíos hasta el próximo intento.
+            }
+        })();
+
+        function populateAccountFilter() {
+            const sel = document.getElementById('accountFilter');
+            const opts = state.accounts
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(a => `<option value="${a.id}">${esc(a.name)}${a.isDeactivated ? ' (desactivada)' : ''}</option>`)
+                .join('');
+            sel.innerHTML = '<option value="">Todas las cuentas</option>' + opts;
+        }
+
+        (async function loadCategories() {
+            try {
+                state.categories = await getJson(`${API}/api/categories`);
+                document.getElementById('cCategory').innerHTML =
+                    state.categories.map(c => `<option value="${c.id}">${esc(c.displayName)}</option>`).join('');
+            } catch (e) {
+                document.getElementById('cCategory').innerHTML = '<option value="">Error al cargar</option>';
+            }
+        })();
+
+        (async function loadCounterparties() {
+            try {
+                state.counterparties = await getJson(`${API}/api/counterparties`);
+                document.getElementById('cCounterparty').innerHTML =
+                    '<option value="">— Sin contraparte —</option>' +
+                    state.counterparties.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+            } catch (e) {
+                document.getElementById('cCounterparty').innerHTML = '<option value="">— Sin contraparte —</option>';
+            }
+        })();
+
+        // ── Listado: GET /api/movements ─────────────────────────────────────────────
+
+        async function loadMovements() {
+            const tbody = document.getElementById('movementsBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
+
+            const params = new URLSearchParams();
+            if (state.movementFilters.from) params.set('from', state.movementFilters.from);
+            if (state.movementFilters.to) params.set('to', state.movementFilters.to);
+            if (state.movementFilters.financialAccountId) params.set('financialAccountId', state.movementFilters.financialAccountId);
+            if (state.movementFilters.search) params.set('search', state.movementFilters.search);
+
+            try {
+                const data = await getJson(`${API}/api/movements?${params.toString()}`);
+                state.movements = (data ?? []).map(toMovementViewModel);
+                renderMovements();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="5" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        // ── Render ───────────────────────────────────────────────────────────────
+        // Separado en piezas por columna (renderAccountCell/renderActionsCell) a
+        // propósito: agregar una columna de estado/sugerencia/advertencia en K3-K5
+        // debe ser insertar una función de celda nueva, no reescribir renderMovementRow.
+
+        function renderMovements() {
+            const tbody = document.getElementById('movementsBody');
+            document.getElementById('countLabel').textContent =
+                state.movements.length > 0 ? `(${state.movements.length})` : '';
+
+            if (state.movements.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">No hay movimientos pendientes para este período.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.movements.map(renderMovementRow).join('');
+        }
+
+        function renderMovementRow(m) {
+            return `
+                <tr data-source-id="${m.sourceId}">
+                    <td>${fmtDate(m.date)}</td>
+                    <td class="truncate" title="${esc(m.description)}">${esc(m.description)}</td>
+                    <td class="mono">$${fmt(m.amount)}</td>
+                    <td>${renderAccountCell(m)}</td>
+                    <td class="act-cell">${renderActionsCell(m)}</td>
+                </tr>`;
+        }
+
+        function renderAccountCell(m) {
+            return `<select class="acct-select" data-source-id="${m.sourceId}" data-source="${m.source}">${accountOptionsFor(m.financialAccountId)}</select>`;
+        }
+
+        function renderActionsCell(m) {
+            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">Clasificar</button>`;
+        }
+
+        // Si la cuenta asignada actualmente no está entre las activas (se
+        // desactivó después de asignarse), se agrega igual como opción
+        // deshabilitada para no perder la referencia visual.
+        function accountOptionsFor(currentId) {
+            let html = '<option value="">— Sin cuenta —</option>';
+            let currentIsActive = false;
+            for (const a of state.activeAccounts) {
+                if (a.id === currentId) currentIsActive = true;
+                html += `<option value="${a.id}"${a.id === currentId ? ' selected' : ''}>${esc(a.name)}</option>`;
+            }
+            if (currentId && !currentIsActive) {
+                const acc = state.accounts.find(a => a.id === currentId);
+                html += `<option value="${currentId}" selected disabled>${esc(acc ? acc.name : 'Cuenta')} (desactivada)</option>`;
+            }
+            return html;
+        }
+
+        // ── Filtros ──────────────────────────────────────────────────────────────
+
+        document.getElementById('btnApplyFilters').addEventListener('click', () => {
+            state.movementFilters.from = document.getElementById('fFrom').value || null;
+            state.movementFilters.to = document.getElementById('fTo').value || null;
+            loadMovements();
+        });
+
+        document.getElementById('accountFilter').addEventListener('change', () => {
+            state.movementFilters.financialAccountId = document.getElementById('accountFilter').value || null;
+            loadMovements();
+        });
+
+        let searchDebounce = null;
+        document.getElementById('searchInput').addEventListener('input', () => {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+                state.movementFilters.search = document.getElementById('searchInput').value.trim() || null;
+                loadMovements();
+            }, 300);
+        });
+
+        // ── Asignación de cuenta financiera ──────────────────────────────────────
+
+        document.getElementById('movementsBody').addEventListener('change', e => {
+            const sel = e.target.closest('.acct-select');
+            if (!sel) return;
+            assignFinancialAccount(sel.dataset.sourceId, sel.dataset.source, sel.value || null, sel);
+        });
+
+        async function assignFinancialAccount(sourceId, source, financialAccountId, selectEl) {
+            const path = SOURCE_TO_ACCOUNT_PATH[source];
+
+            selectEl.disabled = true;
+            try {
+                await putJson(`${API}/api/${path}/${sourceId}/financial-account`, { financialAccountId });
+                const movement = state.movements.find(m => m.sourceId === sourceId);
+                if (movement) movement.financialAccountId = financialAccountId;
+                showToast('listToast', 'Cuenta actualizada', 'ok');
+            } catch (e) {
+                showToast('listToast', `No se pudo actualizar la cuenta: ${e.message}`, 'err');
+                renderMovements(); // revierte el <select> al valor real
+            } finally {
+                selectEl.disabled = false;
+            }
+        }
+
+        // ── Clasificación individual ────────────────────────────────────────────
+
+        document.getElementById('movementsBody').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-action="classify"]');
+            if (!btn) return;
+            openClassifyModal(btn.dataset.sourceId);
+        });
+
+        function openClassifyModal(sourceId) {
+            const movement = state.movements.find(m => m.sourceId === sourceId);
+            if (!movement) return;
+            state.selectedMovement = movement;
+
+            document.getElementById('classifySubtitle').textContent =
+                `${fmtDate(movement.date)} · ${movement.description} · $${fmt(movement.amount)}`;
+            document.getElementById('cImpact').value = 'Expense';
+            document.getElementById('cMovementType').value = 'Purchase';
+            document.getElementById('cCounterparty').value = '';
+            document.getElementById('cComment').value = '';
+            document.getElementById('classifyToast').innerHTML = '';
+            document.getElementById('classifyOverlay').classList.add('open');
+        }
+
+        function closeClassifyModal() {
+            document.getElementById('classifyOverlay').classList.remove('open');
+            state.selectedMovement = null;
+        }
+
+        document.getElementById('btnCloseClassify').addEventListener('click', closeClassifyModal);
+        document.getElementById('btnClassifyCancel').addEventListener('click', closeClassifyModal);
+        document.getElementById('classifyOverlay').addEventListener('click', e => {
+            if (e.target.id === 'classifyOverlay') closeClassifyModal();
+        });
+
+        document.getElementById('btnClassifySave').addEventListener('click', saveClassification);
+
+        async function saveClassification() {
+            const movement = state.selectedMovement;
+            if (!movement) return;
+
+            const categoryId = document.getElementById('cCategory').value;
+            if (!categoryId) {
+                showToast('classifyToast', 'Seleccioná una categoría', 'err');
+                return;
+            }
+
+            const body = {
+                sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source],
+                sourceId: movement.sourceId,
+                categoryId,
+                movementType: document.getElementById('cMovementType').value,
+                financialImpact: document.getElementById('cImpact').value,
+                counterpartyId: document.getElementById('cCounterparty').value || null,
+                comment: document.getElementById('cComment').value.trim() || null,
+            };
+
+            const btn = document.getElementById('btnClassifySave');
+            btn.disabled = true;
+            try {
+                await postJson(`${API}/api/movement-review/classify`, body);
+                closeClassifyModal();
+                // GET /api/movements solo devuelve pendientes (K1): un movimiento
+                // recién clasificado deja de pertenecer a esta lista. Se saca del
+                // estado en memoria en vez de recargar todo el período. Cuando K3
+                // permita ver también clasificados, esta línea pasa a actualizar
+                // el estado del movimiento en vez de eliminarlo.
+                state.movements = state.movements.filter(m => m.sourceId !== movement.sourceId);
+                renderMovements();
+                showToast('listToast', 'Movimiento clasificado', 'ok');
+            } catch (e) {
+                showToast('classifyToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ── Utils ────────────────────────────────────────────────────────────────
+
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
+        async function postJson(url, body) {
+            const opts = { method: 'POST' };
+            if (body !== undefined) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify(body);
+            }
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function putJson(url, body) {
+            const opts = {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            };
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function handleWriteResponse(r) {
+            const d = await r.json().catch(() => null);
+            if (!r.ok) {
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return d;
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function showToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
+
+        loadMovements();
+    </script>
+</body>
+</html>
