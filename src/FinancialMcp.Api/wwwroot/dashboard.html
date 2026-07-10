@@ -755,16 +755,19 @@
                 <a href="/dashboard.html" class="active">
                     <span class="icon">◈</span> Dashboard
                 </a>
-                <a href="/group-reconciliation.html">
-                    <span class="icon">⇄</span> Conciliación
+                <!-- PR-L3a: Movimientos reemplaza acá a Conciliación como entrada
+                     principal — Movimientos ya cubre el flujo diario completo desde
+                     K1-K6 (listar, clasificar, reclasificar, confirmar sugerencias
+                     de alta confianza, clasificar en lote). group-reconciliation.html
+                     sigue existiendo (accesible solo por URL directa) como respaldo
+                     durante la limpieza del backend Legacy — no tiene más entrada
+                     de navegación visible. -->
+                <a href="/movements.html">
+                    <span class="icon">▦</span> Movimientos
                     <span class="badge" id="navPending">—</span>
                 </a>
 
                 <div class="nav-group-label">Análisis</div>
-                <a href="#" class="soon">
-                    <span class="icon">▦</span> Movimientos
-                    <span class="badge">pronto</span>
-                </a>
                 <a href="#" class="soon">
                     <span class="icon">⊟</span> Gastos fijos
                     <span class="badge">pronto</span>
@@ -811,8 +814,8 @@
                     </div>
                 </div>
                 <div class="topbar-right">
-                    <a href="/group-reconciliation.html" class="btn-action primary">
-                        ⇄ Conciliar
+                    <a href="/movements.html" class="btn-action primary">
+                        ▦ Movimientos
                     </a>
                 </div>
             </header>
