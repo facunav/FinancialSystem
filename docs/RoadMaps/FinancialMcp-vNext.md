@@ -156,9 +156,13 @@ J (Cuentas)  ───────┼──▶ M (Inversiones)   [M depende de J
                     │
 K (UX)  ◀───────────┘   [K reutiliza los mismos endpoints de C1-C4, no depende de I/J]
    │
-   └──▶ K4 (sugerencia por Contraparte) resuelve en la práctica el problema
-        descripto en ADR-003 — sin K4, ADR-003 sigue siendo correcto en el
-        dominio pero no se percibe así al usar el producto.
+   └──▶ la pre-carga de valores por defecto por Contraparte (sin PR asignado
+        todavía — no confundir con el PR K4 ya implementado, que es el de
+        sugerencias del motor `ReviewEngine` en `movements.html`, ver
+        `docs/UX/ClassificationUX.md`, sección "2. Movimientos") resuelve en
+        la práctica el problema descripto en ADR-003 — sin ella, ADR-003
+        sigue siendo correcto en el dominio pero no se percibe así al usar
+        el producto.
 
 L (Cobertura)  — independiente, puede ir en paralelo con cualquiera.
 

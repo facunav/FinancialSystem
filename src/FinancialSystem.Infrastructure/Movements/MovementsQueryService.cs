@@ -10,12 +10,12 @@ namespace FinancialSystem.Infrastructure.Movements;
 internal sealed class MovementsQueryService : IMovementsQueryService
 {
     private readonly IApplicationDbContext _db;
-    private readonly IMovementLoader _movementLoader;
+    private readonly IReviewEngine _reviewEngine;
 
-    public MovementsQueryService(IApplicationDbContext db, IMovementLoader movementLoader)
+    public MovementsQueryService(IApplicationDbContext db, IReviewEngine reviewEngine)
     {
         _db = db;
-        _movementLoader = movementLoader;
+        _reviewEngine = reviewEngine;
     }
 
     public async Task<IReadOnlyList<MovementView>> GetAsync(
@@ -26,10 +26,10 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         CancellationToken cancellationToken = default)
     {
         // Secuencial a propósito: ambas llamadas comparten el mismo IApplicationDbContext
-        // (MovementLoader lo usa internamente), y DbContext no admite operaciones
-        // concurrentes sobre la misma instancia — paralelizar con Task.WhenAll rompería
-        // en tiempo de ejecución.
-        var pending = await LoadPendingAsync(from, to, cancellationToken);
+        // (IReviewEngine lo usa internamente vía IMovementLoader), y DbContext no admite
+        // operaciones concurrentes sobre la misma instancia — paralelizar con
+        // Task.WhenAll rompería en tiempo de ejecución.
+        var pending = await LoadPendingWithSuggestionsAsync(from, to, cancellationToken);
         var classified = await LoadClassifiedAsync(from, to, cancellationToken);
 
         IEnumerable<MovementView> all = pending.Concat(classified);
@@ -43,22 +43,53 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         return all.OrderByDescending(m => m.Date).ToList();
     }
 
-    // Una sola carga en bloque vía IMovementLoader (3 queries fijas, ya existentes) +
-    // filtro en memoria a banco/tarjeta. Sin cambios a MovementLoader ni al motor.
-    private async Task<List<MovementView>> LoadPendingAsync(
+    // K4: una sola llamada a IReviewEngine.GenerateAsync reemplaza lo que antes era
+    // IMovementLoader.LoadAsync directo. El motor ya carga los movimientos internamente
+    // (vía IMovementLoader, sin cambios) — llamar a las dos por separado habría cargado
+    // el mismo período dos veces y, peor, tirado a la basura el cálculo de matching que
+    // GenerateAsync ya hace. Acá se reutiliza ese mismo resultado tanto para reconstruir
+    // el listado de pendientes (Matched.Reference + Unmatched, ver abajo) como para las
+    // sugerencias — sin recalcular nada ni ejecutar el motor una segunda vez.
+    //
+    // Reconstrucción del listado: el motor separa lo asignado (Matched) de lo que no
+    // (Unmatched) — un movimiento de banco/tarjeta está en uno de los dos, nunca en
+    // ambos ni en ninguno. Tomar solo Unmatched dejaría afuera de la lista cualquier
+    // movimiento con match de alta confianza — Movimientos sigue siendo una lista
+    // completa de movimientos, con la sugerencia como dato adicional, no un filtro.
+    private async Task<List<MovementView>> LoadPendingWithSuggestionsAsync(
         DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
-        var movements = await _movementLoader.LoadAsync(from, to, cancellationToken);
+        var result = await _reviewEngine.GenerateAsync(from, to, cancellationToken);
+        var views = new List<MovementView>();
 
-        return movements
-            .Where(IsBankOrCard)
-            .Select(m => new MovementView(
-                m.SourceId, m.Date, m.Description, m.Amount, m.Currency, m.Source,
-                m.FinancialAccountId,
-                Status: null, CategoryId: null, CounterpartyId: null,
-                MovementType: null, FinancialImpact: null))
-            .ToList();
+        foreach (var pair in result.Matched)
+        {
+            if (!IsBankOrCard(pair.Reference)) continue;
+            views.Add(ToPendingView(pair.Reference, ToSuggestion(pair.Candidate, pair.Confidence)));
+        }
+
+        foreach (var unmatched in result.Unmatched)
+        {
+            if (!IsBankOrCard(unmatched.Movement)) continue;
+            var bestNearMiss = unmatched.NearMisses.Count > 0 ? unmatched.NearMisses[0] : null;
+            var suggestion = bestNearMiss is null
+                ? null
+                : ToSuggestion(bestNearMiss.Candidate, bestNearMiss.Confidence);
+            views.Add(ToPendingView(unmatched.Movement, suggestion));
+        }
+
+        return views;
     }
+
+    private static MovementView ToPendingView(FinancialMovement m, MovementSuggestion? suggestion) => new(
+        m.SourceId, m.Date, m.Description, m.Amount, m.Currency, m.Source,
+        m.FinancialAccountId,
+        Status: null, CategoryId: null, CounterpartyId: null,
+        MovementType: null, FinancialImpact: null,
+        Suggestion: suggestion);
+
+    private static MovementSuggestion ToSuggestion(FinancialMovement candidate, MatchConfidence confidence) => new(
+        candidate.SourceId, candidate.Description, candidate.Amount, candidate.Date, confidence);
 
     // 1 query (ClassifiedMovementItems + join a su ClassifiedMovement) + hasta 2 queries
     // en bloque (WHERE Id IN (...) sobre BankStatements/Transactions, para resolver la
@@ -117,7 +148,10 @@ internal sealed class MovementsQueryService : IMovementsQueryService
                 i.SourceId, i.OriginalDate, i.OriginalDescription, i.OriginalAmount, i.OriginalCurrency,
                 source, financialAccountId,
                 classifiedMovement.Status, classifiedMovement.CategoryId, classifiedMovement.CounterpartyId,
-                classifiedMovement.MovementType, classifiedMovement.FinancialImpact);
+                classifiedMovement.MovementType, classifiedMovement.FinancialImpact,
+                // El motor solo considera pendientes (MovementLoader excluye lo
+                // clasificado) — un movimiento ya clasificado nunca tiene sugerencia.
+                Suggestion: null);
         }).ToList();
     }
 

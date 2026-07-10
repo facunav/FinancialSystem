@@ -187,6 +187,24 @@
             .status-badge.status-reviewed { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
             .status-badge.status-confirmed { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
 
+        /* Columna "Sugerencia" (K4): contexto de solo lectura del motor, no una
+           acción — por eso no es un <button> ni un <select>, solo un chip informativo. */
+        .suggestion-chip {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+            .suggestion-chip.confidence-high { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+            .suggestion-chip.confidence-medium { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
+            .suggestion-chip.confidence-low { color: var(--dim); background: var(--surface2); border-color: var(--border) }
+
         .act-cell { display: flex; gap: 6px }
 
         /* ── Toast ── */
@@ -313,10 +331,11 @@
                             <th>Importe</th>
                             <th>Estado</th>
                             <th>Cuenta financiera</th>
+                            <th>Sugerencia</th>
                             <th></th>
                         </tr>
                     </thead>
-                    <tbody id="movementsBody"><tr><td colspan="6" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="movementsBody"><tr><td colspan="7" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -404,6 +423,11 @@
         const STATUS_LABELS = { Pending: 'Pendiente', Reviewed: 'Revisado', Confirmed: 'Confirmado' };
         const STATUS_CLASSES = { Pending: 'status-pending', Reviewed: 'status-reviewed', Confirmed: 'status-confirmed' };
 
+        // K4: confianza que IReviewEngine asignó a la sugerencia (no un estado propio
+        // de esta pantalla, por eso vive separado de STATUS_LABELS/STATUS_CLASSES).
+        const CONFIDENCE_LABELS = { High: 'Alta', Medium: 'Media', Low: 'Baja' };
+        const CONFIDENCE_CLASSES = { High: 'confidence-high', Medium: 'confidence-medium', Low: 'confidence-low' };
+
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
@@ -423,6 +447,13 @@
                 counterpartyId: dto.counterpartyId ?? null,
                 movementType: dto.movementType ?? null,
                 financialImpact: dto.financialImpact ?? null,
+                suggestion: dto.suggestion ? {
+                    candidateSourceId: dto.suggestion.candidateSourceId,
+                    candidateDescription: dto.suggestion.candidateDescription,
+                    candidateAmount: dto.suggestion.candidateAmount,
+                    candidateDate: dto.suggestion.candidateDate,
+                    confidence: dto.suggestion.confidence,
+                } : null,
             };
         }
 
@@ -485,7 +516,7 @@
 
         async function loadMovements() {
             const tbody = document.getElementById('movementsBody');
-            tbody.innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="loading">Cargando…</td></tr>';
 
             const params = new URLSearchParams();
             if (state.movementFilters.from) params.set('from', state.movementFilters.from);
@@ -498,7 +529,7 @@
                 state.movements = (data ?? []).map(toMovementViewModel);
                 renderMovements();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="6" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
             }
         }
 
@@ -514,7 +545,7 @@
                 state.movements.length > 0 ? `(${state.movements.length})` : '';
 
             if (state.movements.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay movimientos para este período.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay movimientos para este período.</td></tr>';
                 return;
             }
 
@@ -529,6 +560,7 @@
                     <td class="mono">$${fmt(m.amount)}</td>
                     <td>${renderStatusCell(m)}</td>
                     <td>${renderAccountCell(m)}</td>
+                    <td>${renderSuggestionCell(m)}</td>
                     <td class="act-cell">${renderActionsCell(m)}</td>
                 </tr>`;
         }
@@ -541,6 +573,17 @@
 
         function renderAccountCell(m) {
             return `<select class="acct-select" data-source-id="${m.sourceId}" data-source="${m.source}">${accountOptionsFor(m.financialAccountId)}</select>`;
+        }
+
+        // K4: solo información — sin acción asociada, sin selección cruzada. Confirmar
+        // un match sigue siendo exclusivo de group-reconciliation.html.
+        function renderSuggestionCell(m) {
+            if (!m.suggestion) return '<span style="color: var(--dim)">—</span>';
+            const s = m.suggestion;
+            const cls = CONFIDENCE_CLASSES[s.confidence] ?? 'confidence-low';
+            const label = CONFIDENCE_LABELS[s.confidence] ?? s.confidence;
+            const title = `${esc(s.candidateDescription)} · $${fmt(s.candidateAmount)} · ${fmtDate(s.candidateDate)}`;
+            return `<span class="suggestion-chip ${cls}" title="${title}">${esc(label)}: ${esc(s.candidateDescription)}</span>`;
         }
 
         function renderActionsCell(m) {

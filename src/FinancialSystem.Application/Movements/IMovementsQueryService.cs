@@ -12,6 +12,10 @@ namespace FinancialSystem.Application.Movements;
 /// <summary>
 /// Status null = pendiente (sin ClassifiedMovementItem todavía). No-null = clasificado,
 /// con el Status real de su ClassifiedMovement (Reviewed/Confirmed).
+/// Suggestion (K4): contexto de solo lectura tomado de IReviewEngine — nunca existe en
+/// movimientos clasificados (el motor solo considera pendientes, por diseño de
+/// MovementLoader). No implica ninguna acción; confirmar un match sigue siendo
+/// exclusivo de group-reconciliation.html.
 /// </summary>
 public sealed record MovementView(
     Guid SourceId,
@@ -25,7 +29,21 @@ public sealed record MovementView(
     Guid? CategoryId,
     Guid? CounterpartyId,
     MovementType? MovementType,
-    FinancialImpact? FinancialImpact);
+    FinancialImpact? FinancialImpact,
+    MovementSuggestion? Suggestion);
+
+/// <summary>
+/// Mejor candidato que IReviewEngine encontró para este movimiento — ya sea la
+/// coincidencia asignada (Matched, arriba del umbral de confianza) o, si no llegó al
+/// umbral, el mejor near-miss reportado en Unmatched. Un solo candidato, no la lista
+/// completa de RuleContribution — eso ya vive en group-reconciliation.html.
+/// </summary>
+public sealed record MovementSuggestion(
+    Guid CandidateSourceId,
+    string CandidateDescription,
+    decimal CandidateAmount,
+    DateTime CandidateDate,
+    MatchConfidence Confidence);
 
 // ── Interfaz del servicio ─────────────────────────────────────────────────────
 

@@ -22,7 +22,10 @@ public sealed record MovementListItemDto(
     Guid? CategoryId,
     Guid? CounterpartyId,
     string? MovementType,
-    string? FinancialImpact)
+    string? FinancialImpact,
+    // K4: contexto de solo lectura, null si el motor no encontró ningún candidato.
+    // Nunca presente en movimientos ya clasificados (ver MovementView.Suggestion).
+    MovementSuggestionDto? Suggestion)
 {
     public static MovementListItemDto Create(MovementView m) => new(
         m.SourceId,
@@ -36,5 +39,21 @@ public sealed record MovementListItemDto(
         m.CategoryId,
         m.CounterpartyId,
         m.MovementType?.ToString(),
-        m.FinancialImpact?.ToString());
+        m.FinancialImpact?.ToString(),
+        m.Suggestion is null ? null : MovementSuggestionDto.Create(m.Suggestion));
+}
+
+public sealed record MovementSuggestionDto(
+    Guid CandidateSourceId,
+    string CandidateDescription,
+    decimal CandidateAmount,
+    DateTime CandidateDate,
+    string Confidence)
+{
+    public static MovementSuggestionDto Create(MovementSuggestion s) => new(
+        s.CandidateSourceId,
+        s.CandidateDescription,
+        s.CandidateAmount,
+        s.CandidateDate,
+        s.Confidence.ToString());
 }
