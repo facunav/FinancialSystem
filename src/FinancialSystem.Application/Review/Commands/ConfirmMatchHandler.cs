@@ -27,6 +27,23 @@ public sealed class ConfirmMatchHandler
         var validationFailure = ValidateItems(command.Items);
         if (validationFailure is not null) return validationFailure;
 
+        // K5: sin este chequeo, confirmar una sugerencia sobre un movimiento que ya
+        // fue clasificado (manualmente, por otro match, o por una carrera entre dos
+        // pestañas) crearía un segundo ClassifiedMovement/ClassifiedMovementItem para
+        // el mismo origen — misma clase de bug que ClassifyMovementHandler ya evita
+        // para clasificación manual (K3). Se rechaza todo el grupo en vez de intentar
+        // "actualizar en el lugar": acá siempre hay ≥2 items, y decidir qué hacer con
+        // el resto del grupo si uno solo choca no tiene una respuesta correcta única.
+        foreach (var item in command.Items)
+        {
+            var alreadyClassified = await _db.ClassifiedMovementItems.AnyAsync(
+                i => i.SourceEntityType == item.SourceEntityType && i.SourceId == item.SourceId,
+                cancellationToken);
+            if (alreadyClassified)
+                return ConfirmMatchResult.Failure(
+                    ConfirmMatchFailureReason.SourceAlreadyClassified, $"{item.SourceEntityType}/{item.SourceId}");
+        }
+
         var categoryExists = await _db.Categories.AnyAsync(c => c.Id == command.CategoryId, cancellationToken);
         if (!categoryExists)
             return ConfirmMatchResult.Failure(ConfirmMatchFailureReason.CategoryNotFound);

@@ -28,6 +28,13 @@ public enum ConfirmMatchFailureReason
 
     /// <summary>CounterpartyId (si se informó) no corresponde a ninguna contraparte existente.</summary>
     CounterpartyNotFound,
+
+    /// <summary>
+    /// Alguno de los items ya tiene un ClassifiedMovementItem (de una clasificación manual
+    /// o de otro match confirmado previo) — confirmar igual duplicaría el movimiento en las
+    /// métricas, ya que no hay índice único sobre (SourceEntityType, SourceId) a nivel de base.
+    /// </summary>
+    SourceAlreadyClassified,
 }
 
 /// <summary>Resultado de <see cref="ConfirmMatchCommand"/>: éxito con el id creado, o motivo de fallo.</summary>

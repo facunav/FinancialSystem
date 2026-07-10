@@ -341,12 +341,16 @@
         </div>
     </div>
 
-    <!-- ── Modal: clasificar movimiento ── -->
+    <!-- ── Modal: clasificar movimiento / confirmar sugerencia (K5) ──
+         Un mismo modal para dos comandos de dominio ya existentes (ClassifyMovementCommand
+         y ConfirmMatchCommand) — state.modalMode decide cuál se envía en btnClassifySave.
+         No es una segunda implementación de conciliación: confirmar desde acá llama al
+         mismo POST /api/movement-review/confirm-match que usa group-reconciliation.html. -->
     <div class="modal-overlay" id="classifyOverlay">
         <div class="modal">
             <div class="modal-head">
                 <div>
-                    <h2>Clasificar movimiento</h2>
+                    <h2 id="classifyModalTitle">Clasificar movimiento</h2>
                     <p id="classifySubtitle"></p>
                 </div>
                 <button class="close-x" id="btnCloseClassify" aria-label="Cerrar">✕</button>
@@ -383,7 +387,9 @@
                     <label for="cCounterparty">Contraparte (opcional)</label>
                     <select id="cCounterparty"><option value="">— Sin contraparte —</option></select>
                 </div>
-                <div class="modal-field">
+                <!-- ConfirmMatchCommand no acepta comentario (a diferencia de
+                     ClassifyMovementCommand) — se oculta en modo 'confirm'. -->
+                <div class="modal-field" id="cCommentField">
                     <label for="cComment">Comentario (opcional)</label>
                     <textarea id="cComment" placeholder="Detalle adicional…"></textarea>
                 </div>
@@ -401,9 +407,11 @@
 
         // ── Estado ───────────────────────────────────────────────────────────────
         // Nombrado en términos generales (no "pendingMovements") a propósito: desde
-        // K3, GET /api/movements devuelve pendientes y clasificados. El modelo debe
-        // poder seguir creciendo en K4 (sugerencias) y K5 (advertencias) sin
-        // rediseñarse.
+        // K3, GET /api/movements devuelve pendientes y clasificados. El modelo siguió
+        // creciendo en K4 (sugerencias) y K5 (confirmar sugerencia) sin rediseñarse.
+        // modalMode distingue qué comando dispara btnClassifySave: 'classify' (default)
+        // o 'confirm' — mismo modal, mismos campos comunes, dos flujos de dominio ya
+        // existentes (ClassifyMovementCommand / ConfirmMatchCommand).
         const state = {
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
@@ -412,12 +420,19 @@
             categories: [],
             counterparties: [],
             selectedMovement: null,
+            modalMode: 'classify',
         };
 
         // FinancialMovement.Source -> SourceEntityType / segmento de ruta REST.
-        // Esta pantalla solo trabaja con banco/tarjeta — GET /api/movements ya
-        // excluye legacy (ver K1) — por eso el mapa no incluye LegacyImport.
-        const SOURCE_TO_ENTITY_TYPE = { BankDebit: 'BankStatement', CreditCard: 'Transaction' };
+        // Esta pantalla lista solo banco/tarjeta (GET /api/movements ya excluye
+        // legacy, ver K1) — pero desde K5 sí necesita mapear el lado Candidate de
+        // una sugerencia (siempre legacy) para poder armar el POST a
+        // /api/movement-review/confirm-match. Mismo mapeo que usa
+        // group-reconciliation.html para LegacyDynamic/LegacyFixed.
+        const SOURCE_TO_ENTITY_TYPE = {
+            BankDebit: 'BankStatement', CreditCard: 'Transaction',
+            LegacyDynamic: 'LegacyImport', LegacyFixed: 'LegacyImport',
+        };
         const SOURCE_TO_ACCOUNT_PATH = { BankDebit: 'bank-statements', CreditCard: 'transactions' };
 
         const STATUS_LABELS = { Pending: 'Pendiente', Reviewed: 'Revisado', Confirmed: 'Confirmado' };
@@ -452,6 +467,7 @@
                     candidateDescription: dto.suggestion.candidateDescription,
                     candidateAmount: dto.suggestion.candidateAmount,
                     candidateDate: dto.suggestion.candidateDate,
+                    candidateSource: dto.suggestion.candidateSource,
                     confidence: dto.suggestion.confidence,
                 } : null,
             };
@@ -535,9 +551,10 @@
 
         // ── Render ───────────────────────────────────────────────────────────────
         // Separado en piezas por columna (renderStatusCell/renderAccountCell/
-        // renderActionsCell) a propósito: agregar sugerencias (K4) o advertencias
-        // (K5) debe ser insertar una función de celda nueva, no reescribir
-        // renderMovementRow.
+        // renderSuggestionCell/renderActionsCell) a propósito: agregar sugerencias
+        // (K4) o una acción de confirmar (K5) fue insertar una función de celda
+        // nueva / un botón más en renderActionsCell, no reescribir renderMovementRow.
+        // Futuras ampliaciones (p.ej. advertencias de sospecha) siguen el mismo patrón.
 
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
@@ -586,9 +603,21 @@
             return `<span class="suggestion-chip ${cls}" title="${title}">${esc(label)}: ${esc(s.candidateDescription)}</span>`;
         }
 
+        // K5: solo sugerencias de alta confianza ofrecen el atajo de un clic. Media/baja
+        // confianza siguen resolviéndose por "Clasificar" (o, si hace falta ver el detalle
+        // completo del scoring, desde Migración desde Excel) — decisión deliberada para no
+        // fomentar confirmar matches dudosos sin ver el detalle de por qué el motor los sugirió.
+        function canConfirmSuggestion(m) {
+            return m.status === 'Pending' && m.suggestion?.confidence === 'High';
+        }
+
         function renderActionsCell(m) {
             const label = m.status === 'Pending' ? 'Clasificar' : 'Cambiar categoría';
-            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
+            let html = `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
+            if (canConfirmSuggestion(m)) {
+                html += `<button class="sm primary" data-action="confirm-suggestion" data-source-id="${m.sourceId}">Confirmar</button>`;
+            }
+            return html;
         }
 
         // Si la cuenta asignada actualmente no está entre las activas (se
@@ -655,19 +684,23 @@
             }
         }
 
-        // ── Clasificación individual ────────────────────────────────────────────
+        // ── Clasificación individual / confirmar sugerencia (K5) ────────────────
 
         document.getElementById('movementsBody').addEventListener('click', e => {
-            const btn = e.target.closest('button[data-action="classify"]');
-            if (!btn) return;
-            openClassifyModal(btn.dataset.sourceId);
+            const classifyBtn = e.target.closest('button[data-action="classify"]');
+            if (classifyBtn) { openClassifyModal(classifyBtn.dataset.sourceId); return; }
+
+            const confirmBtn = e.target.closest('button[data-action="confirm-suggestion"]');
+            if (confirmBtn) { openConfirmModal(confirmBtn.dataset.sourceId); return; }
         });
 
         function openClassifyModal(sourceId) {
             const movement = state.movements.find(m => m.sourceId === sourceId);
             if (!movement) return;
             state.selectedMovement = movement;
+            state.modalMode = 'classify';
 
+            document.getElementById('classifyModalTitle').textContent = 'Clasificar movimiento';
             document.getElementById('classifySubtitle').textContent =
                 `${fmtDate(movement.date)} · ${movement.description} · $${fmt(movement.amount)}`;
             // Si ya está clasificado, precarga los valores actuales — "cambiar la
@@ -677,6 +710,33 @@
             document.getElementById('cMovementType').value = movement.movementType ?? 'Purchase';
             document.getElementById('cCounterparty').value = movement.counterpartyId ?? '';
             document.getElementById('cComment').value = '';
+            document.getElementById('cCommentField').style.display = '';
+            document.getElementById('btnClassifySave').textContent = 'Guardar clasificación';
+            document.getElementById('classifyToast').innerHTML = '';
+            document.getElementById('classifyOverlay').classList.add('open');
+        }
+
+        // K5: mismo modal que openClassifyModal, otro comando de dominio al guardar
+        // (ConfirmMatchCommand vía saveConfirmMatch, ver más abajo). Sin precarga de
+        // categoría/tipo/contraparte — a diferencia de reclasificar, acá no existe
+        // todavía ninguna clasificación previa sobre la que partir.
+        function openConfirmModal(sourceId) {
+            const movement = state.movements.find(m => m.sourceId === sourceId);
+            if (!movement || !canConfirmSuggestion(movement)) return;
+            state.selectedMovement = movement;
+            state.modalMode = 'confirm';
+
+            const s = movement.suggestion;
+            document.getElementById('classifyModalTitle').textContent = 'Confirmar sugerencia';
+            document.getElementById('classifySubtitle').innerHTML =
+                `${fmtDate(movement.date)} · ${esc(movement.description)} · $${fmt(movement.amount)}` +
+                `<br>↔ ${fmtDate(s.candidateDate)} · ${esc(s.candidateDescription)} · $${fmt(s.candidateAmount)}`;
+            document.getElementById('cCategory').value = '';
+            document.getElementById('cImpact').value = 'Expense';
+            document.getElementById('cMovementType').value = 'Purchase';
+            document.getElementById('cCounterparty').value = '';
+            document.getElementById('cCommentField').style.display = 'none';
+            document.getElementById('btnClassifySave').textContent = 'Confirmar coincidencia';
             document.getElementById('classifyToast').innerHTML = '';
             document.getElementById('classifyOverlay').classList.add('open');
         }
@@ -694,6 +754,8 @@
 
         document.getElementById('btnClassifySave').addEventListener('click', saveClassification);
 
+        // Un solo botón, dos comandos de dominio ya existentes según state.modalMode —
+        // ver el comentario sobre el modal más arriba.
         async function saveClassification() {
             const movement = state.selectedMovement;
             if (!movement) return;
@@ -704,6 +766,22 @@
                 return;
             }
 
+            const btn = document.getElementById('btnClassifySave');
+            btn.disabled = true;
+            try {
+                if (state.modalMode === 'confirm') {
+                    await saveConfirmMatch(movement, categoryId);
+                } else {
+                    await saveClassify(movement, categoryId);
+                }
+            } catch (e) {
+                showToast('classifyToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function saveClassify(movement, categoryId) {
             const body = {
                 sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source],
                 sourceId: movement.sourceId,
@@ -714,28 +792,47 @@
                 comment: document.getElementById('cComment').value.trim() || null,
             };
 
-            const btn = document.getElementById('btnClassifySave');
-            btn.disabled = true;
-            try {
-                await postJson(`${API}/api/movement-review/classify`, body);
-                closeClassifyModal();
-                // GET /api/movements incluye pendientes y clasificados (K3): el
-                // movimiento sigue en la lista, solo cambia su estado. El resultado
-                // de este endpoint (clasificar o reclasificar) siempre queda en
-                // Status=Reviewed — Confirmed solo se genera por confirm-match, un
-                // flujo que esta pantalla no expone (ver group-reconciliation.html).
-                movement.status = 'Reviewed';
-                movement.categoryId = body.categoryId;
-                movement.counterpartyId = body.counterpartyId;
-                movement.movementType = body.movementType;
-                movement.financialImpact = body.financialImpact;
-                renderMovements();
-                showToast('listToast', 'Clasificación guardada', 'ok');
-            } catch (e) {
-                showToast('classifyToast', e.message, 'err');
-            } finally {
-                btn.disabled = false;
-            }
+            await postJson(`${API}/api/movement-review/classify`, body);
+            closeClassifyModal();
+            // GET /api/movements incluye pendientes y clasificados (K3): el
+            // movimiento sigue en la lista, solo cambia su estado. El resultado
+            // de este endpoint (clasificar o reclasificar) siempre queda en
+            // Status=Reviewed — Confirmed solo se genera por confirm-match.
+            movement.status = 'Reviewed';
+            movement.categoryId = body.categoryId;
+            movement.counterpartyId = body.counterpartyId;
+            movement.movementType = body.movementType;
+            movement.financialImpact = body.financialImpact;
+            renderMovements();
+            showToast('listToast', 'Clasificación guardada', 'ok');
+        }
+
+        // K5: confirma la sugerencia del motor reutilizando el mismo endpoint/comando
+        // que group-reconciliation.html (POST /api/movement-review/confirm-match,
+        // ConfirmMatchCommand) — no hay una segunda implementación del flujo de
+        // conciliación, solo un segundo punto de entrada de UI al mismo dominio.
+        async function saveConfirmMatch(movement, categoryId) {
+            const s = movement.suggestion;
+            const body = {
+                items: [
+                    { sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source], sourceId: movement.sourceId, role: 'Reference' },
+                    { sourceEntityType: SOURCE_TO_ENTITY_TYPE[s.candidateSource], sourceId: s.candidateSourceId, role: 'Candidate' },
+                ],
+                categoryId,
+                movementType: document.getElementById('cMovementType').value,
+                financialImpact: document.getElementById('cImpact').value,
+                counterpartyId: document.getElementById('cCounterparty').value || null,
+            };
+
+            await postJson(`${API}/api/movement-review/confirm-match`, body);
+            closeClassifyModal();
+            // A diferencia de clasificar (donde el movimiento sigue en la lista), acá
+            // no alcanza con actualizar el estado local: confirmar consume un candidato
+            // legacy que puede haber sido la mejor sugerencia de OTRAS filas también, así
+            // que sus sugerencias pueden cambiar. Recargar desde el servidor es lo único
+            // que refleja correctamente el nuevo resultado de IReviewEngine para todos.
+            await loadMovements();
+            showToast('listToast', 'Coincidencia confirmada', 'ok');
         }
 
         // ── Utils ────────────────────────────────────────────────────────────────

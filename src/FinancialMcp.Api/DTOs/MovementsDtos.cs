@@ -48,6 +48,7 @@ public sealed record MovementSuggestionDto(
     string CandidateDescription,
     decimal CandidateAmount,
     DateTime CandidateDate,
+    string CandidateSource,
     string Confidence)
 {
     public static MovementSuggestionDto Create(MovementSuggestion s) => new(
@@ -55,5 +56,6 @@ public sealed record MovementSuggestionDto(
         s.CandidateDescription,
         s.CandidateAmount,
         s.CandidateDate,
+        s.CandidateSource.ToString(),
         s.Confidence.ToString());
 }

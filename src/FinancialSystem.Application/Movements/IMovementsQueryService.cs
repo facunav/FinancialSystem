@@ -37,12 +37,17 @@ public sealed record MovementView(
 /// coincidencia asignada (Matched, arriba del umbral de confianza) o, si no llegó al
 /// umbral, el mejor near-miss reportado en Unmatched. Un solo candidato, no la lista
 /// completa de RuleContribution — eso ya vive en group-reconciliation.html.
+/// CandidateSource (K5): necesario para que quien confirme la sugerencia (vía
+/// ConfirmMatchCommand) sepa a qué SourceEntityType mapear el candidato — siempre
+/// LegacyDynamic o LegacyFixed, nunca banco/tarjeta (el motor solo emparoja
+/// Reference con Candidate, nunca Reference con Reference).
 /// </summary>
 public sealed record MovementSuggestion(
     Guid CandidateSourceId,
     string CandidateDescription,
     decimal CandidateAmount,
     DateTime CandidateDate,
+    MovementSource CandidateSource,
     MatchConfidence Confidence);
 
 // ── Interfaz del servicio ─────────────────────────────────────────────────────

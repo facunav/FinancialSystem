@@ -89,7 +89,7 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         Suggestion: suggestion);
 
     private static MovementSuggestion ToSuggestion(FinancialMovement candidate, MatchConfidence confidence) => new(
-        candidate.SourceId, candidate.Description, candidate.Amount, candidate.Date, confidence);
+        candidate.SourceId, candidate.Description, candidate.Amount, candidate.Date, candidate.Source, confidence);
 
     // 1 query (ClassifiedMovementItems + join a su ClassifiedMovement) + hasta 2 queries
     // en bloque (WHERE Id IN (...) sobre BankStatements/Transactions, para resolver la

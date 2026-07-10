@@ -122,6 +122,8 @@ public static class MovementReviewEndpoints
                     Results.BadRequest("categoryId no corresponde a ninguna categoría existente"),
                 ConfirmMatchFailureReason.CounterpartyNotFound =>
                     Results.BadRequest("counterpartyId no corresponde a ninguna contraparte existente"),
+                ConfirmMatchFailureReason.SourceAlreadyClassified =>
+                    Results.Conflict($"Ya existe una clasificación para: {result.FailureDetail}"),
                 _ => Results.Problem("Error desconocido al confirmar el match"),
             };
         }
