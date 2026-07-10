@@ -12,7 +12,6 @@ using FinancialSystem.Application.Review;
 using FinancialSystem.Infrastructure.Accounts;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
-using FinancialSystem.Infrastructure.Imports.Legacy;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
@@ -75,10 +74,6 @@ public static class DependencyInjection
         services.AddSingleton<IFileImportHandler, BbvaBankStatementImportHandler>();
         services.AddSingleton<IFileImportHandler, TransactionImportHandler>();
 
-        // ── Importador legacy Excel (solo para migración histórica) ───────────
-        services.AddSingleton<ILegacyExpenseSheetParser, LegacyDynamicSheetParser>();
-        services.AddSingleton<ILegacyExpenseSheetParser, LegacyFixedSheetParser>();
-        services.AddSingleton<ILegacyExpenseImporter, ExcelLegacyExpenseImporter>();
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
         services.AddScoped<IMovementLoader, Review.MovementLoader>();
         services.AddScoped<IMovementsQueryService, MovementsQueryService>();
