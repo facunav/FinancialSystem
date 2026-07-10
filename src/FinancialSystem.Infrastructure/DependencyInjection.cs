@@ -77,11 +77,6 @@ public static class DependencyInjection
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
         services.AddScoped<IMovementLoader, Review.MovementLoader>();
         services.AddScoped<IMovementsQueryService, MovementsQueryService>();
-        services.AddSingleton<IMatchingRule, Review.Matching.AmountRule>();
-        services.AddSingleton<IMatchingRule, Review.Matching.DateRule>();
-        services.AddSingleton<IMatchingRule, Review.Matching.DescriptionRule>();
-        services.AddSingleton<IMatchingRule, Review.Matching.PaymentMethodRule>();
-        services.AddSingleton<IMatchScorer, Review.Matching.MatchScorer>();
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
 

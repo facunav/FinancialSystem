@@ -1,16 +1,18 @@
 ﻿namespace FinancialSystem.Domain.Review;
 
 // MODELO UNIFICADO
-// FinancialMovement es la vista normalizada de cualquier movimiento,
-// independientemente de su fuente (banco, tarjeta, manual/legacy).
-// El motor de sugerencias opera exclusivamente sobre este modelo — nunca
-// sobre Transaction directamente.
+// FinancialMovement es la vista normalizada de un movimiento de banco/tarjeta.
+// El motor de revisión opera exclusivamente sobre este modelo — nunca sobre
+// Transaction/BankStatement directamente.
 // DECISIÓN DE DISEÑO: record inmutable en lugar de clase mutable.
-// El proceso de revisión no modifica movimientos, sólo los cruza para sugerir.
+// El proceso de revisión no modifica movimientos, sólo los agrupa para detectar
+// posibles duplicados/splits.
 //
-// NOTA: el nombre de este tipo no cambia en la refactorización v2.0.
-// "FinancialMovement" ya describía correctamente su responsabilidad:
-// es la representación neutra de un movimiento, previa a su clasificación.
+// NOTA: el nombre de este tipo no cambia. "FinancialMovement" ya describía
+// correctamente su responsabilidad: es la representación neutra de un
+// movimiento, previa a su clasificación. Hasta PR-L4 también incluía
+// movimientos legacy/manuales (Excel) como candidatos de matching — ver
+// ReviewResult.cs para el detalle de por qué ese mecanismo se retiró.
 public sealed record FinancialMovement
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -18,10 +20,9 @@ public sealed record FinancialMovement
     /// <summary>
     /// Id real de la entidad persistida en su tabla de origen (Transaction.Id,
     /// BankStatement.Id o LegacyImportedExpense.Id según <see cref="Source"/>).
-    /// Es el identificador técnico: el que hay que enviar como SourceId en los
-    /// comandos de escritura (ClassifyMovement, ConfirmMatch, DiscardLegacyCandidates).
-    /// No usar <see cref="OriginalId"/> para eso — esa es una referencia de negocio,
-    /// no necesariamente un Guid.
+    /// Es el identificador técnico: el que hay que enviar como SourceId en
+    /// ClassifyMovementCommand. No usar <see cref="OriginalId"/> para eso — esa es
+    /// una referencia de negocio, no necesariamente un Guid.
     /// </summary>
     public required Guid SourceId { get; init; }
 
@@ -43,12 +44,6 @@ public sealed record FinancialMovement
     /// Es una pre-clasificación en memoria para ayudar al matching; no reemplaza la
     /// clasificación definitiva por CategoryId que vive en ClassifiedMovement.</summary>
     public MovementCategory Category { get; init; } = MovementCategory.Unknown;
-
-    /// <summary>
-    /// Método de pago declarado. Sólo disponible en movimientos manuales/legacy.
-    /// Null = no informado o no aplicable (movimientos bancarios/tarjeta).
-    /// </summary>
-    public PaymentMethod? PaymentMethod { get; init; }
 
     /// <summary>
     /// Referencia de negocio en la fuente (cupón Visa, número de fila Excel, etc.),
@@ -80,12 +75,14 @@ public sealed record FinancialMovement
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
+// PR-L4: LegacyDynamic/LegacyFixed (Excel "Gastos Dinámicos"/"Gastos Fijos") se
+// retiraron — MovementLoader ya no produce movimientos de esa fuente y no es un
+// enum persistido en ningún lado (a diferencia de MovementRole/SourceEntityType),
+// así que no hay riesgo de datos históricos al sacar los valores.
 public enum MovementSource
 {
     BankDebit,       // Extracto débito bancario
     CreditCard,      // PDF tarjeta (Visa, Mastercard, etc.)
-    LegacyDynamic,   // Excel legacy hoja "Gastos dinámicos" (solo migración histórica)
-    LegacyFixed,     // Excel legacy hoja "Gastos fijos" (solo migración histórica)
 }
 
 public enum MovementCategory
@@ -102,12 +99,4 @@ public enum MovementCategory
     Transfer,
     Income,
     Other,
-}
-
-public enum PaymentMethod
-{
-    Cash,
-    Debit,
-    Credit,
-    Transfer,
 }

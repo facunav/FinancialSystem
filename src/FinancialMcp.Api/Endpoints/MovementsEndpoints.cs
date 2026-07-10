@@ -6,24 +6,23 @@ namespace FinancialSystem.Api.Endpoints;
 
 /// <summary>
 /// Lectura de movimientos de banco/tarjeta para la pantalla Movimientos (Épica K):
-/// pendientes (con sugerencias del motor, K4, y grupos sospechosos, K6) y ya
-/// clasificados (K3). Depende de IMovementsQueryService, que orquesta IReviewEngine
-/// (pendientes + sugerencias + sospechosos) + ClassifiedMovement/ClassifiedMovementItem
-/// (clasificados) — esa combinación de dos fuentes es la orquestación real que
-/// justifica el servicio (a diferencia de K1, donde una sola fuente + filtrado
-/// trivial no lo justificaba).
+/// pendientes (con grupos sospechosos, K6) y ya clasificados (K3). Depende de
+/// IMovementsQueryService, que orquesta IReviewEngine (pendientes + sospechosos) +
+/// ClassifiedMovement/ClassifiedMovementItem (clasificados) — esa combinación de dos
+/// fuentes es la orquestación real que justifica el servicio (a diferencia de K1,
+/// donde una sola fuente + filtrado trivial no lo justificaba).
 ///
-/// K4/K6: IMovementsQueryService reutiliza IReviewEngine para sugerencias y
-/// sospechosos, no genera matching ni detección propia ni los ejecuta dos veces. No
-/// expone confirmación de match N↔M real, resolución de grupos sospechosos, descarte,
-/// ni ningún otro elemento de /api/movement-review/*, que sigue existiendo sin cambios
-/// para la pantalla de Migración desde Excel.
+/// PR-L4: hasta acá IMovementsQueryService también reutilizaba IReviewEngine para
+/// sugerencias de matching contra movimientos legacy — ese mecanismo se retiró
+/// completo, junto con /api/movement-review/unclassified, /confirm-match,
+/// /discard-candidates, /restore-candidates y group-reconciliation.html, que los
+/// consumía. Solo queda vigente /api/movement-review/classify.
 /// </summary>
 public static class MovementsEndpoints
 {
-    // Mismo límite y misma razón que MovementReviewEndpoints.MaxDateRangeDays: desde
-    // K4 este endpoint también dispara el costo O(Reference × Candidate) del motor de
-    // sugerencias (antes solo hacía una carga O(N) vía IMovementLoader).
+    // Mismo límite y misma razón que antes: ISuspicionDetector compara movimientos
+    // par a par dentro del período (O(N²) acotado) para detectar posibles duplicados/
+    // splits — acotar el rango evita que N crezca sin límite.
     private const int MaxDateRangeDays = 90;
 
     public static IEndpointRouteBuilder MapMovementsEndpoints(this IEndpointRouteBuilder app)

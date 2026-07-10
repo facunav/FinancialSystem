@@ -110,8 +110,7 @@
             .filter-bar .spacer { flex: 1 }
 
         /* PR-L2: barra contextual de clasificación en lote — aparece solo cuando
-           hay selección, mismo patrón que .action-bar en group-reconciliation.html,
-           pero para una sola lista (sin dos lados, sin balance). */
+           hay selección, para una sola lista (sin dos lados, sin balance). */
         .batch-bar {
             display: none;
             align-items: center;
@@ -205,27 +204,9 @@
             .status-badge.status-reviewed { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
             .status-badge.status-confirmed { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
 
-        /* Columna "Sugerencia" (K4): contexto de solo lectura del motor, no una
-           acción — por eso no es un <button> ni un <select>, solo un chip informativo. */
-        .suggestion-chip {
-            display: inline-block;
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            border: 1px solid var(--border);
-            max-width: 240px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            vertical-align: middle;
-        }
-            .suggestion-chip.confidence-high { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
-            .suggestion-chip.confidence-medium { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
-            .suggestion-chip.confidence-low { color: var(--dim); background: var(--surface2); border-color: var(--border) }
-
         /* Columna "Alerta" (K6): grupo sospechoso detectado por ISuspicionDetector
-           (posible duplicado / posible split) — igual que la sugerencia, solo
-           informativo, sin acción propia en esta pantalla. */
+           (posible duplicado / posible split) — solo informativo, sin acción
+           propia en esta pantalla. */
         .warning-badge {
             display: inline-block;
             font-size: 11px;
@@ -359,7 +340,7 @@
                 <div id="listToast"></div>
             </div>
             <!-- PR-L2: solo aparece con selección activa. Una sola lista, una sola
-                 acción — no es la barra de balance de group-reconciliation.html. -->
+                 acción. -->
             <div class="batch-bar" id="batchBar">
                 <span class="info" id="batchCount"></span>
                 <button class="sm primary" id="btnBatchClassify">Clasificar seleccionados</button>
@@ -375,22 +356,20 @@
                             <th>Importe</th>
                             <th>Estado</th>
                             <th>Cuenta financiera</th>
-                            <th>Sugerencia</th>
                             <th>Alerta</th>
                             <th></th>
                         </tr>
                     </thead>
-                    <tbody id="movementsBody"><tr><td colspan="9" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="movementsBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <!-- ── Modal: clasificar movimiento / confirmar sugerencia (K5) ──
-         Un mismo modal para dos comandos de dominio ya existentes (ClassifyMovementCommand
-         y ConfirmMatchCommand) — state.modalMode decide cuál se envía en btnClassifySave.
-         No es una segunda implementación de conciliación: confirmar desde acá llama al
-         mismo POST /api/movement-review/confirm-match que usa group-reconciliation.html. -->
+    <!-- ── Modal: clasificar movimiento (individual o en lote, PR-L2) ──
+         Un mismo modal para ClassifyMovementCommand — state.modalMode ('classify' o
+         'batch') decide si btnClassifySave dispara una sola llamada o un loop
+         secuencial (ver saveBatchClassify). -->
     <div class="modal-overlay" id="classifyOverlay">
         <div class="modal">
             <div class="modal-head">
@@ -432,14 +411,11 @@
                     <label for="cCounterparty">Contraparte (opcional)</label>
                     <select id="cCounterparty"><option value="">— Sin contraparte —</option></select>
                 </div>
-                <!-- ConfirmMatchCommand no acepta comentario (a diferencia de
-                     ClassifyMovementCommand) — se oculta en modo 'confirm'. -->
-                <div class="modal-field" id="cCommentField">
+                <div class="modal-field">
                     <label for="cComment">Comentario (opcional)</label>
                     <textarea id="cComment" placeholder="Detalle adicional…"></textarea>
                 </div>
-                <!-- PR-L2: solo visible durante saveBatchClassify, mismo patrón que
-                     #reviewProgress en group-reconciliation.html. -->
+                <!-- PR-L2: solo visible durante saveBatchClassify. -->
                 <div id="classifyProgress" class="progress-line" style="display:none"></div>
                 <div id="classifyToast"></div>
             </div>
@@ -456,14 +432,14 @@
         // ── Estado ───────────────────────────────────────────────────────────────
         // Nombrado en términos generales (no "pendingMovements") a propósito: desde
         // K3, GET /api/movements devuelve pendientes y clasificados. El modelo siguió
-        // creciendo en K4 (sugerencias), K5 (confirmar sugerencia) y K6 (grupos
-        // sospechosos) sin rediseñarse.
-        // modalMode distingue qué comando dispara btnClassifySave: 'classify' (default),
-        // 'confirm' o 'batch' (PR-L2) — mismo modal, mismos campos comunes, siempre
-        // ClassifyMovementCommand salvo 'confirm' (ConfirmMatchCommand). 'batch' no es
-        // un comando nuevo: es el mismo ClassifyMovementCommand disparado N veces
-        // secuencialmente, un id de selectedIds por vez — igual que ya hacía
-        // doBatchReview en group-reconciliation.html.
+        // creciendo en K6 (grupos sospechosos) sin rediseñarse.
+        // modalMode distingue qué dispara btnClassifySave: 'classify' (default) o
+        // 'batch' (PR-L2) — mismo modal, mismos campos, siempre ClassifyMovementCommand.
+        // 'batch' no es un comando nuevo: es el mismo ClassifyMovementCommand disparado
+        // N veces secuencialmente, un id de selectedIds por vez.
+        //
+        // PR-L4: hasta acá modalMode también tenía 'confirm' (ConfirmMatchCommand, K5) —
+        // se retiró junto con todo el backend de matching legacy.
         const state = {
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
@@ -477,24 +453,13 @@
         };
 
         // FinancialMovement.Source -> SourceEntityType / segmento de ruta REST.
-        // Esta pantalla lista solo banco/tarjeta (GET /api/movements ya excluye
-        // legacy, ver K1) — pero desde K5 sí necesita mapear el lado Candidate de
-        // una sugerencia (siempre legacy) para poder armar el POST a
-        // /api/movement-review/confirm-match. Mismo mapeo que usa
-        // group-reconciliation.html para LegacyDynamic/LegacyFixed.
-        const SOURCE_TO_ENTITY_TYPE = {
-            BankDebit: 'BankStatement', CreditCard: 'Transaction',
-            LegacyDynamic: 'LegacyImport', LegacyFixed: 'LegacyImport',
-        };
+        // Esta pantalla lista solo banco/tarjeta — GET /api/movements ya excluye
+        // legacy, ver K1.
+        const SOURCE_TO_ENTITY_TYPE = { BankDebit: 'BankStatement', CreditCard: 'Transaction' };
         const SOURCE_TO_ACCOUNT_PATH = { BankDebit: 'bank-statements', CreditCard: 'transactions' };
 
         const STATUS_LABELS = { Pending: 'Pendiente', Reviewed: 'Revisado', Confirmed: 'Confirmado' };
         const STATUS_CLASSES = { Pending: 'status-pending', Reviewed: 'status-reviewed', Confirmed: 'status-confirmed' };
-
-        // K4: confianza que IReviewEngine asignó a la sugerencia (no un estado propio
-        // de esta pantalla, por eso vive separado de STATUS_LABELS/STATUS_CLASSES).
-        const CONFIDENCE_LABELS = { High: 'Alta', Medium: 'Media', Low: 'Baja' };
-        const CONFIDENCE_CLASSES = { High: 'confidence-high', Medium: 'confidence-medium', Low: 'confidence-low' };
 
         // K6: motivo por el que ISuspicionDetector marcó el grupo (SuspicionReason).
         const SUSPICION_LABELS = {
@@ -522,14 +487,6 @@
                 counterpartyId: dto.counterpartyId ?? null,
                 movementType: dto.movementType ?? null,
                 financialImpact: dto.financialImpact ?? null,
-                suggestion: dto.suggestion ? {
-                    candidateSourceId: dto.suggestion.candidateSourceId,
-                    candidateDescription: dto.suggestion.candidateDescription,
-                    candidateAmount: dto.suggestion.candidateAmount,
-                    candidateDate: dto.suggestion.candidateDate,
-                    candidateSource: dto.suggestion.candidateSource,
-                    confidence: dto.suggestion.confidence,
-                } : null,
                 warning: dto.warning ? {
                     reason: dto.warning.reason,
                     description: dto.warning.description,
@@ -597,7 +554,7 @@
 
         async function loadMovements() {
             const tbody = document.getElementById('movementsBody');
-            tbody.innerHTML = '<tr><td colspan="9" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando…</td></tr>';
             // Una recarga (filtros nuevos, o el propio período) puede dejar de incluir
             // movimientos hoy seleccionados — limpiar es más simple y correcto que
             // tratar de preservar selección contra una lista que va a cambiar.
@@ -615,17 +572,15 @@
                 state.movements = (data ?? []).map(toMovementViewModel);
                 renderMovements();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="9" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
             }
         }
 
         // ── Render ───────────────────────────────────────────────────────────────
         // Separado en piezas por columna (renderStatusCell/renderAccountCell/
-        // renderSuggestionCell/renderWarningCell/renderActionsCell) a propósito:
-        // agregar sugerencias (K4), una acción de confirmar (K5) o grupos sospechosos
-        // (K6) fue siempre insertar una función de celda nueva / un botón más en
-        // renderActionsCell, nunca reescribir renderMovementRow. Futuras ampliaciones
-        // siguen el mismo patrón.
+        // renderWarningCell/renderActionsCell) a propósito: agregar grupos
+        // sospechosos (K6) fue insertar una función de celda nueva, nunca reescribir
+        // renderMovementRow. Futuras ampliaciones siguen el mismo patrón.
 
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
@@ -633,7 +588,7 @@
                 state.movements.length > 0 ? `(${state.movements.length})` : '';
 
             if (state.movements.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay movimientos para este período.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay movimientos para este período.</td></tr>';
                 updateBatchBar();
                 return;
             }
@@ -656,7 +611,6 @@
                     <td class="mono">$${fmt(m.amount)}</td>
                     <td>${renderStatusCell(m)}</td>
                     <td>${renderAccountCell(m)}</td>
-                    <td>${renderSuggestionCell(m)}</td>
                     <td>${renderWarningCell(m)}</td>
                     <td class="act-cell">${renderActionsCell(m)}</td>
                 </tr>`;
@@ -672,20 +626,8 @@
             return `<select class="acct-select" data-source-id="${m.sourceId}" data-source="${m.source}">${accountOptionsFor(m.financialAccountId)}</select>`;
         }
 
-        // K4: solo información — sin acción asociada, sin selección cruzada. Confirmar
-        // un match sigue siendo exclusivo de group-reconciliation.html.
-        function renderSuggestionCell(m) {
-            if (!m.suggestion) return '<span style="color: var(--dim)">—</span>';
-            const s = m.suggestion;
-            const cls = CONFIDENCE_CLASSES[s.confidence] ?? 'confidence-low';
-            const label = CONFIDENCE_LABELS[s.confidence] ?? s.confidence;
-            const title = `${esc(s.candidateDescription)} · $${fmt(s.candidateAmount)} · ${fmtDate(s.candidateDate)}`;
-            return `<span class="suggestion-chip ${cls}" title="${title}">${esc(label)}: ${esc(s.candidateDescription)}</span>`;
-        }
-
-        // K6: solo información — mismo criterio que la sugerencia, sin acción propia.
-        // Resolver el grupo (marcar como no-duplicado, descartar, etc.) sigue siendo
-        // exclusivo de group-reconciliation.html.
+        // K6: solo información — sin acción propia. Resolver el grupo (marcar como
+        // no-duplicado, etc.) no tiene ninguna pantalla hoy.
         function renderWarningCell(m) {
             if (!m.warning) return '<span style="color: var(--dim)">—</span>';
             const w = m.warning;
@@ -693,21 +635,9 @@
             return `<span class="warning-badge" title="${esc(w.description)}">⚠ ${esc(label)}</span>`;
         }
 
-        // K5: solo sugerencias de alta confianza ofrecen el atajo de un clic. Media/baja
-        // confianza siguen resolviéndose por "Clasificar" (o, si hace falta ver el detalle
-        // completo del scoring, desde Migración desde Excel) — decisión deliberada para no
-        // fomentar confirmar matches dudosos sin ver el detalle de por qué el motor los sugirió.
-        function canConfirmSuggestion(m) {
-            return m.status === 'Pending' && m.suggestion?.confidence === 'High';
-        }
-
         function renderActionsCell(m) {
             const label = m.status === 'Pending' ? 'Clasificar' : 'Cambiar categoría';
-            let html = `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
-            if (canConfirmSuggestion(m)) {
-                html += `<button class="sm primary" data-action="confirm-suggestion" data-source-id="${m.sourceId}">Confirmar</button>`;
-            }
-            return html;
+            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
         }
 
         // Si la cuenta asignada actualmente no está entre las activas (se
@@ -815,14 +745,11 @@
 
         document.getElementById('btnBatchClassify').addEventListener('click', openBatchModal);
 
-        // ── Clasificación individual / confirmar sugerencia (K5) ────────────────
+        // ── Clasificación individual ────────────────────────────────────────────
 
         document.getElementById('movementsBody').addEventListener('click', e => {
             const classifyBtn = e.target.closest('button[data-action="classify"]');
-            if (classifyBtn) { openClassifyModal(classifyBtn.dataset.sourceId); return; }
-
-            const confirmBtn = e.target.closest('button[data-action="confirm-suggestion"]');
-            if (confirmBtn) { openConfirmModal(confirmBtn.dataset.sourceId); return; }
+            if (classifyBtn) openClassifyModal(classifyBtn.dataset.sourceId);
         });
 
         function openClassifyModal(sourceId) {
@@ -841,38 +768,12 @@
             document.getElementById('cMovementType').value = movement.movementType ?? 'Purchase';
             document.getElementById('cCounterparty').value = movement.counterpartyId ?? '';
             document.getElementById('cComment').value = '';
-            document.getElementById('cCommentField').style.display = '';
             document.getElementById('btnClassifySave').textContent = 'Guardar clasificación';
             document.getElementById('classifyToast').innerHTML = '';
             document.getElementById('classifyOverlay').classList.add('open');
         }
 
-        // K5: mismo modal que openClassifyModal, otro comando de dominio al guardar
-        // (ConfirmMatchCommand vía saveConfirmMatch, ver más abajo). Sin precarga de
-        // categoría/tipo/contraparte — a diferencia de reclasificar, acá no existe
-        // todavía ninguna clasificación previa sobre la que partir.
-        function openConfirmModal(sourceId) {
-            const movement = state.movements.find(m => m.sourceId === sourceId);
-            if (!movement || !canConfirmSuggestion(movement)) return;
-            state.selectedMovement = movement;
-            state.modalMode = 'confirm';
-
-            const s = movement.suggestion;
-            document.getElementById('classifyModalTitle').textContent = 'Confirmar sugerencia';
-            document.getElementById('classifySubtitle').innerHTML =
-                `${fmtDate(movement.date)} · ${esc(movement.description)} · $${fmt(movement.amount)}` +
-                `<br>↔ ${fmtDate(s.candidateDate)} · ${esc(s.candidateDescription)} · $${fmt(s.candidateAmount)}`;
-            document.getElementById('cCategory').value = '';
-            document.getElementById('cImpact').value = 'Expense';
-            document.getElementById('cMovementType').value = 'Purchase';
-            document.getElementById('cCounterparty').value = '';
-            document.getElementById('cCommentField').style.display = 'none';
-            document.getElementById('btnClassifySave').textContent = 'Confirmar coincidencia';
-            document.getElementById('classifyToast').innerHTML = '';
-            document.getElementById('classifyOverlay').classList.add('open');
-        }
-
-        // PR-L2: mismo modal, tercer modo. Sin precarga de categoría/tipo/contraparte
+        // PR-L2: mismo modal, segundo modo. Sin precarga de categoría/tipo/contraparte
         // — a diferencia de reclasificar, todas las filas seleccionadas son
         // Pendientes (ver renderMovementRow), sin ninguna clasificación previa de
         // la que partir. Muestra el total como chequeo rápido antes de aplicar la
@@ -893,7 +794,6 @@
             document.getElementById('cMovementType').value = 'Purchase';
             document.getElementById('cCounterparty').value = '';
             document.getElementById('cComment').value = '';
-            document.getElementById('cCommentField').style.display = '';
             document.getElementById('btnClassifySave').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
             document.getElementById('classifyToast').innerHTML = '';
             document.getElementById('classifyOverlay').classList.add('open');
@@ -912,7 +812,7 @@
 
         document.getElementById('btnClassifySave').addEventListener('click', saveClassification);
 
-        // Un solo botón, tres flujos según state.modalMode — ver el comentario sobre
+        // Un solo botón, dos flujos según state.modalMode — ver el comentario sobre
         // el modal más arriba. 'batch' no toma selectedMovement: opera sobre
         // selectedIds directamente dentro de saveBatchClassify.
         async function saveClassification() {
@@ -933,11 +833,7 @@
                 const movement = state.selectedMovement;
                 if (!movement) return;
 
-                if (state.modalMode === 'confirm') {
-                    await saveConfirmMatch(movement, categoryId);
-                } else {
-                    await saveClassify(movement, categoryId);
-                }
+                await saveClassify(movement, categoryId);
             } catch (e) {
                 showToast('classifyToast', e.message, 'err');
             } finally {
@@ -959,9 +855,7 @@
             await postJson(`${API}/api/movement-review/classify`, body);
             closeClassifyModal();
             // GET /api/movements incluye pendientes y clasificados (K3): el
-            // movimiento sigue en la lista, solo cambia su estado. El resultado
-            // de este endpoint (clasificar o reclasificar) siempre queda en
-            // Status=Reviewed — Confirmed solo se genera por confirm-match.
+            // movimiento sigue en la lista, solo cambia su estado.
             movement.status = 'Reviewed';
             movement.categoryId = body.categoryId;
             movement.counterpartyId = body.counterpartyId;
@@ -972,9 +866,8 @@
         }
 
         // PR-L2: mismo endpoint y mismo comando que saveClassify (ClassifyMovementCommand),
-        // uno por movimiento, en loop secuencial — igual patrón que doBatchReview en
-        // group-reconciliation.html. Sin comando ni endpoint batch nuevo. Cada llamada
-        // es independiente: un fallo individual no aborta el resto del lote.
+        // uno por movimiento, en loop secuencial. Sin comando ni endpoint batch nuevo.
+        // Cada llamada es independiente: un fallo individual no aborta el resto del lote.
         async function saveBatchClassify(categoryId) {
             const ids = [...state.selectedIds];
             const shared = {
@@ -1022,34 +915,6 @@
                 ? `✓ ${ok} movimiento${ok !== 1 ? 's' : ''} clasificado${ok !== 1 ? 's' : ''}`
                 : `✓ ${ok} ok · ⚠ ${fail} con error`;
             showToast('listToast', msg, fail === 0 ? 'ok' : 'err', 5000);
-        }
-
-        // K5: confirma la sugerencia del motor reutilizando el mismo endpoint/comando
-        // que group-reconciliation.html (POST /api/movement-review/confirm-match,
-        // ConfirmMatchCommand) — no hay una segunda implementación del flujo de
-        // conciliación, solo un segundo punto de entrada de UI al mismo dominio.
-        async function saveConfirmMatch(movement, categoryId) {
-            const s = movement.suggestion;
-            const body = {
-                items: [
-                    { sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source], sourceId: movement.sourceId, role: 'Reference' },
-                    { sourceEntityType: SOURCE_TO_ENTITY_TYPE[s.candidateSource], sourceId: s.candidateSourceId, role: 'Candidate' },
-                ],
-                categoryId,
-                movementType: document.getElementById('cMovementType').value,
-                financialImpact: document.getElementById('cImpact').value,
-                counterpartyId: document.getElementById('cCounterparty').value || null,
-            };
-
-            await postJson(`${API}/api/movement-review/confirm-match`, body);
-            closeClassifyModal();
-            // A diferencia de clasificar (donde el movimiento sigue en la lista), acá
-            // no alcanza con actualizar el estado local: confirmar consume un candidato
-            // legacy que puede haber sido la mejor sugerencia de OTRAS filas también, así
-            // que sus sugerencias pueden cambiar. Recargar desde el servidor es lo único
-            // que refleja correctamente el nuevo resultado de IReviewEngine para todos.
-            await loadMovements();
-            showToast('listToast', 'Coincidencia confirmada', 'ok');
         }
 
         // ── Utils ────────────────────────────────────────────────────────────────

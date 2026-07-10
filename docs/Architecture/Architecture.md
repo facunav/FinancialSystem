@@ -15,7 +15,7 @@ Entidades y modelos neutros. No depende de ninguna otra capa del proyecto ni de 
 Contiene:
 * Entidades persistidas (`Transaction`, `BankStatement`, `LegacyImportedExpense`, `Category`, `Counterparty`, `ClassifiedMovement`, `ClassifiedMovementItem`).
 * Enums de dominio (`MovementType`, `FinancialImpact`, `ClassificationStatus`, `ProcessingSource`, `MovementRole`, `SourceEntityType`).
-* Modelos neutros de proceso (`FinancialMovement`, `ReviewResult` y su familia — `MatchedPair`, `UnmatchedMovement`, `SuspiciousGroup`, `MatchScore`).
+* Modelos neutros de proceso (`FinancialMovement`, `ReviewResult` y su familia — `SuspiciousGroup`, `SuspicionReason`). PR-L4: `ReviewResult` ya no incluye una familia de matching (`MatchedPair`/`UnmatchedMovement`/`MatchScore`/`MatchConfidence`/`RuleContribution`/`ReviewSummary`, retirada junto con el backend de matching Legacy) — `IReviewEngine`/`ReviewResult` quedan como punto de extensión para un futuro motor de recomendaciones, ver comentario en `ReviewResult.cs`.
 
 **Qué NO pertenece acá:** acceso a base de datos, HTTP, lectura de archivos, cualquier dependencia de un paquete de infraestructura.
 
@@ -24,9 +24,8 @@ Contiene:
 Contratos (interfaces), comandos, queries, handlers, y opciones de configuración. Depende solo de Domain.
 
 Contiene:
-* Contratos de servicios (`IMovementLoader`, `IMatchScorer`, `IMatchingRule`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.).
-* Comandos y sus handlers (`ClassifyMovementCommand`/`Handler`, `ConfirmMatchCommand`/`Handler`, `DiscardLegacyCandidatesCommand`/`Handler`, `RestoreLegacyCandidatesCommand`/`Handler`).
-* Queries y sus handlers (`GetUnclassifiedMovementsQuery`/`Handler`).
+* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.).
+* Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4).
 * Opciones de configuración (`ReviewEngineOptions`, `FileIngestionOptions`, `OllamaOptions`, `OpenAIOptions`, `InsightsWorkerOptions`).
 
 **Convención establecida (sin patrón Repository):** los handlers usan `IApplicationDbContext` directamente. No se reintroduce un `IRepository` intermedio — fue una decisión explícita al reconstruir el motor de revisión (ver `docs/Archive/ReviewClassificationEnginev2ADR.md`, sección 17), y se mantiene para todo lo nuevo.
@@ -40,7 +39,7 @@ Implementaciones concretas de los contratos de Application.
 Contiene:
 * `AppDbContext` + configuraciones EF Core por entidad.
 * Parsers de importación (PDF, XLS, CSV, Excel legacy).
-* `MovementLoader`, `MatchScorer` + 4 `IMatchingRule`, `SuspicionDetector`, `ReviewEngine`.
+* `MovementLoader`, `SuspicionDetector`, `ReviewEngine`. PR-L4: `MatchScorer` y las 4 implementaciones de `IMatchingRule` se retiraron junto con el backend de matching Legacy.
 * `FinancialMetricsService`.
 * Registro de DI (`AddInfrastructure`).
 
@@ -75,7 +74,7 @@ Campos clave: `EffectiveDate`, `TotalAmount` (siempre positivo, magnitud), `Curr
 
 ### `ClassifiedMovementItem`
 
-Referencia inmutable (snapshot) a un movimiento crudo que participó en una clasificación. `SourceEntityType` + `SourceId` identifican la fila original sin FK explícita (evita cascadas indeseadas sobre datos de importación). `Role` distingue `Reference` (banco/tarjeta, verdad contable) de `Candidate` (legacy, auxiliar).
+Referencia inmutable (snapshot) a un movimiento crudo que participó en una clasificación. `SourceEntityType` + `SourceId` identifican la fila original sin FK explícita (evita cascadas indeseadas sobre datos de importación). `Role` distingue `Reference` (banco/tarjeta, verdad contable) de `Candidate` (legacy, auxiliar). PR-L4: `ConfirmMatchCommand`, único productor de filas `Role=Candidate`/`SourceEntityType=LegacyImport`, se retiró — ambos valores de enum siguen existiendo (persistidos, con índice) para no invalidar grupos históricos, simplemente sin productor actual.
 
 ### `Transaction`
 

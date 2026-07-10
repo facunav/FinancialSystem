@@ -29,7 +29,7 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         // (IReviewEngine lo usa internamente vía IMovementLoader), y DbContext no admite
         // operaciones concurrentes sobre la misma instancia — paralelizar con
         // Task.WhenAll rompería en tiempo de ejecución.
-        var pending = await LoadPendingWithSuggestionsAsync(from, to, cancellationToken);
+        var pending = await LoadPendingWithWarningsAsync(from, to, cancellationToken);
         var classified = await LoadClassifiedAsync(from, to, cancellationToken);
 
         IEnumerable<MovementView> all = pending.Concat(classified);
@@ -43,71 +43,44 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         return all.OrderByDescending(m => m.Date).ToList();
     }
 
-    // K4/K6: una sola llamada a IReviewEngine.GenerateAsync reemplaza lo que antes era
+    // K6/PR-L4: una sola llamada a IReviewEngine.GenerateAsync reemplaza lo que antes era
     // IMovementLoader.LoadAsync directo. El motor ya carga los movimientos internamente
     // (vía IMovementLoader, sin cambios) — llamar a las dos por separado habría cargado
-    // el mismo período dos veces y, peor, tirado a la basura el cálculo de matching y de
-    // sospechosos que GenerateAsync ya hace. Acá se reutiliza ese mismo resultado tanto
-    // para reconstruir el listado de pendientes (Matched.Reference + Unmatched, ver abajo)
-    // como para las sugerencias (K4) y los grupos sospechosos (K6, result.Suspicious) —
+    // el mismo período dos veces. Acá se reutiliza ese mismo resultado tanto para el
+    // listado de pendientes como para los grupos sospechosos (K6, result.Suspicious) —
     // sin recalcular nada ni ejecutar el motor una segunda vez.
     //
-    // Reconstrucción del listado: el motor separa lo asignado (Matched) de lo que no
-    // (Unmatched) — un movimiento de banco/tarjeta está en uno de los dos, nunca en
-    // ambos ni en ninguno. Tomar solo Unmatched dejaría afuera de la lista cualquier
-    // movimiento con match de alta confianza — Movimientos sigue siendo una lista
-    // completa de movimientos, con la sugerencia y la sospecha como datos adicionales,
-    // no un filtro.
-    private async Task<List<MovementView>> LoadPendingWithSuggestionsAsync(
+    // PR-L4: hasta acá result traía Matched/Unmatched (sugerencias de matching contra
+    // legacy, retiradas) y había que unir las dos listas para no perder movimientos con
+    // match de alta confianza. Ya no hace falta: result.Movements es directamente la
+    // lista completa que cargó IMovementLoader para el período.
+    private async Task<List<MovementView>> LoadPendingWithWarningsAsync(
         DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
         var result = await _reviewEngine.GenerateAsync(from, to, cancellationToken);
         var warningsBySourceId = BuildWarningsBySourceId(result.Suspicious);
-        var views = new List<MovementView>();
 
-        foreach (var pair in result.Matched)
-        {
-            if (!IsBankOrCard(pair.Reference)) continue;
-            views.Add(ToPendingView(
-                pair.Reference,
-                ToSuggestion(pair.Candidate, pair.Confidence),
-                warningsBySourceId.GetValueOrDefault(pair.Reference.SourceId)));
-        }
-
-        foreach (var unmatched in result.Unmatched)
-        {
-            if (!IsBankOrCard(unmatched.Movement)) continue;
-            var bestNearMiss = unmatched.NearMisses.Count > 0 ? unmatched.NearMisses[0] : null;
-            var suggestion = bestNearMiss is null
-                ? null
-                : ToSuggestion(bestNearMiss.Candidate, bestNearMiss.Confidence);
-            views.Add(ToPendingView(
-                unmatched.Movement, suggestion, warningsBySourceId.GetValueOrDefault(unmatched.Movement.SourceId)));
-        }
-
-        return views;
+        return result.Movements
+            .Where(IsBankOrCard)
+            .Select(m => ToPendingView(m, warningsBySourceId.GetValueOrDefault(m.SourceId)))
+            .ToList();
     }
 
-    private static MovementView ToPendingView(
-        FinancialMovement m, MovementSuggestion? suggestion, MovementWarning? warning) => new(
+    private static MovementView ToPendingView(FinancialMovement m, MovementWarning? warning) => new(
         m.SourceId, m.Date, m.Description, m.Amount, m.Currency, m.Source,
         m.FinancialAccountId,
         Status: null, CategoryId: null, CounterpartyId: null,
         MovementType: null, FinancialImpact: null,
-        Suggestion: suggestion,
         Warning: warning);
 
-    private static MovementSuggestion ToSuggestion(FinancialMovement candidate, MatchConfidence confidence) => new(
-        candidate.SourceId, candidate.Description, candidate.Amount, candidate.Date, candidate.Source, confidence);
-
-    // K6: ISuspicionDetector corre por separado sobre references y candidates (ver
-    // ReviewEngine.GenerateAsync) — un grupo nunca mezcla banco/tarjeta con legacy, así
-    // que basta con mirar el primer movimiento del grupo para saber de qué lado es.
+    // PR-L4: antes ISuspicionDetector corría por separado sobre references y candidates,
+    // así que un grupo nunca podía mezclar banco/tarjeta con legacy. Ahora IMovementLoader
+    // solo carga banco/tarjeta (ver MovementLoader.cs), así que esa garantía se mantiene
+    // por construcción — el filtro queda como chequeo defensivo, no porque haga falta hoy.
     // Un movimiento podría en teoría caer en más de un grupo (p.ej. posible duplicado Y
     // parte de un posible split a la vez) — caso raro, y esta pantalla solo necesita una
-    // señal de alerta por fila, no la lista completa; el detalle completo de todos los
-    // grupos sigue disponible en group-reconciliation.html. Ante ese caso, gana el último
-    // grupo iterado (splits sobre duplicados) — simplificación deliberada para v1.
+    // señal de alerta por fila, no la lista completa. Ante ese caso, gana el último grupo
+    // iterado (splits sobre duplicados) — simplificación deliberada para v1.
     private static Dictionary<Guid, MovementWarning> BuildWarningsBySourceId(
         IReadOnlyList<SuspiciousGroup> suspicious)
     {
@@ -184,9 +157,8 @@ internal sealed class MovementsQueryService : IMovementsQueryService
                 classifiedMovement.Status, classifiedMovement.CategoryId, classifiedMovement.CounterpartyId,
                 classifiedMovement.MovementType, classifiedMovement.FinancialImpact,
                 // El motor solo considera pendientes (MovementLoader excluye lo
-                // clasificado) — un movimiento ya clasificado nunca tiene sugerencia
-                // ni puede formar parte de un grupo sospechoso.
-                Suggestion: null,
+                // clasificado) — un movimiento ya clasificado nunca puede formar
+                // parte de un grupo sospechoso.
                 Warning: null);
         }).ToList();
     }

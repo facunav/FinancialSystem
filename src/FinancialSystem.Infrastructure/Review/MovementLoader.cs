@@ -7,6 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Infrastructure.Review;
 
+// PR-L4: hasta acá este loader también cargaba LegacyImportedExpense, como candidato
+// para el motor de matching (ver ReviewEngine.cs). Ese mecanismo se retiró completo —
+// LegacyImportedExpense sigue existiendo en la base (limpieza de la tabla en sí es un
+// PR posterior, con su propia verificación de datos antes de tocarla), pero el motor
+// ya no la lee. Este loader queda exclusivamente banco/tarjeta.
 internal sealed class MovementLoader : IMovementLoader
 {
     private readonly IApplicationDbContext _db;
@@ -21,7 +26,6 @@ internal sealed class MovementLoader : IMovementLoader
 
         var classifiedBankStatementIds = ClassifiedSourceIds(SourceEntityType.BankStatement);
         var classifiedTransactionIds = ClassifiedSourceIds(SourceEntityType.Transaction);
-        var classifiedLegacyImportIds = ClassifiedSourceIds(SourceEntityType.LegacyImport);
 
         var bankStatements = await _db.BankStatements
             .AsNoTracking()
@@ -35,19 +39,10 @@ internal sealed class MovementLoader : IMovementLoader
             .Where(t => !classifiedTransactionIds.Contains(t.Id))
             .ToListAsync(cancellationToken);
 
-        var legacyExpenses = await _db.LegacyImportedExpenses
-            .AsNoTracking()
-            .Where(e => !e.IsDiscarded)
-            .Where(e => e.Date >= fromUtc && e.Date <= toUtc)
-            .Where(e => !classifiedLegacyImportIds.Contains(e.Id))
-            .ToListAsync(cancellationToken);
-
-        var movements = new List<FinancialMovement>(
-            bankStatements.Count + transactions.Count + legacyExpenses.Count);
+        var movements = new List<FinancialMovement>(bankStatements.Count + transactions.Count);
 
         movements.AddRange(bankStatements.ConvertAll(ToFinancialMovement));
         movements.AddRange(transactions.ConvertAll(ToFinancialMovement));
-        movements.AddRange(legacyExpenses.ConvertAll(ToFinancialMovement));
 
         return movements;
     }
@@ -89,35 +84,4 @@ internal sealed class MovementLoader : IMovementLoader
         FinancialAccountId = transaction.FinancialAccountId,
     };
 
-    private static FinancialMovement ToFinancialMovement(LegacyImportedExpense expense) => new()
-    {
-        SourceId = expense.Id,
-        Date = expense.Date,
-        Description = expense.Description,
-        // LegacyImportedExpense: registro de gasto manual, ya sigue la convención
-        // de FinancialMovement (positivo = gasto), sin necesidad de invertir el signo.
-        Amount = expense.Amount,
-        Currency = expense.Currency,
-        Source = expense.Sheet == LegacyImportSheet.Fixed
-            ? MovementSource.LegacyFixed
-            : MovementSource.LegacyDynamic,
-        PaymentMethod = ToPaymentMethod(expense.PaymentMethod),
-        OriginalId = expense.RowNumber?.ToString(),
-        SourceFile = expense.SourceFile,
-        SheetName = expense.SheetName,
-    };
-
-    private static PaymentMethod? ToPaymentMethod(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "debito" or "débito" => PaymentMethod.Debit,
-            "credito" or "crédito" => PaymentMethod.Credit,
-            "efectivo" => PaymentMethod.Cash,
-            "transferencia" => PaymentMethod.Transfer,
-            _ => null,
-        };
-    }
 }

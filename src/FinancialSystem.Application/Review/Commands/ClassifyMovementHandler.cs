@@ -7,17 +7,19 @@ namespace FinancialSystem.Application.Review.Commands;
 
 /// <summary>
 /// Crea un ClassifiedMovement (Status=Reviewed) + ClassifiedMovementItem (Role=Reference)
-/// a partir de un movimiento crudo (Transaction, BankStatement o LegacyImportedExpense),
-/// sin depender del motor de sugerencias.
+/// a partir de un movimiento crudo (Transaction o BankStatement), sin depender del
+/// motor de revisión.
 ///
 /// RECLASIFICACIÓN (K3): si el origen ya tiene un ClassifiedMovementItem y ese
-/// ClassifiedMovement tiene un único item (fue creado por este mismo handler, nunca
-/// por ConfirmMatchCommand — ese siempre exige al menos un Reference y un Candidate,
-/// dos items como mínimo), se actualiza en el lugar en vez de crear uno nuevo. Sin
-/// esto, reclasificar duplicaría el movimiento en las métricas — no hay índice único
-/// sobre (SourceEntityType, SourceId) que lo evite a nivel de base.
-/// Si el ClassifiedMovement tiene más de un item (parte de un grupo confirmado por
-/// matching), se rechaza: decidir qué pasa con el resto del grupo excede este caso de uso.
+/// ClassifiedMovement tiene un único item (fue creado por este mismo handler), se
+/// actualiza en el lugar en vez de crear uno nuevo. Sin esto, reclasificar duplicaría
+/// el movimiento en las métricas — no hay índice único sobre (SourceEntityType,
+/// SourceId) que lo evite a nivel de base.
+/// Si el ClassifiedMovement tiene más de un item, se rechaza: decidir qué pasa con el
+/// resto del grupo excede este caso de uso. PR-L4: esos grupos de más de un item solo
+/// podían crearse vía ConfirmMatchCommand (retirado — exigía al menos un Reference y
+/// un Candidate, dos items como mínimo), así que ya no se generan grupos nuevos, pero
+/// los históricos siguen existiendo y esta protección los sigue cubriendo.
 /// </summary>
 public sealed class ClassifyMovementHandler
 {

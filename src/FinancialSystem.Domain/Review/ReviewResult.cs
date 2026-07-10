@@ -1,61 +1,35 @@
-﻿namespace FinancialSystem.Domain.Review;
+namespace FinancialSystem.Domain.Review;
 
-// RESULTADO DEL PROCESO DE SUGERENCIAS
-// Jerarquía de tipos que representa el output del motor de sugerencias de matching.
-// Cada tipo de resultado tiene semántica clara y no ambigua.
+// RESULTADO DEL PROCESO DE REVISIÓN
+// PR-L4: hasta acá este resultado también incluía sugerencias de matching contra
+// movimientos "Candidate" (legacy Excel) — Matched/Unmatched/MatchScore/MatchConfidence/
+// RuleContribution/ReviewSummary. Ese mecanismo se retiró completo (ver Épica K, limpieza
+// de soporte Legacy): no queda ninguna segunda fuente contra la que reconciliar banco/
+// tarjeta. Lo que sigue vigente es lo que nunca dependió de esa segunda fuente: la lista
+// de movimientos del período y los grupos sospechosos (duplicados/splits dentro de la
+// misma lista, ver ISuspicionDetector).
 //
-// NOTA: este resultado es siempre una AYUDA para la revisión, nunca el fin del proceso.
-// El usuario puede aceptar la sugerencia (genera un ClassifiedMovement con Status=Confirmed)
-// o ignorarla y clasificar el movimiento igual sin coincidencia (Status=Reviewed).
+// PUNTO DE EXTENSIÓN: IReviewEngine/ReviewResult siguen siendo el lugar donde un futuro
+// motor de recomendaciones (historial de clasificaciones, reglas, IA) debería integrarse
+// — orquestado igual que ISuspicionDetector hoy, como un componente más inyectado en
+// ReviewEngine. Su resultado NO debería modelarse como un nuevo MatchedPair/candidato a
+// emparejar: una recomendación de clasificación (categoría/tipo/impacto sugeridos) es un
+// tipo de dato distinto a "acá hay un movimiento parecido en otra fuente". Diseñar esa
+// forma ahora, sin una segunda implementación real que la valide, sería la abstracción
+// prematura que este proyecto evita — se define cuando ese motor exista de verdad.
 
 /// <summary>
-/// El resultado completo de una sesión de generación de sugerencias para un período.
+/// El resultado completo de una sesión de revisión para un período: los movimientos
+/// encontrados y los grupos sospechosos detectados entre ellos.
 /// </summary>
 public sealed record ReviewResult
 {
     public required DateOnly PeriodStart { get; init; }
     public required DateOnly PeriodEnd { get; init; }
-    public required IReadOnlyList<MatchedPair> Matched { get; init; }
-    public required IReadOnlyList<UnmatchedMovement> Unmatched { get; init; }
+    public required IReadOnlyList<FinancialMovement> Movements { get; init; }
     public required IReadOnlyList<SuspiciousGroup> Suspicious { get; init; }
-    public required ReviewSummary Summary { get; init; }
     public required TimeSpan Elapsed { get; init; }
     public DateTimeOffset GeneratedAt { get; init; } = DateTimeOffset.UtcNow;
-}
-
-/// <summary>
-/// Par de movimientos sugeridos como coincidencia entre sí, con score y evidencia.
-/// </summary>
-public sealed record MatchedPair
-{
-    public required FinancialMovement Reference { get; init; }   // movimiento banco/tarjeta
-    public required FinancialMovement Candidate { get; init; }   // movimiento legacy/manual
-    public required MatchScore Score { get; init; }
-    public required MatchConfidence Confidence { get; init; }
-
-    /// <summary>Qué reglas contribuyeron a este match y cuánto.</summary>
-    public required IReadOnlyList<RuleContribution> Contributions { get; init; }
-
-    /// <summary>Diferencia de monto entre los dos movimientos.</summary>
-    public decimal AmountDelta => Math.Abs(Reference.Amount - Candidate.Amount);
-
-    /// <summary>Diferencia de días entre las fechas.</summary>
-    public int DateDeltaDays => Math.Abs((Reference.Date - Candidate.Date).Days);
-}
-
-/// <summary>
-/// Movimiento sin coincidencia sugerida. Debe clasificarse igual mediante revisión manual.
-/// </summary>
-public sealed record UnmatchedMovement
-{
-    public required FinancialMovement Movement { get; init; }
-    public required UnmatchedReason Reason { get; init; }
-
-    /// <summary>
-    /// Candidatos cercanos que no llegaron al threshold de confianza.
-    /// Útil para debugging y para mejorar matching futuro.
-    /// </summary>
-    public IReadOnlyList<MatchedPair> NearMisses { get; init; } = [];
 }
 
 /// <summary>
@@ -68,86 +42,9 @@ public sealed record SuspiciousGroup
     public required string Description { get; init; }
 }
 
-/// <summary>
-/// Score compuesto resultado de aplicar todas las reglas de matching.
-/// Cada componente está en [0.0, 1.0]. El total es la suma ponderada.
-/// </summary>
-public sealed record MatchScore
-{
-    public required double AmountScore { get; init; }
-    public required double DateScore { get; init; }
-    public required double DescriptionScore { get; init; }
-    public required double PaymentMethodScore { get; init; }
-
-    /// <summary>Score total ponderado. En [0.0, 1.0].</summary>
-    public required double Total { get; init; }
-
-    public override string ToString() =>
-        $"Total={Total:P0} [Monto={AmountScore:P0}, Fecha={DateScore:P0}, Desc={DescriptionScore:P0}, Pago={PaymentMethodScore:P0}]";
-}
-
-/// <summary>Contribución de una regla individual al score final.</summary>
-public sealed record RuleContribution(
-    string RuleName,
-    double Score,
-    double Weight,
-    string? Detail = null);
-
-/// <summary>
-/// Nivel de confianza derivado del score total.
-/// Los umbrales son configurables vía MatchingOptions.
-/// </summary>
-public enum MatchConfidence
-{
-    /// <summary>Score ≥ 0.85: coincidencia automática segura.</summary>
-    High,
-    /// <summary>Score ≥ 0.60: coincidencia probable, requiere revisión.</summary>
-    Medium,
-    /// <summary>Score ≥ 0.40: posible coincidencia, alta incertidumbre.</summary>
-    Low,
-    /// <summary>Score &lt; 0.40: no considerada coincidencia.</summary>
-    None,
-}
-
-public enum UnmatchedReason
-{
-    NoCandidate,           // No existe ningún movimiento parecido
-    BelowThreshold,        // Candidatos existen pero el score es insuficiente
-    ConflictingMatch,      // El mejor candidato ya fue asignado a otro movimiento
-    CurrencyMismatch,      // Monedas incompatibles
-    OutOfPeriod,           // Fuera del período analizado
-}
-
 public enum SuspicionReason
 {
     PossibleDuplicate,     // Mismo monto, misma fecha, misma fuente
     SplitTransaction,      // Varios movimientos suman al total de otro
     RoundingAnomaly,       // Diferencia exactamente igual en múltiples pares
-}
-
-/// <summary>Métricas agregadas del proceso de generación de sugerencias.</summary>
-public sealed record ReviewSummary
-{
-    public int TotalReferenceMovements { get; init; }
-    public int TotalCandidateMovements { get; init; }
-    public int HighConfidenceMatches { get; init; }
-    public int MediumConfidenceMatches { get; init; }
-    public int LowConfidenceMatches { get; init; }
-    public int UnmatchedReference { get; init; }
-    public int UnmatchedCandidate { get; init; }
-    public int SuspiciousGroups { get; init; }
-
-    public int TotalMatched => HighConfidenceMatches + MediumConfidenceMatches + LowConfidenceMatches;
-
-    public double MatchRate =>
-        TotalReferenceMovements == 0
-            ? 0
-            : (double)TotalMatched / TotalReferenceMovements;
-
-    public decimal TotalUnmatchedAmount { get; init; }
-
-    public override string ToString() =>
-        $"Sugeridos: {TotalMatched}/{TotalReferenceMovements} ({MatchRate:P0}) | " +
-        $"Sin sugerencia: ref={UnmatchedReference} cand={UnmatchedCandidate} | " +
-        $"Sospechosos: {SuspiciousGroups}";
 }
