@@ -12,7 +12,7 @@ Punto de entrada. Ya existe como `dashboard.html`. Hoy tiene navegación con pla
 
 ### 2. Movimientos pendientes
 
-Pantalla nueva (Épica K). Lista de `FinancialMovement` sin clasificar, resultado de `GetUnclassifiedMovementsQuery`. Reemplaza la lectura mental de "columna Banco/Tarjeta" de `group-reconciliation.html` como vista principal de trabajo diario — pero no es una pantalla de reconciliación 1:1, es una cola de pendientes con selección y filtro, pensada para clasificar rápido, no para conciliar montos entre dos fuentes.
+Pantalla nueva (Épica K). Lista de `FinancialMovement` de banco/tarjeta (Transaction/BankStatement), resultado de `GET /api/movements` (PR K1) — un endpoint propio que depende directamente de `IMovementLoader`, sin pasar por `IReviewEngine`/`GetUnclassifiedMovementsQuery`: no calcula sugerencias de matching ni sospechosos, solo lista y filtra (por cuenta, texto, período). `GetUnclassifiedMovementsQuery` sigue siendo exclusivo de `group-reconciliation.html` (Migración desde Excel), que sí necesita las sugerencias del motor para el cruce N↔M. Reemplaza la lectura mental de "columna Banco/Tarjeta" de `group-reconciliation.html` como vista principal de trabajo diario — pero no es una pantalla de reconciliación 1:1, es una cola de pendientes con selección y filtro, pensada para clasificar rápido, no para conciliar montos entre dos fuentes.
 
 ### 3. Clasificación
 
