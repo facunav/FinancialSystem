@@ -109,6 +109,24 @@
 
             .filter-bar .spacer { flex: 1 }
 
+        /* PR-L2: barra contextual de clasificación en lote — aparece solo cuando
+           hay selección, mismo patrón que .action-bar en group-reconciliation.html,
+           pero para una sola lista (sin dos lados, sin balance). */
+        .batch-bar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+        }
+            .batch-bar.visible { display: flex }
+            .batch-bar .info { font-size: 12px; color: var(--dim) }
+
+        .cb-cell { width: 32px }
+
+        .progress-line { font: 11px var(--mono); color: var(--faint) }
+
         button {
             background: var(--surface2);
             border: 1px solid var(--border);
@@ -340,10 +358,18 @@
                 <div class="spacer"></div>
                 <div id="listToast"></div>
             </div>
+            <!-- PR-L2: solo aparece con selección activa. Una sola lista, una sola
+                 acción — no es la barra de balance de group-reconciliation.html. -->
+            <div class="batch-bar" id="batchBar">
+                <span class="info" id="batchCount"></span>
+                <button class="sm primary" id="btnBatchClassify">Clasificar seleccionados</button>
+                <button class="sm" id="btnBatchClear">Cancelar selección</button>
+            </div>
             <div style="overflow-x:auto">
                 <table>
                     <thead>
                         <tr>
+                            <th class="cb-cell"><input type="checkbox" id="selectAllCheckbox" aria-label="Seleccionar todos los pendientes"></th>
                             <th>Fecha</th>
                             <th>Descripción</th>
                             <th>Importe</th>
@@ -354,7 +380,7 @@
                             <th></th>
                         </tr>
                     </thead>
-                    <tbody id="movementsBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="movementsBody"><tr><td colspan="9" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -412,6 +438,9 @@
                     <label for="cComment">Comentario (opcional)</label>
                     <textarea id="cComment" placeholder="Detalle adicional…"></textarea>
                 </div>
+                <!-- PR-L2: solo visible durante saveBatchClassify, mismo patrón que
+                     #reviewProgress en group-reconciliation.html. -->
+                <div id="classifyProgress" class="progress-line" style="display:none"></div>
                 <div id="classifyToast"></div>
             </div>
             <div class="modal-foot">
@@ -429,9 +458,12 @@
         // K3, GET /api/movements devuelve pendientes y clasificados. El modelo siguió
         // creciendo en K4 (sugerencias), K5 (confirmar sugerencia) y K6 (grupos
         // sospechosos) sin rediseñarse.
-        // modalMode distingue qué comando dispara btnClassifySave: 'classify' (default)
-        // o 'confirm' — mismo modal, mismos campos comunes, dos flujos de dominio ya
-        // existentes (ClassifyMovementCommand / ConfirmMatchCommand).
+        // modalMode distingue qué comando dispara btnClassifySave: 'classify' (default),
+        // 'confirm' o 'batch' (PR-L2) — mismo modal, mismos campos comunes, siempre
+        // ClassifyMovementCommand salvo 'confirm' (ConfirmMatchCommand). 'batch' no es
+        // un comando nuevo: es el mismo ClassifyMovementCommand disparado N veces
+        // secuencialmente, un id de selectedIds por vez — igual que ya hacía
+        // doBatchReview en group-reconciliation.html.
         const state = {
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
@@ -440,6 +472,7 @@
             categories: [],
             counterparties: [],
             selectedMovement: null,
+            selectedIds: new Set(),
             modalMode: 'classify',
         };
 
@@ -564,7 +597,12 @@
 
         async function loadMovements() {
             const tbody = document.getElementById('movementsBody');
-            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="loading">Cargando…</td></tr>';
+            // Una recarga (filtros nuevos, o el propio período) puede dejar de incluir
+            // movimientos hoy seleccionados — limpiar es más simple y correcto que
+            // tratar de preservar selección contra una lista que va a cambiar.
+            state.selectedIds.clear();
+            updateBatchBar();
 
             const params = new URLSearchParams();
             if (state.movementFilters.from) params.set('from', state.movementFilters.from);
@@ -577,7 +615,7 @@
                 state.movements = (data ?? []).map(toMovementViewModel);
                 renderMovements();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
             }
         }
 
@@ -595,16 +633,24 @@
                 state.movements.length > 0 ? `(${state.movements.length})` : '';
 
             if (state.movements.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay movimientos para este período.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay movimientos para este período.</td></tr>';
+                updateBatchBar();
                 return;
             }
 
             tbody.innerHTML = state.movements.map(renderMovementRow).join('');
+            updateBatchBar();
         }
 
         function renderMovementRow(m) {
+            // PR-L2: solo pendientes son seleccionables — clasificar en lote no
+            // cubre reclasificación, que ya tiene su propio flujo individual con
+            // precarga de valores existentes (openClassifyModal).
+            const checked = state.selectedIds.has(m.sourceId) ? ' checked' : '';
+            const disabled = m.status !== 'Pending' ? ' disabled' : '';
             return `
                 <tr data-source-id="${m.sourceId}">
+                    <td class="cb-cell"><input type="checkbox" class="row-select" data-source-id="${m.sourceId}"${checked}${disabled}></td>
                     <td>${fmtDate(m.date)}</td>
                     <td class="truncate" title="${esc(m.description)}">${esc(m.description)}</td>
                     <td class="mono">$${fmt(m.amount)}</td>
@@ -706,6 +752,9 @@
         // ── Asignación de cuenta financiera ──────────────────────────────────────
 
         document.getElementById('movementsBody').addEventListener('change', e => {
+            const cb = e.target.closest('.row-select');
+            if (cb) { toggleRowSelection(cb.dataset.sourceId, cb.checked); return; }
+
             const sel = e.target.closest('.acct-select');
             if (!sel) return;
             assignFinancialAccount(sel.dataset.sourceId, sel.dataset.source, sel.value || null, sel);
@@ -727,6 +776,44 @@
                 selectEl.disabled = false;
             }
         }
+
+        // ── Selección en lote (PR-L2) ────────────────────────────────────────────
+        // Una sola lista, un solo Set de seleccionados — no hay "lado A/lado B" ni
+        // balance. Solo movimientos Pendientes son seleccionables (ver renderMovementRow).
+
+        function toggleRowSelection(sourceId, checked) {
+            checked ? state.selectedIds.add(sourceId) : state.selectedIds.delete(sourceId);
+            updateBatchBar();
+        }
+
+        document.getElementById('selectAllCheckbox').addEventListener('change', e => {
+            const boxes = [...document.querySelectorAll('#movementsBody .row-select:not(:disabled)')];
+            boxes.forEach(cb => {
+                cb.checked = e.target.checked;
+                e.target.checked ? state.selectedIds.add(cb.dataset.sourceId) : state.selectedIds.delete(cb.dataset.sourceId);
+            });
+            updateBatchBar();
+        });
+
+        function updateBatchBar() {
+            const n = state.selectedIds.size;
+            const bar = document.getElementById('batchBar');
+            bar.classList.toggle('visible', n > 0);
+            document.getElementById('batchCount').textContent =
+                n > 0 ? `${n} movimiento${n !== 1 ? 's' : ''} seleccionado${n !== 1 ? 's' : ''}` : '';
+
+            const selectAll = document.getElementById('selectAllCheckbox');
+            const boxes = [...document.querySelectorAll('#movementsBody .row-select:not(:disabled)')];
+            selectAll.checked = boxes.length > 0 && boxes.every(cb => cb.checked);
+            selectAll.indeterminate = !selectAll.checked && boxes.some(cb => cb.checked);
+        }
+
+        document.getElementById('btnBatchClear').addEventListener('click', () => {
+            state.selectedIds.clear();
+            renderMovements();
+        });
+
+        document.getElementById('btnBatchClassify').addEventListener('click', openBatchModal);
 
         // ── Clasificación individual / confirmar sugerencia (K5) ────────────────
 
@@ -785,6 +872,33 @@
             document.getElementById('classifyOverlay').classList.add('open');
         }
 
+        // PR-L2: mismo modal, tercer modo. Sin precarga de categoría/tipo/contraparte
+        // — a diferencia de reclasificar, todas las filas seleccionadas son
+        // Pendientes (ver renderMovementRow), sin ninguna clasificación previa de
+        // la que partir. Muestra el total como chequeo rápido antes de aplicar la
+        // misma clasificación a todas.
+        function openBatchModal() {
+            const n = state.selectedIds.size;
+            if (n === 0) return;
+            state.selectedMovement = null;
+            state.modalMode = 'batch';
+
+            const selected = state.movements.filter(m => state.selectedIds.has(m.sourceId));
+            const total = selected.reduce((sum, m) => sum + m.amount, 0);
+            document.getElementById('classifyModalTitle').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
+            document.getElementById('classifySubtitle').textContent =
+                `Se aplicará la misma clasificación a los ${n} movimientos seleccionados · Total $${fmt(total)}`;
+            document.getElementById('cCategory').value = '';
+            document.getElementById('cImpact').value = 'Expense';
+            document.getElementById('cMovementType').value = 'Purchase';
+            document.getElementById('cCounterparty').value = '';
+            document.getElementById('cComment').value = '';
+            document.getElementById('cCommentField').style.display = '';
+            document.getElementById('btnClassifySave').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
+            document.getElementById('classifyToast').innerHTML = '';
+            document.getElementById('classifyOverlay').classList.add('open');
+        }
+
         function closeClassifyModal() {
             document.getElementById('classifyOverlay').classList.remove('open');
             state.selectedMovement = null;
@@ -798,12 +912,10 @@
 
         document.getElementById('btnClassifySave').addEventListener('click', saveClassification);
 
-        // Un solo botón, dos comandos de dominio ya existentes según state.modalMode —
-        // ver el comentario sobre el modal más arriba.
+        // Un solo botón, tres flujos según state.modalMode — ver el comentario sobre
+        // el modal más arriba. 'batch' no toma selectedMovement: opera sobre
+        // selectedIds directamente dentro de saveBatchClassify.
         async function saveClassification() {
-            const movement = state.selectedMovement;
-            if (!movement) return;
-
             const categoryId = document.getElementById('cCategory').value;
             if (!categoryId) {
                 showToast('classifyToast', 'Seleccioná una categoría', 'err');
@@ -813,6 +925,14 @@
             const btn = document.getElementById('btnClassifySave');
             btn.disabled = true;
             try {
+                if (state.modalMode === 'batch') {
+                    await saveBatchClassify(categoryId);
+                    return;
+                }
+
+                const movement = state.selectedMovement;
+                if (!movement) return;
+
                 if (state.modalMode === 'confirm') {
                     await saveConfirmMatch(movement, categoryId);
                 } else {
@@ -849,6 +969,59 @@
             movement.financialImpact = body.financialImpact;
             renderMovements();
             showToast('listToast', 'Clasificación guardada', 'ok');
+        }
+
+        // PR-L2: mismo endpoint y mismo comando que saveClassify (ClassifyMovementCommand),
+        // uno por movimiento, en loop secuencial — igual patrón que doBatchReview en
+        // group-reconciliation.html. Sin comando ni endpoint batch nuevo. Cada llamada
+        // es independiente: un fallo individual no aborta el resto del lote.
+        async function saveBatchClassify(categoryId) {
+            const ids = [...state.selectedIds];
+            const shared = {
+                categoryId,
+                movementType: document.getElementById('cMovementType').value,
+                financialImpact: document.getElementById('cImpact').value,
+                counterpartyId: document.getElementById('cCounterparty').value || null,
+                comment: document.getElementById('cComment').value.trim() || null,
+            };
+
+            const progress = document.getElementById('classifyProgress');
+            progress.style.display = 'block';
+            let ok = 0, fail = 0;
+
+            for (let i = 0; i < ids.length; i++) {
+                const movement = state.movements.find(m => m.sourceId === ids[i]);
+                if (!movement) continue;
+                progress.textContent = `Clasificando ${i + 1} de ${ids.length}…`;
+                try {
+                    await postJson(`${API}/api/movement-review/classify`, {
+                        sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source],
+                        sourceId: movement.sourceId,
+                        ...shared,
+                    });
+                    movement.status = 'Reviewed';
+                    movement.categoryId = shared.categoryId;
+                    movement.counterpartyId = shared.counterpartyId;
+                    movement.movementType = shared.movementType;
+                    movement.financialImpact = shared.financialImpact;
+                    ok++;
+                } catch {
+                    fail++;
+                }
+            }
+
+            progress.style.display = 'none';
+            // Se limpia la selección haya habido error o no, en vez de tratar de
+            // conservar solo los fallidos — más simple y consistente con cómo ya
+            // se limpia selectedIds en cada loadMovements(). Si algo falló, el
+            // usuario lo ve en el toast y puede volver a seleccionarlo.
+            state.selectedIds.clear();
+            closeClassifyModal();
+            renderMovements();
+            const msg = fail === 0
+                ? `✓ ${ok} movimiento${ok !== 1 ? 's' : ''} clasificado${ok !== 1 ? 's' : ''}`
+                : `✓ ${ok} ok · ⚠ ${fail} con error`;
+            showToast('listToast', msg, fail === 0 ? 'ok' : 'err', 5000);
         }
 
         // K5: confirma la sugerencia del motor reutilizando el mismo endpoint/comando
