@@ -40,7 +40,7 @@ Contiene:
 * `AppDbContext` + configuraciones EF Core por entidad.
 * Parsers de importación (PDF, XLS, CSV, Excel legacy).
 * `MovementLoader`, `SuspicionDetector`, `ReviewEngine`. PR-L4: `MatchScorer` y las 4 implementaciones de `IMatchingRule` se retiraron junto con el backend de matching Legacy.
-* `ClassificationSuggestionService` (PR-S3, carpeta `Suggestions/`, reemplaza a `NullClassificationSuggestionService` de PR-S2) — implementación de `IClassificationSuggestionService` con una sola heurística (exact match de descripción normalizada contra el historial de `ClassifiedMovements`, sin IA, solo lectura); sin consumidores todavía, no cambia el comportamiento del sistema.
+* `ClassificationSuggestionService` (PR-S3, carpeta `Suggestions/`, reemplaza a `NullClassificationSuggestionService` de PR-S2) — implementación de `IClassificationSuggestionService`, solo lectura, sin IA. Dos heurísticas: exact match de descripción normalizada contra el historial de `ClassifiedMovements` (PR-S3), y enriquecimiento vía `Counterparty.DefaultCategoryId`/`DefaultMovementType`/`DefaultFinancialImpact` cuando la primera ya sugirió una contraparte (PR-S7). Sin abstracción de "regla" todavía — ver `docs/Architecture/PRS6analisissiguienteheuristica.md`, sección 5.
 * `FinancialMetricsService`.
 * Registro de DI (`AddInfrastructure`).
 

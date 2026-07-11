@@ -17,10 +17,11 @@ namespace FinancialSystem.Application.Suggestions;
 ///
 /// PR-S2 introdujo el contrato solo con una implementación nula (sin historial, sin IA).
 /// PR-S3 agrega la primera implementación real (<c>ClassificationSuggestionService</c>):
-/// una sola heurística, exact match de descripción normalizada contra
-/// <c>ClassifiedMovement</c>, todavía sin ningún consumidor conectado. Reglas
-/// configurables y proveedores de IA pueden llegar en PRs posteriores sin necesidad de
-/// cambiar este contrato.
+/// exact match de descripción normalizada contra <c>ClassifiedMovement</c>. PR-S7 agrega
+/// una segunda heurística a esa misma implementación (enriquecimiento vía
+/// <c>Counterparty.Default*</c>) sin tocar este contrato. Reglas configurables y
+/// proveedores de IA pueden llegar en PRs posteriores, también sin necesidad de
+/// cambiarlo.
 /// </summary>
 public interface IClassificationSuggestionService
 {
