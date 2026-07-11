@@ -24,7 +24,7 @@ Contiene:
 Contratos (interfaces), comandos, queries, handlers, y opciones de configuración. Depende solo de Domain.
 
 Contiene:
-* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.).
+* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del futuro motor de sugerencias de clasificación, ver `docs/Architecture/PRS1analisismotorsugerencias.md`. Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período).
 * Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4).
 * Opciones de configuración (`ReviewEngineOptions`, `FileIngestionOptions`, `OllamaOptions`, `OpenAIOptions`, `InsightsWorkerOptions`).
 
@@ -40,6 +40,7 @@ Contiene:
 * `AppDbContext` + configuraciones EF Core por entidad.
 * Parsers de importación (PDF, XLS, CSV, Excel legacy).
 * `MovementLoader`, `SuspicionDetector`, `ReviewEngine`. PR-L4: `MatchScorer` y las 4 implementaciones de `IMatchingRule` se retiraron junto con el backend de matching Legacy.
+* `NullClassificationSuggestionService` (PR-S2, carpeta `Suggestions/`) — implementación de `IClassificationSuggestionService` que siempre responde "sin sugerencias"; sin consumidores todavía, no cambia el comportamiento del sistema.
 * `FinancialMetricsService`.
 * Registro de DI (`AddInfrastructure`).
 

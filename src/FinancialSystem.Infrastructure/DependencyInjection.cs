@@ -9,6 +9,7 @@ using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Application.Review;
+using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Infrastructure.Accounts;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
@@ -16,6 +17,7 @@ using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
 using FinancialSystem.Infrastructure.Persistence;
+using FinancialSystem.Infrastructure.Suggestions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,6 +81,12 @@ public static class DependencyInjection
         services.AddScoped<IMovementsQueryService, MovementsQueryService>();
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
+
+        // PR-S2: infraestructura base del motor de sugerencias (ver
+        // docs/Architecture/PRS1analisismotorsugerencias.md). NullClassificationSuggestionService
+        // no consulta historial ni usa IA — "sin sugerencias" siempre. Sin consumidores
+        // todavía, no cambia el comportamiento del sistema.
+        services.AddSingleton<IClassificationSuggestionService, NullClassificationSuggestionService>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
