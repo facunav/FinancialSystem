@@ -523,6 +523,58 @@
             Counterparty: 'Contraparte',
         };
 
+        // PR-S5.1: orden fijo de presentación de sugerencias, independiente del
+        // orden en que llegan desde el backend (ClassificationSuggestionSet.Suggestions
+        // no garantiza ningún orden — hoy es estable por accidente de implementación
+        // de ClassificationSuggestionService, no por contrato). Coincide a propósito
+        // con el orden real de los campos del modal de clasificación (Categoría →
+        // Impacto financiero → Tipo de movimiento → Contraparte, ver #cCategory/
+        // #cImpact/#cMovementType/#cCounterparty más abajo en el HTML) para que leer
+        // los chips y completar el modal se sientan la misma secuencia.
+        const SUGGESTION_DIMENSION_ORDER = ['Category', 'FinancialImpact', 'MovementType', 'Counterparty'];
+
+        // Ranking ordinal de SuggestionConfidence para poder compararlas — mismo
+        // criterio que ya es ordinal en el propio backend (ver PR-S1/PR-S2:
+        // deliberadamente Low/Medium/High, no un score continuo).
+        const SUGGESTION_CONFIDENCE_RANK = { Low: 1, Medium: 2, High: 3 };
+
+        // PR-S5.1: normaliza la lista de sugerencias de un movimiento antes de
+        // guardarla en el view model — un único punto de verdad que usan tanto
+        // renderSuggestionChips como suggestionValue (openClassifyModal), para que
+        // chips y precarga nunca diverjan entre sí.
+        //
+        // Dedup: el contrato (ClassificationSuggestionSet) documenta "a lo sumo una
+        // por dimensión" pero no lo garantiza el tipo — nada impide que una futura
+        // implementación (reglas, IA) emita más de una para la misma dimensión. Ante
+        // eso, se conserva la de mayor confianza; en empate, la primera recibida (el
+        // `if` de abajo solo reemplaza con un ">" estricto, nunca con "=>").
+        //
+        // Orden: se recorre SUGGESTION_DIMENSION_ORDER para fijar la secuencia visual;
+        // cualquier dimensión futura no contemplada ahí no se pierde — se agrega al
+        // final en el orden en que llegó, mismo criterio defensivo que ya usan
+        // SUGGESTION_DIMENSION_LABELS/suggestionValueLabel con su fallback al valor
+        // crudo.
+        function normalizeSuggestions(suggestions) {
+            const byDimension = new Map();
+            for (const s of suggestions) {
+                const existing = byDimension.get(s.dimension);
+                if (!existing || SUGGESTION_CONFIDENCE_RANK[s.confidence] > SUGGESTION_CONFIDENCE_RANK[existing.confidence]) {
+                    byDimension.set(s.dimension, s);
+                }
+            }
+
+            const ordered = SUGGESTION_DIMENSION_ORDER
+                .filter(dim => byDimension.has(dim))
+                .map(dim => byDimension.get(dim));
+
+            const known = new Set(SUGGESTION_DIMENSION_ORDER);
+            for (const [dim, s] of byDimension) {
+                if (!known.has(dim)) ordered.push(s);
+            }
+
+            return ordered;
+        }
+
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
@@ -549,12 +601,15 @@
                 } : null,
                 // PR-S5: dto.suggestions siempre es un array (nunca null, ver
                 // MovementListItemDto) — ?? [] es solo defensivo.
-                suggestions: (dto.suggestions ?? []).map(s => ({
+                // PR-S5.1: normalizeSuggestions aplica el orden fijo y la
+                // deduplicación por dimensión acá, una sola vez — tanto los chips
+                // como la precarga del modal leen directamente de este resultado.
+                suggestions: normalizeSuggestions((dto.suggestions ?? []).map(s => ({
                     dimension: s.dimension,
                     value: s.value,
                     confidence: s.confidence,
                     reason: s.reason,
-                })),
+                }))),
             };
         }
 
@@ -712,6 +767,9 @@
         // en ese caso, ver backend) — no hace falta chequear m.status acá. El texto
         // visible ya es "Dimensión: valor"; title solo agrega el motivo (reason),
         // como complemento, no como mecanismo principal de lectura.
+        // PR-S5.1: m.suggestions ya llega ordenado y deduplicado por dimensión
+        // (ver normalizeSuggestions en toMovementViewModel) — esta función solo
+        // mapea a HTML, sin ordenar ni filtrar nada por su cuenta.
         function renderSuggestionChips(m) {
             if (!m.suggestions || m.suggestions.length === 0) return '';
             const chips = m.suggestions.map(s => {
