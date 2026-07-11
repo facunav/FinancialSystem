@@ -17,7 +17,6 @@ using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
 using FinancialSystem.Infrastructure.Persistence;
-using FinancialSystem.Infrastructure.Suggestions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,11 +81,12 @@ public static class DependencyInjection
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
 
-        // PR-S2: infraestructura base del motor de sugerencias (ver
-        // docs/Architecture/PRS1analisismotorsugerencias.md). NullClassificationSuggestionService
-        // no consulta historial ni usa IA — "sin sugerencias" siempre. Sin consumidores
-        // todavía, no cambia el comportamiento del sistema.
-        services.AddSingleton<IClassificationSuggestionService, NullClassificationSuggestionService>();
+        // PR-S3: primera implementación real (ver docs/Architecture/PRS1analisismotorsugerencias.md
+        // para el diseño y PR-S3 para la heurística — exact match de descripción normalizada
+        // contra el historial de ClassifiedMovements, sin IA). Scoped (no Singleton, a
+        // diferencia de ISuspicionDetector) porque depende de IApplicationDbContext, que
+        // es Scoped — Singleton acá sería una captive dependency. Sin consumidores todavía.
+        services.AddScoped<IClassificationSuggestionService, Suggestions.ClassificationSuggestionService>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();

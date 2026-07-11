@@ -15,11 +15,12 @@ namespace FinancialSystem.Application.Suggestions;
 /// directamente desde quien lo necesite (ej. <c>IMovementsQueryService</c>), no orquestado
 /// por <c>IReviewEngine</c>.
 ///
-/// PR-S2: introduce solo el contrato. La única implementación de este PR
-/// (<c>NullClassificationSuggestionService</c>) no consulta historial ni usa IA — siempre
-/// devuelve "sin sugerencias". Implementaciones reales (heurísticas sobre
-/// <c>ClassifiedMovement</c>, reglas configurables, proveedores de IA) llegan en PRs
-/// posteriores sin necesidad de cambiar este contrato.
+/// PR-S2 introdujo el contrato solo con una implementación nula (sin historial, sin IA).
+/// PR-S3 agrega la primera implementación real (<c>ClassificationSuggestionService</c>):
+/// una sola heurística, exact match de descripción normalizada contra
+/// <c>ClassifiedMovement</c>, todavía sin ningún consumidor conectado. Reglas
+/// configurables y proveedores de IA pueden llegar en PRs posteriores sin necesidad de
+/// cambiar este contrato.
 /// </summary>
 public interface IClassificationSuggestionService
 {
