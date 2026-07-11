@@ -24,9 +24,12 @@ namespace FinancialSystem.Domain.Review;
 ///   CounterpartyId es opcional pero fuertemente recomendado — habilita sugerencias futuras.
 ///
 /// RELACIÓN CON FUENTES:
-///   Las tablas originales (Transactions, BankStatements, LegacyImportedExpenses)
-///   son fuentes de importación. Permanecen intactas e inmutables.
-///   Este registro no las reemplaza: las referencia vía Items (snapshot).
+///   Las tablas originales (Transactions, BankStatements) son fuentes de importación.
+///   Permanecen intactas e inmutables. Este registro no las reemplaza: las referencia
+///   vía Items (snapshot). PR-L5: LegacyImportedExpenses se eliminó — filas históricas
+///   de Items con SourceEntityType.LegacyImport ya no tienen tabla de origen que
+///   consultar, pero su snapshot (OriginalAmount/OriginalDate/OriginalDescription, etc.)
+///   sigue siendo válido y completo por sí solo.
 ///
 /// QUERIES DEL MCP:
 ///   ¿Cuánto gasto?        → SUM(TotalAmount) WHERE FinancialImpact = Expense

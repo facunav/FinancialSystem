@@ -4,7 +4,7 @@
 
 ## Contexto
 
-Hoy ninguna entidad persistida (`Transaction`, `BankStatement`, `LegacyImportedExpense`) tiene noción explícita de "cuenta financiera de origen" — no hay forma de responder, a nivel de datos, "¿de qué cuenta o tarjeta vino este movimiento?". El roadmap incluye dos épocas relacionadas con cuentas: Épica J (`FinancialAccount` — cuenta financiera genérica: `Bank`/`Card`/`Investment`/`Cash`) y Épica M (`InvestmentAccount` — cuenta de inversión con saldo/valuación y movimientos internos propios). `Counterparty.CounterpartyType` ya tiene el valor `Investment = 9` reservado para este caso.
+Hoy ninguna entidad persistida (`Transaction`, `BankStatement`) tiene noción explícita de "cuenta financiera de origen" — no hay forma de responder, a nivel de datos, "¿de qué cuenta o tarjeta vino este movimiento?". El roadmap incluye dos épocas relacionadas con cuentas: Épica J (`FinancialAccount` — cuenta financiera genérica: `Bank`/`Card`/`Investment`/`Cash`) y Épica M (`InvestmentAccount` — cuenta de inversión con saldo/valuación y movimientos internos propios). `Counterparty.CounterpartyType` ya tiene el valor `Investment = 9` reservado para este caso.
 
 ## Problema
 

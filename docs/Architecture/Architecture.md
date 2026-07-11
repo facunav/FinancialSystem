@@ -13,7 +13,7 @@ El proyecto sigue Clean Architecture (Domain → Application → Infrastructure 
 Entidades y modelos neutros. No depende de ninguna otra capa del proyecto ni de infraestructura (EF Core, HTTP, etc.).
 
 Contiene:
-* Entidades persistidas (`Transaction`, `BankStatement`, `LegacyImportedExpense`, `Category`, `Counterparty`, `ClassifiedMovement`, `ClassifiedMovementItem`).
+* Entidades persistidas (`Transaction`, `BankStatement`, `Category`, `Counterparty`, `ClassifiedMovement`, `ClassifiedMovementItem`). PR-L5: `LegacyImportedExpense` se eliminó (entidad y tabla) — ver `SourceEntityType.LegacyImport`/`MovementRole.Candidate` para los valores de enum que se conservan por compatibilidad histórica de datos ya persistidos.
 * Enums de dominio (`MovementType`, `FinancialImpact`, `ClassificationStatus`, `ProcessingSource`, `MovementRole`, `SourceEntityType`).
 * Modelos neutros de proceso (`FinancialMovement`, `ReviewResult` y su familia — `SuspiciousGroup`, `SuspicionReason`). PR-L4: `ReviewResult` ya no incluye una familia de matching (`MatchedPair`/`UnmatchedMovement`/`MatchScore`/`MatchConfidence`/`RuleContribution`/`ReviewSummary`, retirada junto con el backend de matching Legacy) — `IReviewEngine`/`ReviewResult` quedan como punto de extensión para un futuro motor de recomendaciones, ver comentario en `ReviewResult.cs`.
 

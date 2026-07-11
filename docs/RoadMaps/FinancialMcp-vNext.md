@@ -18,7 +18,7 @@ Piezas activas en el código hoy:
 * `movements.html` — UI de clasificación (reemplazó a `group-reconciliation.html`, ver Épica K).
 * `FinancialMetricsService` + 4 herramientas MCP (`GetMonthlySummary`, `GetExpensesByCategory`, `GetMonthlyTrend`, `CompareWithPreviousMonth`) — sin cambios, funcionando sobre `ClassifiedMovement`.
 
-**Épica K (Nueva UX de clasificación) — mayormente completada.** PR-L1 a PR-L4 retiraron por completo el importador Excel legacy muerto, agregaron clasificación en lote a `movements.html`, retiraron `group-reconciliation.html` de la navegación y luego del código, y eliminaron el backend de matching contra `LegacyImportedExpense` (`IMatchScorer`, 4 `IMatchingRule`, `ConfirmMatchCommand`/`DiscardLegacyCandidatesCommand`/`RestoreLegacyCandidatesCommand`/`GetUnclassifiedMovementsQuery`) que ya no tenía ningún consumidor real. Pendiente: PR-L4.5 (conteo real de datos en `LegacyImportedExpense`) y PR-L5 (eliminar la entidad/tabla). Detalle en `docs/UX/ClassificationUX.md`.
+**Épica K (Nueva UX de clasificación) — completada.** PR-L1 a PR-L5 retiraron por completo el importador Excel legacy muerto, agregaron clasificación en lote a `movements.html`, retiraron `group-reconciliation.html` de la navegación y luego del código, eliminaron el backend de matching contra `LegacyImportedExpense` (`IMatchScorer`, 4 `IMatchingRule`, `ConfirmMatchCommand`/`DiscardLegacyCandidatesCommand`/`RestoreLegacyCandidatesCommand`/`GetUnclassifiedMovementsQuery`) que ya no tenía ningún consumidor real, y finalmente eliminaron `LegacyImportedExpense` (entidad + tabla), informado por el conteo de datos de PR-L4.5. `SourceEntityType.LegacyImport`/`MovementRole.Candidate` se conservan como valores de enum históricos (filas ya persistidas los usan), sin productor actual. Detalle en `docs/UX/ClassificationUX.md`.
 
 **En planificación — Épicas I–N (este documento).** Nada de lo que describen las secciones 7-9 está implementado todavía, salvo Épica K (ver arriba). Antes de escribir código para cualquiera de ellas, ver `docs/Epics/` para el detalle de la que corresponda.
 
@@ -111,10 +111,9 @@ Cosas que ya están bien diseñadas y no deben tocarse en las épicas siguientes
 
 * El modelo de clasificación de 4 dimensiones (`Category`, `FinancialImpact`, `MovementType`, `Counterparty`) — ver ADR-001.
 * `ClassifiedMovement`/`ClassifiedMovementItem` como única fuente de verdad para métricas y MCP.
-* El patrón de idempotencia de `BbvaBankStatementImporter`/`LegacyImportedExpense` (`ExternalId` + índice único + consulta previa) — es el patrón a **copiar** hacia tarjeta (Épica I), no a rediseñar.
+* El patrón de idempotencia de `BbvaBankStatementImporter` (`ExternalId` + índice único + consulta previa) — es el patrón a **copiar** hacia tarjeta (Épica I), no a rediseñar.
 * La arquitectura Command/Handler + endpoints delgados de Review & Classification Engine v2.
 * `ISuspicionDetector`/`IReviewEngine` como orquestador de detección de sospechosos y punto de extensión para un futuro motor de recomendaciones.
-* Excel/`LegacyImportedExpense` como historial de datos pre-sistema — la entidad no se elimina todavía (planificado para PR-L5), aunque el backend de matching que la exponía en la UI sí se retiró por completo en PR-L4 (ver nota en ADR-002).
 
 **Corrección (PR-L4):** esta sección afirmaba que "el motor de sugerencias... Épica K cambia la UI que lo consume, no el motor" — resultó incorrecto. El análisis de PR-L4 encontró que ese motor (`IMatchScorer` + 4 `IMatchingRule`) no tenía ningún consumidor real fuera de `group-reconciliation.html`, que la propia Épica K retiró en PR-L3a/PR-L4. Se elimina en vez de mantenerse. Regla ajustada: "no cambiar sin evidencia concreta" sigue valiendo, pero la evidencia concreta ya apareció acá.
 
@@ -142,7 +141,7 @@ Continúa la numeración de letra usada en Review & Classification Engine v2 (qu
 |---|---|---|
 | **I** — Confiabilidad de importación | Idempotencia real y trazabilidad de errores para tarjeta, al nivel que ya tienen banco/Excel. | 📋 Planificada — ver `docs/Epics/EpicaI-Importacion.md` |
 | **J** — Modelo de Cuentas Financieras | Introducir `FinancialAccount` (Bank/Card/Investment/Cash) como entidad explícita. | 📋 Planificada |
-| **K** — Nueva UX de clasificación | Reemplazar `group-reconciliation.html` por una pantalla centrada en clasificar. | 🚧 Mayormente completada (PR-L1 a PR-L4) — falta PR-L4.5/PR-L5 (eliminar `LegacyImportedExpense`). Ver `docs/UX/ClassificationUX.md` |
+| **K** — Nueva UX de clasificación | Reemplazar `group-reconciliation.html` por una pantalla centrada en clasificar. | ✅ Completada (PR-L1 a PR-L5). Ver `docs/UX/ClassificationUX.md` |
 | **L** — Visibilidad de cobertura | Indicador de cuánto del período está clasificado vs. pendiente, en dashboard y nav. | 📋 Planificada |
 | **M** — Cuentas de inversión | Adelanto acotado de Fase 4 (README): habilitar `FinancialAccount.Type=Investment` y transferencias hacia/desde ella. El modelo completo de movimientos internos de inversión (dividendos, compra/venta de activos) queda fuera de este roadmap y requiere su propio documento. | 📋 Planificada |
 | **N** — Simplificación del formulario de clasificación | Derivar `FinancialImpact` por defecto para los `MovementType` no ambiguos, sin eliminar el campo. | 📋 Planificada |

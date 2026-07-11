@@ -1,10 +1,14 @@
 # ADR-002 — Excel como mecanismo histórico de migración, no núcleo del producto
 
-**Estado:** Aceptado, parcialmente superado (ver nota PR-L4 más abajo).
+**Estado:** Aceptado, superado (ver notas PR-L4 y PR-L5 más abajo).
 
 ## Nota (PR-L4, Épica K)
 
-El diagnóstico de este ADR (Excel es histórico, no un flujo activo) se mantiene vigente y fue, de hecho, el argumento para el siguiente paso: en PR-L4 se eliminó por completo el backend de matching contra `LegacyImportedExpense` (`IMatchScorer`, las 4 `IMatchingRule`, `ConfirmMatchCommand`/`DiscardLegacyCandidatesCommand`/`RestoreLegacyCandidatesCommand`) y, con él, `group-reconciliation.html` (ver Épica K, limpieza de soporte Legacy — PR-L1 a PR-L4). La decisión de la sección "Decisión tomada" de mantener esa pantalla como secundaria "para la ventana de tiempo en que todavía queda historial Excel por conciliar" queda superada: esa ventana se cerró sin que nadie retomara la conciliación manual, y el mecanismo completo (UI + comandos) se retiró en vez de mantenerse en desuso. La entidad `LegacyImportedExpense` todavía existe en base — su remoción está planificada para una PR posterior (PR-L5), informada por un conteo real de datos (PR-L4.5). Este ADR se conserva sin reescribir por su valor histórico (por qué se tomó esa decisión en su momento); no reabrir su "Decisión tomada" para reflejar el estado actual.
+El diagnóstico de este ADR (Excel es histórico, no un flujo activo) se mantiene vigente y fue, de hecho, el argumento para el siguiente paso: en PR-L4 se eliminó por completo el backend de matching contra `LegacyImportedExpense` (`IMatchScorer`, las 4 `IMatchingRule`, `ConfirmMatchCommand`/`DiscardLegacyCandidatesCommand`/`RestoreLegacyCandidatesCommand`) y, con él, `group-reconciliation.html` (ver Épica K, limpieza de soporte Legacy — PR-L1 a PR-L4). La decisión de la sección "Decisión tomada" de mantener esa pantalla como secundaria "para la ventana de tiempo en que todavía queda historial Excel por conciliar" queda superada: esa ventana se cerró sin que nadie retomara la conciliación manual, y el mecanismo completo (UI + comandos) se retiró en vez de mantenerse en desuso. Este ADR se conserva sin reescribir por su valor histórico (por qué se tomó esa decisión en su momento); no reabrir su "Decisión tomada" para reflejar el estado actual.
+
+## Nota (PR-L5, Épica K)
+
+`LegacyImportedExpense` (entidad y tabla) se eliminó por completo, informado por el conteo de datos de PR-L4.5. `SourceEntityType.LegacyImport`/`MovementRole.Candidate` se conservan como valores de enum — filas de `ClassifiedMovementItem` ya persistidas los usan y siguen siendo válidas — sin ningún productor ni tabla de origen detrás. No queda ninguna infraestructura de Excel legacy en el sistema.
 
 ## Contexto
 

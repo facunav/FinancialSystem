@@ -134,14 +134,11 @@ public sealed class ClassifyMovementHandler
                     transaction.Date, transaction.Description, transaction.Amount,
                     transaction.Currency, transaction.SourceFile);
 
-            case SourceEntityType.LegacyImport:
-                var legacyExpense = await _db.LegacyImportedExpenses
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(e => e.Id == sourceId, cancellationToken);
-                return legacyExpense is null ? null : new SourceSnapshot(
-                    legacyExpense.Date, legacyExpense.Description, legacyExpense.Amount,
-                    legacyExpense.Currency, legacyExpense.SourceFile);
-
+            // PR-L5: LegacyImportedExpense (y el case SourceEntityType.LegacyImport que
+            // la resolvía acá) se eliminó — no queda ninguna fuente detrás de ese valor
+            // de enum. SourceEntityType.LegacyImport se conserva igual (ver comentario en
+            // SourceEntityType.cs): filas históricas de ClassifiedMovementItem siguen
+            // usándolo, simplemente ya no hay nada que clasificar con ese origen.
             default:
                 return null;
         }

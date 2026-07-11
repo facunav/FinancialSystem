@@ -11,7 +11,6 @@ public interface IApplicationDbContext
     DbSet<Category> Categories { get; }
     DbSet<ClassifiedMovement> ClassifiedMovements { get; }
     DbSet<ClassifiedMovementItem> ClassifiedMovementItems { get; }
-    DbSet<LegacyImportedExpense> LegacyImportedExpenses { get; }
     DbSet<Counterparty> Counterparties { get; }
     DbSet<ImportBatch> ImportBatches { get; }
     DbSet<ImportBatchLine> ImportBatchLines { get; }

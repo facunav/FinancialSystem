@@ -8,10 +8,9 @@ using Microsoft.EntityFrameworkCore;
 namespace FinancialSystem.Infrastructure.Review;
 
 // PR-L4: hasta acá este loader también cargaba LegacyImportedExpense, como candidato
-// para el motor de matching (ver ReviewEngine.cs). Ese mecanismo se retiró completo —
-// LegacyImportedExpense sigue existiendo en la base (limpieza de la tabla en sí es un
-// PR posterior, con su propia verificación de datos antes de tocarla), pero el motor
-// ya no la lee. Este loader queda exclusivamente banco/tarjeta.
+// para el motor de matching (ver ReviewEngine.cs). Ese mecanismo se retiró completo y
+// el motor dejó de leerla. PR-L5: LegacyImportedExpense (la entidad y su tabla) se
+// eliminó del sistema — este loader queda exclusivamente banco/tarjeta.
 internal sealed class MovementLoader : IMovementLoader
 {
     private readonly IApplicationDbContext _db;

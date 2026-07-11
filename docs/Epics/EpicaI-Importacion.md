@@ -52,7 +52,7 @@ Entidad nueva, común a las 3 fuentes: registra cada corrida de importación (ar
 
 ### `ExternalId` en `Transaction`
 
-Mismo patrón que `BankStatement`/`LegacyImportedExpense`: hash determinístico. Clave natural preferida: `CouponNumber` cuando existe (es el identificador de operación real que da el banco); fallback a hash de `Date+Amount+Description+SourceFile` cuando no está disponible.
+Mismo patrón que `BankStatement`: hash determinístico. Clave natural preferida: `CouponNumber` cuando existe (es el identificador de operación real que da el banco); fallback a hash de `Date+Amount+Description+SourceFile` cuando no está disponible.
 
 ### Idempotencia
 

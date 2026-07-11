@@ -2,7 +2,7 @@ namespace FinancialSystem.Domain.Entities;
 
 /// <summary>
 /// Movimiento de cuenta bancaria (caja de ahorros / cuenta corriente).
-/// Entidad separada de Transaction (tarjetas) y LegacyImportedExpense (Excel manual).
+/// Entidad separada de Transaction (tarjetas).
 ///
 /// SEMÁNTICA DE AMOUNT:
 ///   Positivo = crédito (ingreso: transferencias recibidas, intereses)

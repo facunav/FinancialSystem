@@ -18,8 +18,8 @@ public sealed record FinancialMovement
     public Guid Id { get; init; } = Guid.NewGuid();
 
     /// <summary>
-    /// Id real de la entidad persistida en su tabla de origen (Transaction.Id,
-    /// BankStatement.Id o LegacyImportedExpense.Id según <see cref="Source"/>).
+    /// Id real de la entidad persistida en su tabla de origen (Transaction.Id o
+    /// BankStatement.Id según <see cref="Source"/>).
     /// Es el identificador técnico: el que hay que enviar como SourceId en
     /// ClassifyMovementCommand. No usar <see cref="OriginalId"/> para eso — esa es
     /// una referencia de negocio, no necesariamente un Guid.

@@ -13,8 +13,10 @@ public enum MovementRole
 
     /// <summary>
     /// Movimiento auxiliar usado como coincidencia durante la clasificación.
-    /// Hoy: registros legacy importados desde Excel.
-    /// A futuro: podría ser cualquier fuente auxiliar externa.
+    /// PR-L4/PR-L5: el único productor (ConfirmMatchCommand, sobre registros legacy
+    /// importados desde Excel) se eliminó junto con LegacyImportedExpense — este valor
+    /// ya no se genera. Se conserva (mismo número) porque filas históricas de
+    /// ClassifiedMovementItem lo usan y deben seguir siendo válidas.
     /// </summary>
     Candidate = 2,
 }
