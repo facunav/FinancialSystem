@@ -165,11 +165,49 @@
 
         td.mono { font-family: var(--mono); font-size: 12px }
 
-        td.truncate {
+        /* PR-S5: la celda Descripción pasa a poder tener dos líneas (texto +
+           sugerencias, ver .suggestion-chips) — el texto en sí sigue truncando en
+           una sola línea con elipsis, ahora en un div interno en vez del propio td
+           (por eso .truncate ya no está calificado a "td."). desc-cell anula el
+           white-space: nowrap general de td para permitir que ambos hijos se
+           apilen en vertical. */
+        td.desc-cell { white-space: normal }
+
+        .truncate {
             max-width: 320px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+
+        /* PR-S5: sugerencias de clasificación (IClassificationSuggestionService) —
+           información de solo lectura asociada al movimiento, nunca a la acción de
+           clasificar (por eso vive junto a la descripción, no en .act-cell). Verde
+           en vez de rojo (.warning-badge) para distinguir "sugerencia" de "alerta".
+           flex-wrap porque puede haber más de una (hoy hasta 4, una por dimensión;
+           preparado para que un motor futuro proponga más sin rediseñar esto). El
+           texto visible ya es la información relevante (dimensión + valor) — title
+           es un complemento con el motivo, no el mecanismo principal. */
+        .suggestion-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+            max-width: 320px;
+        }
+
+        .suggestion-chip {
+            display: inline-block;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--green);
+            color: #b0eec8;
+            background: var(--green-bg);
         }
 
         .empty, .loading {
@@ -432,7 +470,8 @@
         // ── Estado ───────────────────────────────────────────────────────────────
         // Nombrado en términos generales (no "pendingMovements") a propósito: desde
         // K3, GET /api/movements devuelve pendientes y clasificados. El modelo siguió
-        // creciendo en K6 (grupos sospechosos) sin rediseñarse.
+        // creciendo en K6 (grupos sospechosos) y PR-S5 (sugerencias de clasificación)
+        // sin rediseñarse.
         // modalMode distingue qué dispara btnClassifySave: 'classify' (default) o
         // 'batch' (PR-L2) — mismo modal, mismos campos, siempre ClassifyMovementCommand.
         // 'batch' no es un comando nuevo: es el mismo ClassifyMovementCommand disparado
@@ -468,6 +507,22 @@
             RoundingAnomaly: 'Anomalía de redondeo',
         };
 
+        // PR-S5: nombre visible de cada SuggestionDimension (ClassificationSuggestion).
+        // Mismo vocabulario que ya usan las labels del modal ("Categoría", "Tipo de
+        // movimiento", "Contraparte") para que una sugerencia y su campo se lean como
+        // la misma cosa. A diferencia de STATUS_LABELS/SUSPICION_LABELS, el *valor*
+        // sugerido no necesita un mapa nuevo: Category/Counterparty ya resuelven
+        // contra state.categories/state.counterparties, y MovementType/FinancialImpact
+        // ya tienen su traducción en las <option> de #cMovementType/#cImpact (ver
+        // suggestionValueLabel) — reutilizarlas evita mantener la misma traducción
+        // dos veces.
+        const SUGGESTION_DIMENSION_LABELS = {
+            Category: 'Categoría',
+            MovementType: 'Tipo',
+            FinancialImpact: 'Impacto',
+            Counterparty: 'Contraparte',
+        };
+
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
 
@@ -492,6 +547,14 @@
                     description: dto.warning.description,
                     groupSize: dto.warning.groupSize,
                 } : null,
+                // PR-S5: dto.suggestions siempre es un array (nunca null, ver
+                // MovementListItemDto) — ?? [] es solo defensivo.
+                suggestions: (dto.suggestions ?? []).map(s => ({
+                    dimension: s.dimension,
+                    value: s.value,
+                    confidence: s.confidence,
+                    reason: s.reason,
+                })),
             };
         }
 
@@ -581,6 +644,11 @@
         // renderWarningCell/renderActionsCell) a propósito: agregar grupos
         // sospechosos (K6) fue insertar una función de celda nueva, nunca reescribir
         // renderMovementRow. Futuras ampliaciones siguen el mismo patrón.
+        // PR-S5 es la primera vez que una pieza nueva (renderSuggestionChips) se
+        // agrega DENTRO de una celda existente (Descripción) en vez de ser su propia
+        // columna — deliberado: una sugerencia es información sobre el movimiento
+        // (comparte identidad con su descripción), no una acción — no pertenece a
+        // .act-cell junto al botón de clasificar.
 
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
@@ -607,7 +675,10 @@
                 <tr data-source-id="${m.sourceId}">
                     <td class="cb-cell"><input type="checkbox" class="row-select" data-source-id="${m.sourceId}"${checked}${disabled}></td>
                     <td>${fmtDate(m.date)}</td>
-                    <td class="truncate" title="${esc(m.description)}">${esc(m.description)}</td>
+                    <td class="desc-cell">
+                        <div class="truncate" title="${esc(m.description)}">${esc(m.description)}</div>
+                        ${renderSuggestionChips(m)}
+                    </td>
                     <td class="mono">$${fmt(m.amount)}</td>
                     <td>${renderStatusCell(m)}</td>
                     <td>${renderAccountCell(m)}</td>
@@ -633,6 +704,44 @@
             const w = m.warning;
             const label = SUSPICION_LABELS[w.reason] ?? w.reason;
             return `<span class="warning-badge" title="${esc(w.description)}">⚠ ${esc(label)}</span>`;
+        }
+
+        // PR-S5: solo información — sin acción propia (aplicar una sugerencia pasa
+        // por abrir "Clasificar" como siempre, ver openClassifyModal). Nunca hay
+        // sugerencias en movimientos ya clasificados (m.suggestions siempre vacío
+        // en ese caso, ver backend) — no hace falta chequear m.status acá. El texto
+        // visible ya es "Dimensión: valor"; title solo agrega el motivo (reason),
+        // como complemento, no como mecanismo principal de lectura.
+        function renderSuggestionChips(m) {
+            if (!m.suggestions || m.suggestions.length === 0) return '';
+            const chips = m.suggestions.map(s => {
+                const dimLabel = SUGGESTION_DIMENSION_LABELS[s.dimension] ?? s.dimension;
+                const valueLabel = suggestionValueLabel(s);
+                return `<span class="suggestion-chip" title="${esc(s.reason)}">${esc(dimLabel)}: ${esc(valueLabel)}</span>`;
+            }).join('');
+            return `<div class="suggestion-chips">${chips}</div>`;
+        }
+
+        // Category/Counterparty resuelven contra los catálogos ya cargados para el
+        // modal (state.categories/state.counterparties) — si todavía no cargaron
+        // (loadCategories/loadCounterparties son independientes de loadMovements,
+        // sin await entre ellas), se muestra el valor crudo como resultado
+        // razonable: nunca rompe, se corrige solo en el próximo render. Movement
+        // Type/FinancialImpact no necesitan su propio mapa de traducción: ya están
+        // traducidos en las <option> de #cMovementType/#cImpact (ver optionLabel).
+        function suggestionValueLabel(s) {
+            switch (s.dimension) {
+                case 'Category': return state.categories.find(c => c.id === s.value)?.displayName ?? s.value;
+                case 'Counterparty': return state.counterparties.find(c => c.id === s.value)?.name ?? s.value;
+                case 'MovementType': return optionLabel('cMovementType', s.value);
+                case 'FinancialImpact': return optionLabel('cImpact', s.value);
+                default: return s.value;
+            }
+        }
+
+        function optionLabel(selectId, value) {
+            const opt = document.querySelector(`#${selectId} option[value="${value}"]`);
+            return opt ? opt.textContent : value;
         }
 
         function renderActionsCell(m) {
@@ -752,6 +861,13 @@
             if (classifyBtn) openClassifyModal(classifyBtn.dataset.sourceId);
         });
 
+        // PR-S5: busca, dentro de las sugerencias del movimiento, el valor para una
+        // dimensión puntual. Devuelve undefined si no hay sugerencia para esa
+        // dimensión — ?? en el llamador decide el fallback final.
+        function suggestionValue(movement, dimension) {
+            return movement.suggestions.find(s => s.dimension === dimension)?.value;
+        }
+
         function openClassifyModal(sourceId) {
             const movement = state.movements.find(m => m.sourceId === sourceId);
             if (!movement) return;
@@ -763,10 +879,17 @@
                 `${fmtDate(movement.date)} · ${movement.description} · $${fmt(movement.amount)}`;
             // Si ya está clasificado, precarga los valores actuales — "cambiar la
             // categoría" parte de lo que ya eligió el usuario, no de un formulario vacío.
-            document.getElementById('cCategory').value = movement.categoryId ?? '';
-            document.getElementById('cImpact').value = movement.financialImpact ?? 'Expense';
-            document.getElementById('cMovementType').value = movement.movementType ?? 'Purchase';
-            document.getElementById('cCounterparty').value = movement.counterpartyId ?? '';
+            // PR-S5: si no hay valor actual (movimiento Pendiente), el segundo ??
+            // prueba la sugerencia del motor antes de caer al default/vacío — nunca
+            // reemplaza un valor real (el backend nunca da sugerencias a un
+            // movimiento que ya tiene categoría, ver ClassificationSuggestionSet).
+            // Es solo un valor de partida en un <select> común: el usuario lo ve
+            // precargado y puede cambiarlo como cualquier otro, nunca se bloquea ni
+            // se envía nada sin que el usuario confirme "Guardar clasificación".
+            document.getElementById('cCategory').value = movement.categoryId ?? suggestionValue(movement, 'Category') ?? '';
+            document.getElementById('cImpact').value = movement.financialImpact ?? suggestionValue(movement, 'FinancialImpact') ?? 'Expense';
+            document.getElementById('cMovementType').value = movement.movementType ?? suggestionValue(movement, 'MovementType') ?? 'Purchase';
+            document.getElementById('cCounterparty').value = movement.counterpartyId ?? suggestionValue(movement, 'Counterparty') ?? '';
             document.getElementById('cComment').value = '';
             document.getElementById('btnClassifySave').textContent = 'Guardar clasificación';
             document.getElementById('classifyToast').innerHTML = '';
