@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Domain.Enums;
@@ -198,17 +199,61 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     }
 
     /// <summary>
+    /// Monto en dólares embebido en la descripción (caso BBVA Visa, ver
+    /// <c>BbvaTransactionLineParser</c> / <c>CurrencyDetector</c>): "USD 4,99",
+    /// "USD 32.725,00". Mismo formato de monto argentino que ya usa
+    /// <c>CurrencyDetector.UsdAmountRegex</c> — el monto factura distinto cada mes para
+    /// el mismo comercio recurrente, así que no puede formar parte de la clave de
+    /// comparación.
+    /// </summary>
+    private static readonly Regex EmbeddedUsdAmountPattern = new(
+        @"\bUSD\s*(?:[\d]{1,3}(?:\.[\d]{3})*,[\d]{1,2}|[\d]+,[\d]{1,2})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Contador de cuotas embebido en la descripción (caso Mastercard, ver
+    /// <c>MastercardTransactionLineParser.NormalizeDescription</c>, que ya deja este
+    /// formato exacto "C1/3" persistido): distingue cuota individual, no comercio.
+    /// </summary>
+    private static readonly Regex InstallmentCounterPattern = new(
+        @"\bC\d+/\d+\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static string StripEmbeddedUsdAmount(string description) =>
+        EmbeddedUsdAmountPattern.Replace(description, string.Empty);
+
+    private static string StripInstallmentCounter(string description) =>
+        InstallmentCounterPattern.Replace(description, string.Empty);
+
+    /// <summary>
     /// Une, mayúsculas e invariante de cultura, colapsando espacios internos repetidos.
     /// Deliberadamente ingenua (no fuzzy, no distancia de edición, no similitud): PR-S3
     /// es "exact match únicamente" — esto solo neutraliza diferencias triviales de
     /// espaciado/mayúsculas entre dos capturas del mismo texto bancario, no encuentra
     /// texto parecido.
+    ///
+    /// PR-S9 (ver docs/Architecture/PRS8analisisnormalizaciondescripciones.md) agrega
+    /// dos reglas determinísticas más, aplicadas antes de colapsar espacios, respaldadas
+    /// por datos reales de los parsers de tarjeta: <see cref="StripEmbeddedUsdAmount"/>
+    /// quita el monto en dólares que BBVA Visa deja embebido para transacciones USD
+    /// (ej. "PLAYSTATION USD 4,99" y "PLAYSTATION USD 9,99" pasan a ser el mismo
+    /// comercio), y <see cref="StripInstallmentCounter"/> quita el contador de cuotas
+    /// que Mastercard deja embebido (ej. "GARBARINO C1/3" y "GARBARINO C2/3" pasan a ser
+    /// el mismo comercio). Ambas quitan únicamente un fragmento cuyo formato es
+    /// inequívocamente un dato variable, nunca parte del nombre de un comercio — sin
+    /// tocar dígitos ni símbolos genéricos (ver análisis de PR-S8, sección 3).
+    ///
+    /// Internal (no private) solo para exponerse a
+    /// FinancialSystem.Infrastructure.Tests vía InternalsVisibleTo — sigue sin ser parte
+    /// del contrato público, <see cref="IClassificationSuggestionService"/> no cambia.
     /// </summary>
-    private static string Normalize(string description)
+    internal static string Normalize(string description)
     {
         if (string.IsNullOrWhiteSpace(description)) return string.Empty;
 
-        var trimmed = description.Trim();
+        var withoutEmbeddedValues = StripInstallmentCounter(StripEmbeddedUsdAmount(description));
+
+        var trimmed = withoutEmbeddedValues.Trim();
         var collapsed = new StringBuilder(trimmed.Length);
         var lastWasSpace = false;
         foreach (var c in trimmed)
