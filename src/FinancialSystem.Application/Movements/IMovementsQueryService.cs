@@ -1,3 +1,4 @@
+using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
 
@@ -18,11 +19,17 @@ namespace FinancialSystem.Application.Movements;
 /// no tiene ninguna pantalla hoy (group-reconciliation.html, que lo exponía, se
 /// retiró en PR-L4 junto con el backend de matching Legacy que sostenía).
 ///
-/// PR-L4: hasta acá también existía Suggestion (K4/K5) — la mejor coincidencia que
-/// IReviewEngine encontraba contra un movimiento legacy candidato, con acción de
-/// confirmar. Se retiró junto con todo el backend de matching, no queda productor
-/// posible. Ver ReviewResult.cs para dónde debería integrarse un futuro motor de
-/// recomendaciones — no necesariamente con esta misma forma.
+/// Suggestions (PR-S4): recomendaciones de solo lectura tomadas de
+/// IClassificationSuggestionService — igual que Warning, nunca presente en
+/// movimientos ya clasificados (no tiene sentido sugerir algo que el usuario ya
+/// clasificó). Lista vacía, nunca null, cuando el motor no encontró señal. A
+/// diferencia de Warning, sí existe una acción razonable asociada (aplicar el valor
+/// sugerido al clasificar), pero ese wiring de UI todavía no existe — ver PR-S5.
+/// PR-L4: hasta acá existía un campo Suggestion con esta misma responsabilidad,
+/// pero producido por el viejo motor de matching contra movimientos legacy — se
+/// retiró junto con todo ese backend. Este campo es una reintroducción con una
+/// fuente y una forma completamente distintas (ver ClassificationSuggestion), no
+/// una restauración de aquel.
 /// </summary>
 public sealed record MovementView(
     Guid SourceId,
@@ -37,7 +44,8 @@ public sealed record MovementView(
     Guid? CounterpartyId,
     MovementType? MovementType,
     FinancialImpact? FinancialImpact,
-    MovementWarning? Warning);
+    MovementWarning? Warning,
+    IReadOnlyList<ClassificationSuggestion> Suggestions);
 
 /// <summary>
 /// Grupo sospechoso (K6) al que pertenece este movimiento, según ISuspicionDetector —
@@ -55,7 +63,9 @@ public sealed record MovementWarning(
 /// <summary>
 /// Lectura combinada de movimientos de banco/tarjeta (Transaction/BankStatement)
 /// para la pantalla Movimientos (Épica K): pendientes + sospechosos (vía
-/// IReviewEngine, una sola ejecución por request) y ya clasificados (vía
+/// IReviewEngine, una sola ejecución por request) + sugerencias de clasificación
+/// (vía IClassificationSuggestionService, PR-S4, una sola ejecución por request,
+/// independiente de IReviewEngine) y ya clasificados (vía
 /// ClassifiedMovement/ClassifiedMovementItem). Nunca persiste nada.
 /// </summary>
 public interface IMovementsQueryService

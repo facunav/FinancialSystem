@@ -6,9 +6,11 @@ namespace FinancialSystem.Api.Endpoints;
 
 /// <summary>
 /// Lectura de movimientos de banco/tarjeta para la pantalla Movimientos (Épica K):
-/// pendientes (con grupos sospechosos, K6) y ya clasificados (K3). Depende de
-/// IMovementsQueryService, que orquesta IReviewEngine (pendientes + sospechosos) +
-/// ClassifiedMovement/ClassifiedMovementItem (clasificados) — esa combinación de dos
+/// pendientes (con grupos sospechosos, K6, y sugerencias de clasificación, PR-S4) y
+/// ya clasificados (K3). Depende de IMovementsQueryService, que orquesta
+/// IReviewEngine (pendientes + sospechosos) + IClassificationSuggestionService
+/// (sugerencias, independiente de IReviewEngine — ver PR-S1) +
+/// ClassifiedMovement/ClassifiedMovementItem (clasificados) — esa combinación de
 /// fuentes es la orquestación real que justifica el servicio (a diferencia de K1,
 /// donde una sola fuente + filtrado trivial no lo justificaba).
 ///
@@ -17,6 +19,12 @@ namespace FinancialSystem.Api.Endpoints;
 /// completo, junto con /api/movement-review/unclassified, /confirm-match,
 /// /discard-candidates, /restore-candidates y group-reconciliation.html, que los
 /// consumía. Solo queda vigente /api/movement-review/classify.
+///
+/// PR-S4: este mismo endpoint ya devuelve sugerencias de clasificación (campo
+/// Suggestions de MovementListItemDto) calculadas por un motor completamente nuevo
+/// (ver docs/Architecture/PRS1analisismotorsugerencias.md) — sin relación con el
+/// mecanismo retirado en el párrafo anterior. Sin ruta nueva, sin cambio de
+/// contrato salvo el campo agregado; movements.html todavía no lo consume (PR-S5).
 /// </summary>
 public static class MovementsEndpoints
 {

@@ -24,7 +24,7 @@ Contiene:
 Contratos (interfaces), comandos, queries, handlers, y opciones de configuración. Depende solo de Domain.
 
 Contiene:
-* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del futuro motor de sugerencias de clasificación, ver `docs/Architecture/PRS1analisismotorsugerencias.md`. Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período).
+* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del motor de sugerencias de clasificación, ver `docs/Architecture/PRS1analisismotorsugerencias.md`. Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período). PR-S4: `MovementsQueryService` lo consume directamente (no a través de `IReviewEngine`) para completar `MovementView.Suggestions` — todavía sin consumidor en `movements.html`.
 * Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4).
 * Opciones de configuración (`ReviewEngineOptions`, `FileIngestionOptions`, `OllamaOptions`, `OpenAIOptions`, `InsightsWorkerOptions`).
 

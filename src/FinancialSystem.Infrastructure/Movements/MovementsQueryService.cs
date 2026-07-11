@@ -1,6 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Application.Review;
+using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +12,14 @@ internal sealed class MovementsQueryService : IMovementsQueryService
 {
     private readonly IApplicationDbContext _db;
     private readonly IReviewEngine _reviewEngine;
+    private readonly IClassificationSuggestionService _suggestionService;
 
-    public MovementsQueryService(IApplicationDbContext db, IReviewEngine reviewEngine)
+    public MovementsQueryService(
+        IApplicationDbContext db, IReviewEngine reviewEngine, IClassificationSuggestionService suggestionService)
     {
         _db = db;
         _reviewEngine = reviewEngine;
+        _suggestionService = suggestionService;
     }
 
     public async Task<IReadOnlyList<MovementView>> GetAsync(
@@ -54,24 +58,46 @@ internal sealed class MovementsQueryService : IMovementsQueryService
     // legacy, retiradas) y había que unir las dos listas para no perder movimientos con
     // match de alta confianza. Ya no hace falta: result.Movements es directamente la
     // lista completa que cargó IMovementLoader para el período.
+    //
+    // PR-S4: una sola llamada a IClassificationSuggestionService.SuggestAsync, con el
+    // lote completo de pendientes ya filtrado a banco/tarjeta — no una por movimiento
+    // (ver doc-comment de SuggestAsync). Secuencial después de IReviewEngine, mismo
+    // motivo que ya explica GetAsync: comparten IApplicationDbContext, y DbContext no
+    // admite operaciones concurrentes sobre la misma instancia.
     private async Task<List<MovementView>> LoadPendingWithWarningsAsync(
         DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
         var result = await _reviewEngine.GenerateAsync(from, to, cancellationToken);
-        var warningsBySourceId = BuildWarningsBySourceId(result.Suspicious);
+        var pendingMovements = result.Movements.Where(IsBankOrCard).ToList();
 
-        return result.Movements
-            .Where(IsBankOrCard)
-            .Select(m => ToPendingView(m, warningsBySourceId.GetValueOrDefault(m.SourceId)))
+        var warningsBySourceId = BuildWarningsBySourceId(result.Suspicious);
+        var suggestionsBySourceId = await BuildSuggestionsBySourceIdAsync(pendingMovements, cancellationToken);
+
+        return pendingMovements
+            .Select(m => ToPendingView(
+                m,
+                warningsBySourceId.GetValueOrDefault(m.SourceId),
+                suggestionsBySourceId.GetValueOrDefault(m.SourceId, [])))
             .ToList();
     }
 
-    private static MovementView ToPendingView(FinancialMovement m, MovementWarning? warning) => new(
+    private async Task<Dictionary<Guid, IReadOnlyList<ClassificationSuggestion>>> BuildSuggestionsBySourceIdAsync(
+        IReadOnlyList<FinancialMovement> pendingMovements, CancellationToken cancellationToken)
+    {
+        if (pendingMovements.Count == 0) return [];
+
+        var suggestionSets = await _suggestionService.SuggestAsync(pendingMovements, cancellationToken);
+        return suggestionSets.ToDictionary(s => s.SourceId, s => s.Suggestions);
+    }
+
+    private static MovementView ToPendingView(
+        FinancialMovement m, MovementWarning? warning, IReadOnlyList<ClassificationSuggestion> suggestions) => new(
         m.SourceId, m.Date, m.Description, m.Amount, m.Currency, m.Source,
         m.FinancialAccountId,
         Status: null, CategoryId: null, CounterpartyId: null,
         MovementType: null, FinancialImpact: null,
-        Warning: warning);
+        Warning: warning,
+        Suggestions: suggestions);
 
     // PR-L4: antes ISuspicionDetector corría por separado sobre references y candidates,
     // así que un grupo nunca podía mezclar banco/tarjeta con legacy. Ahora IMovementLoader
@@ -158,8 +184,10 @@ internal sealed class MovementsQueryService : IMovementsQueryService
                 classifiedMovement.MovementType, classifiedMovement.FinancialImpact,
                 // El motor solo considera pendientes (MovementLoader excluye lo
                 // clasificado) — un movimiento ya clasificado nunca puede formar
-                // parte de un grupo sospechoso.
-                Warning: null);
+                // parte de un grupo sospechoso ni recibir una sugerencia (no tiene
+                // sentido sugerir algo que el usuario ya clasificó).
+                Warning: null,
+                Suggestions: []);
         }).ToList();
     }
 
