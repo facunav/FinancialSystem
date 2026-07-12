@@ -13,7 +13,8 @@ namespace FinancialSystem.Infrastructure.Suggestions;
 /// heurísticas determinísticas — sin similitud difusa, sin IA. Completamente de solo
 /// lectura: nunca escribe nada.
 ///
-/// 1. (PR-S3) Exact match de descripción normalizada contra el historial de
+/// 1. (PR-S3, normalización mejorada en PR-S9, resolución de conflictos mejorada en
+///    PR-S10) Exact match de descripción normalizada contra el historial de
 ///    <c>ClassifiedMovement</c> — ver <see cref="BuildSuggestions"/>.
 /// 2. (PR-S7) Enriquecimiento vía <c>Counterparty.Default*</c>: cuando la heurística 1
 ///    ya sugirió una <c>Counterparty</c> para un movimiento, y esa contraparte tiene
@@ -275,70 +276,111 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
 
     /// <summary>
     /// Una recomendación por dimensión, a partir de las filas históricas con la misma
-    /// descripción normalizada. Si todas coinciden en un valor, se sugiere con confianza
-    /// Alta. Si el historial tiene más de un valor distinto para la misma descripción
-    /// (el usuario clasificó distinto en distintas ocasiones), se sugiere el valor más
-    /// reciente pero con confianza Media — no tiene sentido presentar como "alta
-    /// confianza" algo sobre lo que el propio historial está en desacuerdo. Counterparty
-    /// se trata aparte porque es la única dimensión opcional: filas sin contraparte no
-    /// cuentan ni a favor ni en contra de una sugerencia de contraparte.
+    /// descripción normalizada — ver <see cref="AddDimensionSuggestion"/> para cómo se
+    /// elige el valor y la confianza. Counterparty se trata aparte porque es la única
+    /// dimensión opcional: filas sin contraparte no cuentan ni a favor ni en contra de
+    /// una sugerencia de contraparte.
     /// </summary>
-    private static IReadOnlyList<ClassificationSuggestion> BuildSuggestions(
+    internal static IReadOnlyList<ClassificationSuggestion> BuildSuggestions(
         IReadOnlyList<ClassifiedHistoryRow> matches)
     {
+        // SuggestAsync nunca invoca este método con matches vacío (siempre viene de un
+        // grupo de GroupBy, que por definición tiene al menos un elemento) — esta guarda
+        // es defensiva, para que el método siga siendo seguro ahora que es internal y se
+        // ejercita directamente desde los tests (ver PR-S10, caso "ausencia de historial").
+        if (matches.Count == 0) return [];
+
         var suggestions = new List<ClassificationSuggestion>();
-        var mostRecent = MostRecent(matches);
 
-        AddDimensionSuggestion(
-            suggestions, SuggestionDimension.Category,
-            matches.Select(m => (object)m.CategoryId),
-            mostRecent.CategoryId,
-            matches.Count);
+        AddDimensionSuggestion(suggestions, SuggestionDimension.Category,
+            matches.Select(m => ((object)m.CategoryId, m.ProcessedAt)));
 
-        AddDimensionSuggestion(
-            suggestions, SuggestionDimension.MovementType,
-            matches.Select(m => (object)m.MovementType),
-            mostRecent.MovementType,
-            matches.Count);
+        AddDimensionSuggestion(suggestions, SuggestionDimension.MovementType,
+            matches.Select(m => ((object)m.MovementType, m.ProcessedAt)));
 
-        AddDimensionSuggestion(
-            suggestions, SuggestionDimension.FinancialImpact,
-            matches.Select(m => (object)m.FinancialImpact),
-            mostRecent.FinancialImpact,
-            matches.Count);
+        AddDimensionSuggestion(suggestions, SuggestionDimension.FinancialImpact,
+            matches.Select(m => ((object)m.FinancialImpact, m.ProcessedAt)));
 
         var withCounterparty = matches.Where(m => m.CounterpartyId is not null).ToList();
         if (withCounterparty.Count > 0)
         {
-            var mostRecentWithCounterparty = MostRecent(withCounterparty);
-            AddDimensionSuggestion(
-                suggestions, SuggestionDimension.Counterparty,
-                withCounterparty.Select(m => (object)m.CounterpartyId!.Value),
-                mostRecentWithCounterparty.CounterpartyId!.Value,
-                withCounterparty.Count);
+            AddDimensionSuggestion(suggestions, SuggestionDimension.Counterparty,
+                withCounterparty.Select(m => ((object)m.CounterpartyId!.Value, m.ProcessedAt)));
         }
 
         return suggestions;
     }
 
+    /// <summary>
+    /// PR-S10: el valor sugerido es el más frecuente en el historial (la moda), no el más
+    /// reciente como hasta PR-S9 — con desacuerdo histórico, "qué contestó el usuario la
+    /// mayoría de las veces" es más representativo que "qué contestó la última vez", y
+    /// mantener el más reciente como valor propuesto habría dejado el <c>Reason</c> (que
+    /// ahora describe la mayoría) potencialmente contradiciendo al propio valor sugerido.
+    /// Empate entre los valores más frecuentes: se desempata por recencia (el más
+    /// reciente entre los empatados), preservando el criterio de recencia anterior para
+    /// el único caso donde la frecuencia sola no alcanza para decidir.
+    ///
+    /// Confianza: unánime (un solo valor en todo el historial) sigue siendo High, sin
+    /// cambios. Cuando hay desacuerdo, en vez de colapsar siempre a Medium (como hasta
+    /// PR-S9, sin distinguir "99 de 100 coinciden" de "51 de 100 coinciden"), se compara
+    /// la proporción del valor ganador contra el umbral clásico de mayoría calificada
+    /// (2/3) — la misma convención que ya se usa para mayorías calificadas en votaciones
+    /// y gobernanza corporativa, no un porcentaje inventado para este caso puntual: al
+    /// llegar a 2/3, el valor ganador ya tiene, como mínimo, el doble de clasificaciones
+    /// que todos los demás valores combinados — ninguna redistribución posible de esos
+    /// votos en un único rival alcanzaría para superarlo. Por debajo de esa proporción
+    /// (incluye empates y "mayoría simple" apretada, ej. 51/49) la evidencia histórica es
+    /// demasiado débil para justificar más que confianza Low — hoy nunca se producía Low
+    /// porque esta distinción no existía.
+    /// </summary>
     private static void AddDimensionSuggestion(
         List<ClassificationSuggestion> suggestions,
         SuggestionDimension dimension,
-        IEnumerable<object> historicalValues,
-        object mostRecentValue,
-        int matchCount)
+        IEnumerable<(object Value, DateTime ProcessedAt)> historicalEntries)
     {
-        var distinctCount = historicalValues.Distinct().Count();
-        var confidence = distinctCount == 1 ? SuggestionConfidence.High : SuggestionConfidence.Medium;
-        var reason = distinctCount == 1
-            ? $"{matchCount} clasificación{(matchCount == 1 ? "" : "es")} histórica{(matchCount == 1 ? "" : "s")} con la misma descripción, siempre con este valor."
-            : $"{matchCount} clasificaciones históricas con la misma descripción, con {distinctCount} valores distintos — se propone el más reciente.";
+        var groupedByValue = historicalEntries
+            .GroupBy(e => e.Value)
+            .Select(g => new { g.Key, Count = g.Count(), MostRecent = g.Max(e => e.ProcessedAt) })
+            .OrderByDescending(g => g.Count)
+            .ThenByDescending(g => g.MostRecent)
+            .ToList();
 
-        suggestions.Add(new ClassificationSuggestion(dimension, mostRecentValue, confidence, reason));
+        var distinctCount = groupedByValue.Count;
+        var winner = groupedByValue[0];
+        var matchCount = groupedByValue.Sum(g => g.Count);
+
+        var confidence = ResolveConfidence(distinctCount, winner.Count, matchCount);
+        var reason = BuildReason(distinctCount, winner.Count, matchCount, confidence);
+
+        suggestions.Add(new ClassificationSuggestion(dimension, winner.Key, confidence, reason));
     }
 
-    private static ClassifiedHistoryRow MostRecent(IReadOnlyList<ClassifiedHistoryRow> matches) =>
-        matches.OrderByDescending(m => m.ProcessedAt).First();
+    /// <summary>
+    /// Mayoría calificada (2/3): ver el doc-comment de <see cref="AddDimensionSuggestion"/>
+    /// para la justificación de por qué este umbral no es un porcentaje arbitrario.
+    /// </summary>
+    private const double SupermajorityThreshold = 2.0 / 3.0;
+
+    private static SuggestionConfidence ResolveConfidence(int distinctCount, int winnerCount, int matchCount)
+    {
+        if (distinctCount == 1) return SuggestionConfidence.High;
+
+        return winnerCount >= matchCount * SupermajorityThreshold
+            ? SuggestionConfidence.Medium
+            : SuggestionConfidence.Low;
+    }
+
+    private static string BuildReason(int distinctCount, int winnerCount, int matchCount, SuggestionConfidence confidence)
+    {
+        if (distinctCount == 1)
+            return $"{matchCount} clasificación{(matchCount == 1 ? "" : "es")} histórica{(matchCount == 1 ? "" : "s")} con la misma descripción, siempre con este valor.";
+
+        if (confidence == SuggestionConfidence.Medium)
+            return $"{matchCount} clasificaciones históricas con la misma descripción; mayoría amplia ({winnerCount} de {matchCount}) coincide en este valor.";
+
+        return $"{matchCount} clasificaciones históricas con la misma descripción, con {distinctCount} valores distintos y sin mayoría clara ({winnerCount} de {matchCount} para el valor más frecuente).";
+    }
 
     private static SourceEntityType ToSourceEntityType(MovementSource source) => source switch
     {
@@ -347,7 +389,10 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, "MovementSource sin mapeo a SourceEntityType conocido."),
     };
 
-    private sealed record ClassifiedHistoryRow(
+    // Internal (no private) solo para que FinancialSystem.Infrastructure.Tests pueda
+    // construir filas y ejercitar BuildSuggestions directamente (ver PR-S10) — mismo
+    // motivo que Normalize (PR-S9): sigue sin ser parte del contrato público.
+    internal sealed record ClassifiedHistoryRow(
         string Description,
         Guid CategoryId,
         MovementType MovementType,
