@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrapartes · FinancialMcp</title>
+    <style>
+        /* ── Design tokens (mismos valores que accounts.html/imports.html/movements.html) ── */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --amber: #fbbf24;
+            --amber-bg: #2d1f07;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+            .topbar h1 { font-size: 16px; font-weight: 700 }
+            .topbar a {
+                color: var(--dim);
+                text-decoration: none;
+                font-size: 13px;
+            }
+                .topbar a:hover { color: var(--text) }
+
+        .content { padding: 20px 24px; max-width: 1100px; margin: 0 auto }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+            .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+
+        button {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 12px;
+            font: 13px var(--sans);
+            cursor: pointer;
+        }
+            button:hover:not(:disabled) { background: #2a3348; border-color: #3a4560 }
+            button:disabled { opacity: .35; cursor: not-allowed }
+            button.sm { padding: 3px 8px; font-size: 12px }
+            button.primary { background: var(--green-bg); border-color: var(--green); color: #c0f0d0 }
+                button.primary:hover:not(:disabled) { background: #0a4020 }
+            button.danger { background: var(--red-bg); border-color: var(--red); color: #f0b8b8 }
+                button.danger:hover:not(:disabled) { background: #4a1a1a }
+
+        table { width: 100%; border-collapse: collapse }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--faint);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        tr.row-off td { color: var(--faint) }
+
+        .empty, .loading {
+            padding: 32px;
+            text-align: center;
+            color: var(--faint);
+            font-size: 13px;
+            white-space: normal;
+        }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+            .status-badge.status-ok { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+            .status-badge.status-off { color: var(--dim); background: var(--surface2); border-color: var(--border) }
+
+        .act-cell { display: flex; gap: 6px }
+
+        /* ── Toast ── */
+        .toast {
+            font: 12px var(--mono);
+            padding: 6px 12px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+            .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
+            .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
+        /* ── Modal alta/edición ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 24px;
+        }
+            .modal-overlay.open { display: flex }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 460px;
+            max-width: 100%;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,.5);
+        }
+
+        .modal-head {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+            .modal-head h2 { font-size: 14px; font-weight: 600 }
+
+        .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px }
+
+        .modal-field label {
+            display: block;
+            font-size: 11px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 6px;
+        }
+            .modal-field label.req::after { content: ' *'; color: var(--red) }
+
+        .modal-field input[type=text], .modal-field select {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 8px 10px;
+            font: 13px var(--sans);
+        }
+            .modal-field input[type=text]:focus, .modal-field select:focus {
+                outline: 2px solid var(--green);
+                outline-offset: 1px;
+            }
+
+        .modal-foot {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .close-x {
+            background: transparent;
+            border: none;
+            color: var(--faint);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+            .close-x:hover { color: var(--text) }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <h1>Contrapartes</h1>
+        <a href="/dashboard.html">← Dashboard</a>
+    </header>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Contrapartes <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                <button class="primary sm" id="btnNew">+ Nueva contraparte</button>
+            </div>
+            <div id="listToast" style="padding:0 16px"></div>
+            <div style="overflow-x:auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Categoría por defecto</th>
+                            <th>Tipo por defecto</th>
+                            <th>Impacto por defecto</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="counterpartiesBody"><tr><td colspan="6" class="loading">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        ── Modal: alta/edición ──
+        Primera versión, deliberadamente mínima (Épica O — Administración): solo
+        Nombre + los 3 Default* que ya consume ClassificationSuggestionService
+        (PR-S7/S11/S12). Sin CounterpartyType (dejó de ser obligatorio en PR-O7 y
+        no tiene ningún consumidor real — no se expone acá). Sin Notas todavía —
+        el campo sigue existiendo en el backend, se puede sumar a este formulario
+        más adelante si hace falta, sin romper nada de lo que hay hoy.
+
+        Pensado para portarse tal cual al modal de clasificación de movements.html
+        el día que se implemente el alta en contexto ("Nueva contraparte" desde ahí,
+        Épica O, PR futuro): el modal y saveCounterparty() de abajo no dependen de
+        nada específico de esta pantalla más allá de estos mismos ids de campo, así
+        que ese PR futuro puede reutilizar esta misma estructura de formulario sin
+        rediseñarla.
+    -->
+    <div class="modal-overlay" id="formOverlay">
+        <div class="modal">
+            <div class="modal-head">
+                <h2 id="formTitle">Nueva contraparte</h2>
+                <button class="close-x" id="btnCloseForm" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label for="fName" class="req">Nombre</label>
+                    <input type="text" id="fName" placeholder="Ej: Farmacia Amancay">
+                </div>
+                <div class="modal-field">
+                    <label for="fDefaultCategoryId">Categoría por defecto (opcional)</label>
+                    <select id="fDefaultCategoryId"><option value="">Cargando…</option></select>
+                </div>
+                <div class="modal-field">
+                    <label for="fDefaultMovementType">Tipo de movimiento por defecto (opcional)</label>
+                    <select id="fDefaultMovementType">
+                        <option value="">— Sin tipo por defecto —</option>
+                        <option value="Purchase">Compra</option>
+                        <option value="Transfer">Transferencia</option>
+                        <option value="Payment">Pago</option>
+                        <option value="Receipt">Cobro</option>
+                        <option value="Fee">Comisión</option>
+                        <option value="Interest">Interés</option>
+                        <option value="Refund">Reintegro</option>
+                        <option value="Adjustment">Ajuste</option>
+                        <option value="Other">Otro</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label for="fDefaultFinancialImpact">Impacto financiero por defecto (opcional)</label>
+                    <select id="fDefaultFinancialImpact">
+                        <option value="">— Sin impacto por defecto —</option>
+                        <option value="Expense">Gasto real</option>
+                        <option value="InternalMovement">Transferencia interna</option>
+                        <option value="DebtPayment">Pago de deuda</option>
+                        <option value="Income">Ingreso</option>
+                    </select>
+                </div>
+                <div id="formToast"></div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnFormCancel">Cancelar</button>
+                <button class="primary" id="btnFormSave">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        const state = { counterparties: [], categories: [], editingId: null };
+
+        // Mismas etiquetas en español que ya usan las <option> de #cMovementType/
+        // #cImpact en movements.html — se repiten acá como mapa porque esta pantalla
+        // solo necesita traducir el valor ya resuelto del DTO para el listado, no
+        // reconstruir un <select> completo a partir de ellas.
+        const MOVEMENT_TYPE_LABELS = {
+            Purchase: 'Compra', Transfer: 'Transferencia', Payment: 'Pago', Receipt: 'Cobro',
+            Fee: 'Comisión', Interest: 'Interés', Refund: 'Reintegro', Adjustment: 'Ajuste', Other: 'Otro',
+        };
+        const FINANCIAL_IMPACT_LABELS = {
+            Expense: 'Gasto real', InternalMovement: 'Transferencia interna',
+            DebtPayment: 'Pago de deuda', Income: 'Ingreso',
+        };
+
+        // ── View model — desacoplado del CounterpartyDto de /api/counterparties ────
+
+        function toCounterpartyViewModel(dto) {
+            return {
+                id: dto.id,
+                name: dto.name,
+                defaultCategoryId: dto.defaultCategoryId,
+                defaultCategoryName: dto.defaultCategoryName,
+                defaultMovementType: dto.defaultMovementType,
+                defaultFinancialImpact: dto.defaultFinancialImpact,
+                isDeactivated: dto.isDeactivated,
+            };
+        }
+
+        // ── Listado: GET /api/counterparties ────────────────────────────────────────
+        // Primera versión sin búsqueda ni filtros (Épica O: pantalla extremadamente
+        // simple) — includeDeactivated=true siempre, para que "ver todas las
+        // contrapartes" sea literal y la columna Estado tenga sentido. No hay acción
+        // de reactivar todavía (el backend no la expone para Counterparty, a
+        // diferencia de FinancialAccount) — desactivar queda, por ahora, como acción
+        // de un solo sentido desde esta pantalla.
+
+        async function loadCounterparties() {
+            const tbody = document.getElementById('counterpartiesBody');
+            tbody.innerHTML = '<tr><td colspan="6" class="loading">Cargando…</td></tr>';
+
+            try {
+                const data = await getJson(`${API}/api/counterparties?includeDeactivated=true`);
+                state.counterparties = (data ?? []).map(toCounterpartyViewModel);
+                renderCounterparties();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty">No se pudo cargar el listado: ${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderCounterparties() {
+            const tbody = document.getElementById('counterpartiesBody');
+            document.getElementById('countLabel').textContent =
+                state.counterparties.length > 0 ? `(${state.counterparties.length})` : '';
+
+            if (state.counterparties.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay contrapartes todavía.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.counterparties.map(c => `
+                <tr class="${c.isDeactivated ? 'row-off' : ''}">
+                    <td>${esc(c.name)}</td>
+                    <td>${esc(c.defaultCategoryName ?? '—')}</td>
+                    <td>${esc(MOVEMENT_TYPE_LABELS[c.defaultMovementType] ?? '—')}</td>
+                    <td>${esc(FINANCIAL_IMPACT_LABELS[c.defaultFinancialImpact] ?? '—')}</td>
+                    <td><span class="status-badge ${c.isDeactivated ? 'status-off' : 'status-ok'}">${c.isDeactivated ? 'Desactivada' : 'Activa'}</span></td>
+                    <td class="act-cell">
+                        <button class="sm" data-action="edit" data-id="${c.id}">Editar</button>
+                        ${c.isDeactivated ? '' : `<button class="sm danger" data-action="deactivate" data-id="${c.id}">Desactivar</button>`}
+                    </td>
+                </tr>`).join('');
+        }
+
+        document.getElementById('counterpartiesBody').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const { action, id } = btn.dataset;
+            if (action === 'edit') openEditModal(id);
+            else if (action === 'deactivate') deactivateCounterparty(id);
+        });
+
+        document.getElementById('btnNew').addEventListener('click', () => openFormModal(null));
+
+        // ── Categorías activas, para el <select> del formulario ─────────────────────
+
+        (async function loadCategories() {
+            try {
+                state.categories = await getJson(`${API}/api/categories`);
+                const options = state.categories
+                    .map(c => `<option value="${c.id}">${esc(c.displayName)}</option>`).join('');
+                document.getElementById('fDefaultCategoryId').innerHTML =
+                    '<option value="">— Sin categoría por defecto —</option>' + options;
+            } catch (e) {
+                document.getElementById('fDefaultCategoryId').innerHTML =
+                    '<option value="">Error al cargar categorías</option>';
+            }
+        })();
+
+        // ── Modal alta/edición ───────────────────────────────────────────────────
+
+        function openFormModal(cp) {
+            state.editingId = cp ? cp.id : null;
+            document.getElementById('formTitle').textContent = cp ? 'Editar contraparte' : 'Nueva contraparte';
+            document.getElementById('fName').value = cp?.name ?? '';
+            document.getElementById('fDefaultCategoryId').value = cp?.defaultCategoryId ?? '';
+            document.getElementById('fDefaultMovementType').value = cp?.defaultMovementType ?? '';
+            document.getElementById('fDefaultFinancialImpact').value = cp?.defaultFinancialImpact ?? '';
+            document.getElementById('formToast').innerHTML = '';
+            document.getElementById('formOverlay').classList.add('open');
+            document.getElementById('fName').focus();
+        }
+
+        function closeFormModal() { document.getElementById('formOverlay').classList.remove('open'); }
+
+        function openEditModal(id) {
+            const cp = state.counterparties.find(c => c.id === id);
+            if (cp) openFormModal(cp);
+        }
+
+        document.getElementById('btnCloseForm').addEventListener('click', closeFormModal);
+        document.getElementById('btnFormCancel').addEventListener('click', closeFormModal);
+        document.getElementById('formOverlay').addEventListener('click', e => {
+            if (e.target.id === 'formOverlay') closeFormModal();
+        });
+
+        document.getElementById('btnFormSave').addEventListener('click', saveCounterparty);
+
+        async function saveCounterparty() {
+            const name = document.getElementById('fName').value.trim();
+            if (!name) {
+                showToast('formToast', 'El nombre es requerido', 'err');
+                return;
+            }
+
+            // Sin type ni notes: esta pantalla no los administra en su primera
+            // versión (PR-O7 ya dejó type opcional en el alta — se omite acá y el
+            // backend asigna Other). defaultCategoryId/defaultMovementType/
+            // defaultFinancialImpact viajan como null cuando el <select> queda en
+            // la opción en blanco, igual que ya hace movements.html con
+            // counterpartyId al clasificar.
+            const body = {
+                name,
+                defaultCategoryId: document.getElementById('fDefaultCategoryId').value || null,
+                defaultMovementType: document.getElementById('fDefaultMovementType').value || null,
+                defaultFinancialImpact: document.getElementById('fDefaultFinancialImpact').value || null,
+            };
+
+            const btn = document.getElementById('btnFormSave');
+            btn.disabled = true;
+            try {
+                if (state.editingId) {
+                    await putJson(`${API}/api/counterparties/${state.editingId}`, body);
+                } else {
+                    await postJson(`${API}/api/counterparties`, body);
+                }
+                closeFormModal();
+                await loadCounterparties();
+            } catch (e) {
+                showToast('formToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ── Desactivar ───────────────────────────────────────────────────────────
+
+        async function deactivateCounterparty(id) {
+            const cp = state.counterparties.find(c => c.id === id);
+            if (!cp) return;
+            if (!confirm(`¿Desactivar la contraparte "${cp.name}"?`)) return;
+
+            try {
+                await deleteJson(`${API}/api/counterparties/${id}`);
+                await loadCounterparties();
+            } catch (e) {
+                showToast('listToast', e.message, 'err');
+            }
+        }
+
+        // ── Utils ────────────────────────────────────────────────────────────────
+
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
+        async function postJson(url, body) {
+            const opts = { method: 'POST' };
+            if (body !== undefined) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify(body);
+            }
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function putJson(url, body) {
+            const opts = {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            };
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function deleteJson(url) {
+            return handleWriteResponse(await fetch(url, { method: 'DELETE' }));
+        }
+
+        async function handleWriteResponse(r) {
+            const d = await r.json().catch(() => null);
+            if (!r.ok) {
+                // Los endpoints de /api/counterparties devuelven un string plano
+                // (BadRequest/NotFound) o un ProblemDetails con .detail.
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return d;
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function showToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
+
+        loadCounterparties();
+    </script>
+</body>
+</html>
