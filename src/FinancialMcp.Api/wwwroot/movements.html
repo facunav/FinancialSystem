@@ -761,15 +761,19 @@
             return `<span class="warning-badge" title="${esc(w.description)}">⚠ ${esc(label)}</span>`;
         }
 
-        // PR-S5: solo información — sin acción propia (aplicar una sugerencia pasa
-        // por abrir "Clasificar" como siempre, ver openClassifyModal). Nunca hay
-        // sugerencias en movimientos ya clasificados (m.suggestions siempre vacío
-        // en ese caso, ver backend) — no hace falta chequear m.status acá. El texto
-        // visible ya es "Dimensión: valor"; title solo agrega el motivo (reason),
-        // como complemento, no como mecanismo principal de lectura.
+        // PR-S5: solo información — sin acción propia. Nunca hay sugerencias en
+        // movimientos ya clasificados (m.suggestions siempre vacío en ese caso, ver
+        // backend) — no hace falta chequear m.status acá. El texto visible ya es
+        // "Dimensión: valor"; title solo agrega el motivo (reason), como
+        // complemento, no como mecanismo principal de lectura.
         // PR-S5.1: m.suggestions ya llega ordenado y deduplicado por dimensión
         // (ver normalizeSuggestions en toMovementViewModel) — esta función solo
         // mapea a HTML, sin ordenar ni filtrar nada por su cuenta.
+        // PR-U1: aplicar TODAS las sugerencias de una vez sin abrir el modal ya es
+        // posible cuando las 4 dimensiones tienen confianza High — ver
+        // quickAcceptValues/renderActionsCell. Para cualquier otro caso (parcial,
+        // o con alguna confianza Medium/Low), sigue pasando por "Clasificar" como
+        // siempre. Estos chips en sí siguen sin acción propia.
         function renderSuggestionChips(m) {
             if (!m.suggestions || m.suggestions.length === 0) return '';
             const chips = m.suggestions.map(s => {
@@ -802,9 +806,44 @@
             return opt ? opt.textContent : value;
         }
 
+        // PR-U1: "Aceptar sugerencia" solo cuando quickAcceptValues resuelve las 4
+        // dimensiones (nunca para movimientos ya clasificados, porque esos siempre
+        // llegan con m.suggestions vacío — ver backend). Convive con "Clasificar"/
+        // "Cambiar categoría" en la misma .act-cell — es una acción, no información
+        // (a diferencia de los chips de renderSuggestionChips, que sí son solo
+        // informativos y viven en la celda Descripción).
         function renderActionsCell(m) {
             const label = m.status === 'Pending' ? 'Clasificar' : 'Cambiar categoría';
-            return `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
+            const classifyBtn = `<button class="sm" data-action="classify" data-source-id="${m.sourceId}" data-source="${m.source}">${esc(label)}</button>`;
+
+            const quickValues = quickAcceptValues(m);
+            if (!quickValues) return classifyBtn;
+
+            return classifyBtn +
+                `<button class="sm primary" data-action="quick-accept" data-source-id="${m.sourceId}">Aceptar sugerencia</button>`;
+        }
+
+        // PR-U1: sugerencia lista para aceptar con un clic sin abrir el modal —
+        // solo cuando existe una sugerencia para cada una de las 4 dimensiones
+        // (mismas de SUGGESTION_DIMENSION_ORDER — no existe ninguna otra dimensión
+        // hoy, ver SuggestionDimension en el backend) y las 4 son
+        // SuggestionConfidence.High. Devuelve los 4 valores ya resueltos por
+        // dimensión (mismo formato string que ya usan los <select> del modal), o
+        // null si no aplica.
+        function quickAcceptValues(m) {
+            if (!m.suggestions || m.suggestions.length === 0) return null;
+
+            const byDimension = {};
+            for (const s of m.suggestions) {
+                if (s.confidence !== 'High') return null;
+                byDimension[s.dimension] = s.value;
+            }
+
+            for (const dim of SUGGESTION_DIMENSION_ORDER) {
+                if (!(dim in byDimension)) return null;
+            }
+
+            return byDimension;
         }
 
         // Si la cuenta asignada actualmente no está entre las activas (se
@@ -916,8 +955,34 @@
 
         document.getElementById('movementsBody').addEventListener('click', e => {
             const classifyBtn = e.target.closest('button[data-action="classify"]');
-            if (classifyBtn) openClassifyModal(classifyBtn.dataset.sourceId);
+            if (classifyBtn) { openClassifyModal(classifyBtn.dataset.sourceId); return; }
+
+            const quickAcceptBtn = e.target.closest('button[data-action="quick-accept"]');
+            if (quickAcceptBtn) quickAcceptSuggestion(quickAcceptBtn.dataset.sourceId, quickAcceptBtn);
         });
+
+        // PR-U1: mismo endpoint/comando que el modal (ver classifyMovement), sin
+        // abrirlo — toma los 4 valores ya resueltos por quickAcceptValues en vez de
+        // leerlos de los <select> del modal. Sin comentario (la clasificación rápida
+        // no pasa por el campo de comentario libre, que es exclusivo del modal).
+        async function quickAcceptSuggestion(sourceId, btn) {
+            const movement = state.movements.find(m => m.sourceId === sourceId);
+            if (!movement) return;
+
+            const values = quickAcceptValues(movement);
+            if (!values) return;
+
+            btn.disabled = true;
+            try {
+                await classifyMovement(
+                    movement, values.Category, values.MovementType, values.FinancialImpact, values.Counterparty, null);
+                showToast('listToast', 'Clasificación guardada', 'ok');
+            } catch (e) {
+                showToast('listToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
 
         // PR-S5: busca, dentro de las sugerencias del movimiento, el valor para una
         // dimensión puntual. Devuelve undefined si no hay sugerencia para esa
@@ -1023,27 +1088,48 @@
         }
 
         async function saveClassify(movement, categoryId) {
+            await classifyMovement(
+                movement,
+                categoryId,
+                document.getElementById('cMovementType').value,
+                document.getElementById('cImpact').value,
+                document.getElementById('cCounterparty').value || null,
+                document.getElementById('cComment').value.trim() || null);
+            closeClassifyModal();
+            showToast('listToast', 'Clasificación guardada', 'ok');
+        }
+
+        // PR-U1: extraído de saveClassify para que quickAcceptSuggestion (fila,
+        // sin modal) ejecute exactamente el mismo POST/actualización de estado que
+        // el modal, sin duplicar el cuerpo de la petición ni el manejo del
+        // resultado — mismo endpoint, mismo ClassifyMovementCommand de siempre, sin
+        // lógica de negocio propia acá (solo arma el DTO y refleja la respuesta en
+        // el view model local, igual que ya hacía saveClassify).
+        // GET /api/movements incluye pendientes y clasificados (K3): el
+        // movimiento sigue en la lista, solo cambia su estado.
+        async function classifyMovement(movement, categoryId, movementType, financialImpact, counterpartyId, comment) {
             const body = {
                 sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source],
                 sourceId: movement.sourceId,
                 categoryId,
-                movementType: document.getElementById('cMovementType').value,
-                financialImpact: document.getElementById('cImpact').value,
-                counterpartyId: document.getElementById('cCounterparty').value || null,
-                comment: document.getElementById('cComment').value.trim() || null,
+                movementType,
+                financialImpact,
+                counterpartyId,
+                comment,
             };
 
             await postJson(`${API}/api/movement-review/classify`, body);
-            closeClassifyModal();
-            // GET /api/movements incluye pendientes y clasificados (K3): el
-            // movimiento sigue en la lista, solo cambia su estado.
             movement.status = 'Reviewed';
             movement.categoryId = body.categoryId;
             movement.counterpartyId = body.counterpartyId;
             movement.movementType = body.movementType;
             movement.financialImpact = body.financialImpact;
+            // Un movimiento clasificado nunca trae sugerencias del backend (ver
+            // MovementView.Suggestions) — se limpia también acá para que los chips
+            // y el botón "Aceptar sugerencia" desaparezcan en el mismo render, sin
+            // esperar a la próxima carga completa de la lista.
+            movement.suggestions = [];
             renderMovements();
-            showToast('listToast', 'Clasificación guardada', 'ok');
         }
 
         // PR-L2: mismo endpoint y mismo comando que saveClassify (ClassifyMovementCommand),
