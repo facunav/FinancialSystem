@@ -72,7 +72,14 @@ public static class CounterpartyEndpoints
         if (string.IsNullOrWhiteSpace(request.Name))
             return Results.BadRequest("name es requerido");
 
-        if (!Enum.TryParse<CounterpartyType>(request.Type, ignoreCase: true, out var type))
+        // Type ya no es obligatorio en el alta (ver análisis de la entidad Counterparty):
+        // no tiene ningún consumidor hoy fuera de esta validación. Si no viene informado,
+        // se usa Other — el único valor del enum documentado como "no encaja en ninguna
+        // categoría anterior", el más cercano a "sin especificar" sin agregar un valor
+        // nuevo al enum. Si viene informado, se sigue validando igual que antes.
+        var type = CounterpartyType.Other;
+        if (!string.IsNullOrWhiteSpace(request.Type) &&
+            !Enum.TryParse<CounterpartyType>(request.Type, ignoreCase: true, out type))
             return Results.BadRequest($"type inválido: '{request.Type}'");
 
         MovementType? defaultMovementType = null;
@@ -167,7 +174,7 @@ public static class CounterpartyEndpoints
 
 public sealed record CreateCounterpartyRequest(
     string Name,
-    string Type,
+    string? Type,
     string? Notes,
     Guid? DefaultCategoryId,
     string? DefaultMovementType,
