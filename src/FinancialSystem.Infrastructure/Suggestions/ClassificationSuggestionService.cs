@@ -17,8 +17,9 @@ namespace FinancialSystem.Infrastructure.Suggestions;
 ///    PR-S10, exclusión de categorías/contrapartes desactivadas en PR-S11) Exact match
 ///    de descripción normalizada contra el historial de <c>ClassifiedMovement</c> —
 ///    ver <see cref="BuildSuggestions"/>.
-/// 2. (PR-S7) Enriquecimiento vía <c>Counterparty.Default*</c>: cuando la heurística 1
-///    ya sugirió una <c>Counterparty</c> para un movimiento, y esa contraparte tiene
+/// 2. (PR-S7, exclusión de categoría desactivada/inexistente en PR-S12) Enriquecimiento
+///    vía <c>Counterparty.Default*</c>: cuando la heurística 1 ya sugirió una
+///    <c>Counterparty</c> para un movimiento, y esa contraparte tiene
 ///    <c>DefaultCategoryId</c>/<c>DefaultMovementType</c>/<c>DefaultFinancialImpact</c>
 ///    configurados, esos valores compiten como sugerencias adicionales — ver
 ///    <see cref="EnrichWithCounterpartyDefaultsAsync"/>. No es una regla independiente:
@@ -142,11 +143,21 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
 
         if (suggestedCounterpartyIds.Count == 0) return results;
 
+        // PR-S12: DefaultCategoryIsActive viaja en la misma consulta, vía la
+        // navegación ya configurada en CounterpartyConfiguration
+        // (HasOne(x => x.DefaultCategory), join, no una consulta adicional) — cubre a
+        // la vez "existe" y "no está desactivada": si DefaultCategoryId no resuelve
+        // ninguna Category (referencia inexistente) o resuelve una desactivada, esta
+        // columna da false. Se usa más abajo en EnrichSuggestions para que la
+        // heurística 2 nunca proponga una categoría que el catálogo activo no pueda
+        // mostrar — mismo principio que PR-S11 ya aplicó a la heurística 1.
         var defaultsById = await _db.Counterparties
             .AsNoTracking()
             .Where(c => suggestedCounterpartyIds.Contains(c.Id))
             .Select(c => new CounterpartyDefaultsRow(
-                c.Id, c.Name, c.DefaultCategoryId, c.DefaultMovementType, c.DefaultFinancialImpact))
+                c.Id, c.Name, c.DefaultCategoryId,
+                c.DefaultCategory != null && !c.DefaultCategory.IsDeactivated,
+                c.DefaultMovementType, c.DefaultFinancialImpact))
             .ToDictionaryAsync(c => c.Id, cancellationToken);
 
         if (defaultsById.Count == 0) return results;
@@ -156,7 +167,18 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
             .ToList();
     }
 
-    private static IReadOnlyList<ClassificationSuggestion> EnrichSuggestions(
+    /// <summary>
+    /// PR-S12: <c>DefaultCategoryId</c> solo se fusiona cuando
+    /// <see cref="CounterpartyDefaultsRow.DefaultCategoryIsActive"/> es true — mismo
+    /// principio que PR-S11 ya aplicó a la heurística histórica ("nunca proponer un
+    /// valor que el catálogo activo no puede mostrar"), aplicado acá a la única fuente
+    /// que le faltaba: cada fuente de sugerencias es responsable de validar sus propios
+    /// datos antes de emitir, <see cref="MergeDimension"/> sigue sin necesitar (ni
+    /// tener) ninguna noción de validez — solo compara <see cref="SuggestionConfidence"/>.
+    /// <c>DefaultMovementType</c>/<c>DefaultFinancialImpact</c> no tienen equivalente de
+    /// <c>IsDeactivated</c> (son enums, no referencias a un catálogo) — sin cambios.
+    /// </summary>
+    internal static IReadOnlyList<ClassificationSuggestion> EnrichSuggestions(
         IReadOnlyList<ClassificationSuggestion> suggestions,
         IReadOnlyDictionary<Guid, CounterpartyDefaultsRow> defaultsById)
     {
@@ -173,7 +195,7 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         var reason = $"Valor configurado por defecto para la contraparte \"{defaults.Name}\".";
         var merged = new List<ClassificationSuggestion>(suggestions);
 
-        if (defaults.DefaultCategoryId is { } categoryId)
+        if (defaults.DefaultCategoryId is { } categoryId && defaults.DefaultCategoryIsActive)
             MergeDimension(merged, SuggestionDimension.Category, categoryId, reason);
 
         if (defaults.DefaultMovementType is { } movementType)
@@ -435,10 +457,15 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
 
     // PR-S7: proyección mínima de Counterparty para la heurística 2 — solo lo que
     // hace falta para enriquecer (Name para el Reason legible, los 3 Default*).
-    private sealed record CounterpartyDefaultsRow(
+    // PR-S12: DefaultCategoryIsActive agregado junto a DefaultCategoryId (lo que
+    // valida). Internal (no private) solo para que FinancialSystem.Infrastructure.Tests
+    // pueda construir filas para EnrichSuggestions — mismo motivo que
+    // ClassifiedHistoryRow (PR-S10/PR-S11): sigue sin ser parte del contrato público.
+    internal sealed record CounterpartyDefaultsRow(
         Guid Id,
         string Name,
         Guid? DefaultCategoryId,
+        bool DefaultCategoryIsActive,
         MovementType? DefaultMovementType,
         FinancialImpact? DefaultFinancialImpact);
 }
