@@ -196,6 +196,12 @@
             max-width: 320px;
         }
 
+        /* PR-U3: el estilo base sigue siendo el tratamiento de SuggestionConfidence.High
+           (verde) tal cual estaba — no cambia. .confidence-medium/.confidence-low son
+           los mismos 3 tokens que ya usa .status-badge.status-reviewed/status-pending
+           para esos mismos niveles (ámbar/neutro), sin ningún valor hex o RGB nuevo —
+           mismo criterio de reutilización que ya sigue .status-badge consigo mismo
+           (border-color sobre el border: 1px solid var(--green) de acá abajo). */
         .suggestion-chip {
             display: inline-block;
             max-width: 150px;
@@ -209,6 +215,8 @@
             color: #b0eec8;
             background: var(--green-bg);
         }
+            .suggestion-chip.confidence-medium { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
+            .suggestion-chip.confidence-low { color: var(--dim); background: var(--surface2); border-color: var(--border) }
 
         /* PR-U2: clasificación ya confirmada de un movimiento, en el mismo slot que
            las sugerencias (.suggestion-chips, reutilizado tal cual como contenedor —
@@ -560,6 +568,25 @@
         // deliberadamente Low/Medium/High, no un score continuo).
         const SUGGESTION_CONFIDENCE_RANK = { Low: 1, Medium: 2, High: 3 };
 
+        // PR-U3: texto explícito del nivel, antepuesto al title existente en
+        // renderSuggestionChips — para que la confianza no dependa solo del color
+        // (.confidence-medium/.confidence-low, ver CSS de .suggestion-chip).
+        // Constante separada de SUGGESTION_CONFIDENCE_RANK a propósito: ese mapa es
+        // para orden/deduplicación (normalizeSuggestions), no para presentación —
+        // sirven a propósitos distintos, no corresponde fusionarlos.
+        const SUGGESTION_CONFIDENCE_LABELS = { Low: 'Baja confianza', Medium: 'Media confianza', High: 'Alta confianza' };
+
+        // PR-U3: 'Low'/'Medium'/'High' -> clase modificadora de .suggestion-chip.
+        // '' para High porque el estilo base de .suggestion-chip ya es ese
+        // tratamiento (verde), sin cambios.
+        function confidenceChipClass(confidence) {
+            switch (confidence) {
+                case 'Medium': return 'confidence-medium';
+                case 'Low': return 'confidence-low';
+                default: return '';
+            }
+        }
+
         // PR-S5.1: normaliza la lista de sugerencias de un movimiento antes de
         // guardarla en el view model — un único punto de verdad que usan tanto
         // renderSuggestionChips como suggestionValue (openClassifyModal), para que
@@ -787,8 +814,8 @@
         // PR-S5: solo información — sin acción propia. Nunca hay sugerencias en
         // movimientos ya clasificados (m.suggestions siempre vacío en ese caso, ver
         // backend) — no hace falta chequear m.status acá. El texto visible ya es
-        // "Dimensión: valor"; title solo agrega el motivo (reason), como
-        // complemento, no como mecanismo principal de lectura.
+        // "Dimensión: valor"; title agrega el nivel de confianza y el motivo
+        // (reason), como complemento, no como mecanismo principal de lectura.
         // PR-S5.1: m.suggestions ya llega ordenado y deduplicado por dimensión
         // (ver normalizeSuggestions en toMovementViewModel) — esta función solo
         // mapea a HTML, sin ordenar ni filtrar nada por su cuenta.
@@ -801,12 +828,21 @@
         // — nunca se muestran a la vez: un movimiento clasificado siempre trae
         // m.suggestions vacío (ver backend), así que esta función ya devuelve ''
         // apenas eso ocurre, sin necesidad de chequear m.status acá tampoco.
+        // PR-U3: confidenceChipClass agrega la clase de color correspondiente al
+        // nivel (SuggestionConfidence.High sigue siendo el estilo base, sin
+        // cambios) y SUGGESTION_CONFIDENCE_LABELS antepone el nivel en texto al
+        // title existente — mismo motivo (reason) de siempre, sin quitarlo, para
+        // que la confianza no dependa solo del color. Sin texto ni ícono nuevo en
+        // el contenido visible del chip.
         function renderSuggestionChips(m) {
             if (!m.suggestions || m.suggestions.length === 0) return '';
             const chips = m.suggestions.map(s => {
                 const dimLabel = SUGGESTION_DIMENSION_LABELS[s.dimension] ?? s.dimension;
                 const valueLabel = suggestionValueLabel(s);
-                return `<span class="suggestion-chip" title="${esc(s.reason)}">${esc(dimLabel)}: ${esc(valueLabel)}</span>`;
+                const chipClass = confidenceChipClass(s.confidence);
+                const confidenceLabel = SUGGESTION_CONFIDENCE_LABELS[s.confidence] ?? s.confidence;
+                const title = `${confidenceLabel}\n\n${s.reason}`;
+                return `<span class="suggestion-chip${chipClass ? ' ' + chipClass : ''}" title="${esc(title)}">${esc(dimLabel)}: ${esc(valueLabel)}</span>`;
             }).join('');
             return `<div class="suggestion-chips">${chips}</div>`;
         }
