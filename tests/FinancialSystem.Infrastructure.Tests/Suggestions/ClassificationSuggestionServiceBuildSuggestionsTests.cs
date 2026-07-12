@@ -10,9 +10,11 @@ namespace FinancialSystem.Infrastructure.Tests.Suggestions;
 /// <see cref="ClassificationSuggestionService.BuildSuggestions"/>: qué valor se propone
 /// (la moda, no el más reciente) y qué <see cref="SuggestionConfidence"/> le corresponde
 /// (High solo unánime; Medium con mayoría calificada de 2/3; Low por debajo de eso,
-/// incluyendo empates). BuildSuggestions es internal exclusivamente para que este
-/// proyecto de tests pueda invocarlo vía InternalsVisibleTo — no es parte del contrato
-/// público del motor de sugerencias.
+/// incluyendo empates). También cubre la exclusión de categorías/contrapartes
+/// desactivadas agregada en PR-S11: esos valores no deben participar de la frecuencia
+/// ni de la confianza de su propia dimensión, sin afectar a las demás. BuildSuggestions
+/// es internal exclusivamente para que este proyecto de tests pueda invocarlo vía
+/// InternalsVisibleTo — no es parte del contrato público del motor de sugerencias.
 /// </summary>
 public class ClassificationSuggestionServiceBuildSuggestionsTests
 {
@@ -25,8 +27,11 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
         Guid categoryId, DateTime processedAt,
         MovementType movementType = MovementType.Purchase,
         FinancialImpact financialImpact = FinancialImpact.Expense,
-        Guid? counterpartyId = null) =>
-        new("DESCRIPCION", categoryId, movementType, financialImpact, counterpartyId, processedAt);
+        Guid? counterpartyId = null,
+        bool categoryIsDeactivated = false,
+        bool counterpartyIsDeactivated = false) =>
+        new("DESCRIPCION", categoryId, movementType, financialImpact, counterpartyId, processedAt,
+            categoryIsDeactivated, counterpartyIsDeactivated);
 
     [Fact]
     public void BuildSuggestions_FullyConsistentHistory_YieldsHighConfidenceForEveryDimension()
@@ -140,5 +145,78 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
 
         Assert.Equal(3, suggestions.Count);
         Assert.DoesNotContain(suggestions, s => s.Dimension == SuggestionDimension.Counterparty);
+    }
+
+    [Fact]
+    public void BuildSuggestions_OnlyDeactivatedCategoryInHistory_NeverSuggestsCategory_OtherDimensionsUnaffected()
+    {
+        var matches = Enumerable.Range(0, 5)
+            .Select(i => Row(CategoryA, BaseDate.AddDays(i), counterpartyId: CounterpartyA, categoryIsDeactivated: true))
+            .ToList();
+
+        var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
+
+        Assert.DoesNotContain(suggestions, s => s.Dimension == SuggestionDimension.Category);
+
+        // MovementType/FinancialImpact/Counterparty son independientes de Category y
+        // siguen siendo evidencia valida (misma fila, mismo IsDeactivated de Category
+        // no las afecta) - ver doc-comment de BuildSuggestions.
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.MovementType).Confidence);
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.FinancialImpact).Confidence);
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Counterparty).Confidence);
+    }
+
+    [Fact]
+    public void BuildSuggestions_OnlyDeactivatedCounterpartyInHistory_NeverSuggestsCounterparty_OtherDimensionsUnaffected()
+    {
+        var matches = Enumerable.Range(0, 5)
+            .Select(i => Row(CategoryA, BaseDate.AddDays(i), counterpartyId: CounterpartyA, counterpartyIsDeactivated: true))
+            .ToList();
+
+        var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
+
+        Assert.DoesNotContain(suggestions, s => s.Dimension == SuggestionDimension.Counterparty);
+
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Category).Confidence);
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.MovementType).Confidence);
+        Assert.Equal(SuggestionConfidence.High, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.FinancialImpact).Confidence);
+    }
+
+    [Fact]
+    public void BuildSuggestions_ActiveCategoryAndCounterparty_BehavesExactlyAsWithoutDeactivation()
+    {
+        var matches = Enumerable.Range(0, 5)
+            .Select(i => Row(
+                CategoryA, BaseDate.AddDays(i), counterpartyId: CounterpartyA,
+                categoryIsDeactivated: false, counterpartyIsDeactivated: false))
+            .ToList();
+
+        var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
+
+        Assert.Equal(4, suggestions.Count);
+        Assert.All(suggestions, s => Assert.Equal(SuggestionConfidence.High, s.Confidence));
+        Assert.Equal(CategoryA, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Category).Value);
+        Assert.Equal(CounterpartyA, Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Counterparty).Value);
+    }
+
+    [Fact]
+    public void BuildSuggestions_DeactivatedMajority_ConfidenceComesOnlyFromActiveMinority()
+    {
+        // Sin el filtro de PR-S11: CategoryA (desactivada) seria mayoria calificada
+        // (10 de 13 ~= 77% >= 2/3) y se propondria con Medium - exactamente el bug que
+        // este PR corrige. Con el filtro: las 10 filas de CategoryA se excluyen antes
+        // de contar, quedan solo las 3 de CategoryB (activa), que pasan a ser unanimes
+        // dentro del subconjunto filtrado -> High, no Medium, y CategoryB, no CategoryA.
+        var matches = Enumerable.Range(0, 10)
+            .Select(i => Row(CategoryA, BaseDate.AddDays(i), categoryIsDeactivated: true))
+            .Concat(Enumerable.Range(0, 3).Select(i => Row(CategoryB, BaseDate.AddDays(100 + i))))
+            .ToList();
+
+        var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
+
+        var category = Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Category);
+        Assert.Equal(CategoryB, category.Value);
+        Assert.Equal(SuggestionConfidence.High, category.Confidence);
+        Assert.Contains("3 clasificaciones", category.Reason);
     }
 }

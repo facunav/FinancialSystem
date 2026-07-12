@@ -14,8 +14,9 @@ namespace FinancialSystem.Infrastructure.Suggestions;
 /// lectura: nunca escribe nada.
 ///
 /// 1. (PR-S3, normalización mejorada en PR-S9, resolución de conflictos mejorada en
-///    PR-S10) Exact match de descripción normalizada contra el historial de
-///    <c>ClassifiedMovement</c> — ver <see cref="BuildSuggestions"/>.
+///    PR-S10, exclusión de categorías/contrapartes desactivadas en PR-S11) Exact match
+///    de descripción normalizada contra el historial de <c>ClassifiedMovement</c> —
+///    ver <see cref="BuildSuggestions"/>.
 /// 2. (PR-S7) Enriquecimiento vía <c>Counterparty.Default*</c>: cuando la heurística 1
 ///    ya sugirió una <c>Counterparty</c> para un movimiento, y esa contraparte tiene
 ///    <c>DefaultCategoryId</c>/<c>DefaultMovementType</c>/<c>DefaultFinancialImpact</c>
@@ -29,18 +30,21 @@ namespace FinancialSystem.Infrastructure.Suggestions;
 /// compartan una forma común, extraer una interfaz ahora sería abstracción prematura.
 /// Cada heurística es un método privado de esta clase.
 ///
-/// Por qué la heurística 1 no consulta <c>ClassifiedMovementItem</c>/<c>Category</c>/
-/// <c>Counterparty</c> directamente, aunque son fuentes de datos habilitadas para este
-/// motor: <c>ClassifiedMovement.Description</c> ya es la misma descripción original que
+/// Por qué la heurística 1 no consulta <c>ClassifiedMovementItem</c> directamente,
+/// aunque es una fuente de datos habilitada para este motor:
+/// <c>ClassifiedMovement.Description</c> ya es la misma descripción original que
 /// <c>ClassifiedMovementItem.OriginalDescription</c> (ambas se copian del mismo
 /// <c>FinancialMovement.Description</c> al momento de clasificar, ver
 /// <c>ClassifyMovementHandler</c>) — unirse a <c>Items</c> no aportaría una segunda
-/// descripción distinta para esa regla. Y el contrato de <see cref="ClassificationSuggestion"/>
-/// sugiere el <see cref="Guid"/> de la categoría/contraparte, no la entidad completa —
-/// no hace falta cargar <c>Category</c> para eso, igual que <c>MovementView</c> ya
-/// expone <c>CategoryId</c>/<c>CounterpartyId</c> sin hidratar la entidad. La heurística 2
-/// sí necesita consultar <c>Counterparty</c> (para leer sus valores por defecto), pero
-/// en una sola consulta por lote — ver <see cref="EnrichWithCounterpartyDefaultsAsync"/>.
+/// descripción distinta para esa regla. El contrato de <see cref="ClassificationSuggestion"/>
+/// sugiere el <see cref="Guid"/> de la categoría/contraparte, no la entidad completa,
+/// así que tampoco hace falta hidratar <c>Category</c>/<c>Counterparty</c> completas —
+/// igual que <c>MovementView</c> ya expone <c>CategoryId</c>/<c>CounterpartyId</c> sin
+/// hidratar la entidad. PR-S11 sí une (vía navegación, no una consulta aparte) contra
+/// <c>Category</c>/<c>Counterparty</c> para leer únicamente su <c>IsDeactivated</c> —
+/// ver <see cref="SuggestAsync"/> y <see cref="BuildSuggestions"/>. La heurística 2
+/// también necesita consultar <c>Counterparty</c> (para leer sus valores por defecto),
+/// en su propia consulta por lote — ver <see cref="EnrichWithCounterpartyDefaultsAsync"/>.
 /// </summary>
 internal sealed class ClassificationSuggestionService : IClassificationSuggestionService
 {
@@ -70,6 +74,11 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         // correcta. Si el volumen de ClassifiedMovements crece lo suficiente para que esto
         // deje de ser barato, un PR futuro puede agregar una columna normalizada indexada
         // y filtrar en la base — decisión a tomar con datos reales, no de antemano.
+        // PR-S11: IsDeactivated de Category/Counterparty viaja en la misma consulta,
+        // vía las navegaciones ya configuradas en ClassifiedMovementConfiguration
+        // (join, no una consulta adicional) — se usa más abajo en BuildSuggestions para
+        // que la heurística histórica nunca proponga una categoría o contraparte que el
+        // usuario desactivó después de clasificar esos movimientos.
         var history = await _db.ClassifiedMovements
             .AsNoTracking()
             .Select(cm => new ClassifiedHistoryRow(
@@ -78,7 +87,9 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
                 cm.MovementType,
                 cm.FinancialImpact,
                 cm.CounterpartyId,
-                cm.ProcessedAt))
+                cm.ProcessedAt,
+                cm.Category!.IsDeactivated,
+                cm.Counterparty != null && cm.Counterparty.IsDeactivated))
             .ToListAsync(cancellationToken);
 
         var historyByDescription = history
@@ -280,6 +291,20 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     /// elige el valor y la confianza. Counterparty se trata aparte porque es la única
     /// dimensión opcional: filas sin contraparte no cuentan ni a favor ni en contra de
     /// una sugerencia de contraparte.
+    ///
+    /// PR-S11: Category y Counterparty son también las dos únicas dimensiones que
+    /// pueden apuntar a un catálogo que el usuario desactivó después de clasificar —
+    /// filas con <see cref="ClassifiedHistoryRow.CategoryIsDeactivated"/>/
+    /// <see cref="ClassifiedHistoryRow.CounterpartyIsDeactivated"/> se excluyen de la
+    /// dimensión correspondiente antes de contar frecuencias, para que la heurística
+    /// nunca proponga un valor que el catálogo activo (<c>GET /api/categories</c>/
+    /// <c>/api/counterparties</c>, que ya filtran desactivados) no pueda mostrar. Esto
+    /// respeta la independencia de las 4 dimensiones (ver doc-comment de
+    /// <c>SuggestionDimension</c>): una categoría desactivada no descarta la fila
+    /// completa, solo su voto en la dimensión Category — MovementType/FinancialImpact de
+    /// esa misma fila siguen siendo evidencia válida. Si todas las filas de una
+    /// dimensión quedan excluidas, esa dimensión simplemente no genera sugerencia
+    /// (mismo patrón ya usado para "sin contraparte").
     /// </summary>
     internal static IReadOnlyList<ClassificationSuggestion> BuildSuggestions(
         IReadOnlyList<ClassifiedHistoryRow> matches)
@@ -292,8 +317,12 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
 
         var suggestions = new List<ClassificationSuggestion>();
 
-        AddDimensionSuggestion(suggestions, SuggestionDimension.Category,
-            matches.Select(m => ((object)m.CategoryId, m.ProcessedAt)));
+        var withActiveCategory = matches.Where(m => !m.CategoryIsDeactivated).ToList();
+        if (withActiveCategory.Count > 0)
+        {
+            AddDimensionSuggestion(suggestions, SuggestionDimension.Category,
+                withActiveCategory.Select(m => ((object)m.CategoryId, m.ProcessedAt)));
+        }
 
         AddDimensionSuggestion(suggestions, SuggestionDimension.MovementType,
             matches.Select(m => ((object)m.MovementType, m.ProcessedAt)));
@@ -301,7 +330,7 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         AddDimensionSuggestion(suggestions, SuggestionDimension.FinancialImpact,
             matches.Select(m => ((object)m.FinancialImpact, m.ProcessedAt)));
 
-        var withCounterparty = matches.Where(m => m.CounterpartyId is not null).ToList();
+        var withCounterparty = matches.Where(m => m.CounterpartyId is not null && !m.CounterpartyIsDeactivated).ToList();
         if (withCounterparty.Count > 0)
         {
             AddDimensionSuggestion(suggestions, SuggestionDimension.Counterparty,
@@ -392,13 +421,17 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     // Internal (no private) solo para que FinancialSystem.Infrastructure.Tests pueda
     // construir filas y ejercitar BuildSuggestions directamente (ver PR-S10) — mismo
     // motivo que Normalize (PR-S9): sigue sin ser parte del contrato público.
+    // PR-S11: CategoryIsDeactivated/CounterpartyIsDeactivated agregados al final para
+    // no reordenar los campos existentes.
     internal sealed record ClassifiedHistoryRow(
         string Description,
         Guid CategoryId,
         MovementType MovementType,
         FinancialImpact FinancialImpact,
         Guid? CounterpartyId,
-        DateTime ProcessedAt);
+        DateTime ProcessedAt,
+        bool CategoryIsDeactivated,
+        bool CounterpartyIsDeactivated);
 
     // PR-S7: proyección mínima de Counterparty para la heurística 2 — solo lo que
     // hace falta para enriquecer (Name para el Reason legible, los 3 Default*).
