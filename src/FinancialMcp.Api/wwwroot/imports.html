@@ -130,6 +130,25 @@
             .status-badge.status-warn { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
             .status-badge.status-err { color: #f0b0b0; background: var(--red-bg); border-color: var(--red) }
 
+        /* ── Resumen superior ── */
+        .summary-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+            .summary-bar .status-badge { font-size: 12px; padding: 4px 10px }
+
+        .row-reason {
+            color: var(--dim);
+            font-size: 11px;
+            white-space: normal;
+            margin-top: 3px;
+            max-width: 320px;
+        }
+
+        .cell-unavailable { color: var(--faint); font-style: italic }
+
         /* ── Modal de detalle ── */
         .modal-overlay {
             position: fixed;
@@ -232,6 +251,7 @@
     </header>
 
     <div class="content">
+        <div class="summary-bar" id="summaryBar"></div>
         <div class="panel">
             <div class="panel-head">
                 <h2>Corridas de importación <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
@@ -245,13 +265,14 @@
                             <th>Handler</th>
                             <th>Fecha/hora</th>
                             <th>Estado</th>
-                            <th style="text-align:right">Insertados</th>
+                            <th>Cuenta financiera detectada</th>
+                            <th style="text-align:right">Movimientos creados</th>
                             <th style="text-align:right">Duplicados</th>
                             <th style="text-align:right">Omitidos</th>
                             <th style="text-align:right">Fallidos</th>
                         </tr>
                     </thead>
-                    <tbody id="historyBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+                    <tbody id="historyBody"><tr><td colspan="9" class="loading">Cargando…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -316,14 +337,33 @@
 
         async function loadHistory() {
             const tbody = document.getElementById('historyBody');
-            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando…</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="loading">Cargando…</td></tr>';
             try {
                 const data = await getJson(`${API}/api/imports/history?take=100`);
                 state.batches = (data.batches ?? []).map(toBatchViewModel);
                 renderHistory();
+                attachFailureReasons();
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar el historial: ${esc(e.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="empty">No se pudo cargar el historial: ${esc(e.message)}</td></tr>`;
+                document.getElementById('summaryBar').innerHTML = '';
             }
+        }
+
+        function renderSummary() {
+            const bar = document.getElementById('summaryBar');
+            if (state.batches.length === 0) {
+                bar.innerHTML = '';
+                return;
+            }
+            const files = state.batches.length;
+            const movements = state.batches.reduce((sum, b) => sum + b.inserted, 0);
+            const ok = state.batches.filter(b => b.statusClass === 'status-ok').length;
+            const withErrors = state.batches.filter(b => b.failed > 0).length;
+            bar.innerHTML = `
+                <span class="status-badge">${files} archivo${files === 1 ? '' : 's'}</span>
+                <span class="status-badge">${movements} movimiento${movements === 1 ? '' : 's'} importado${movements === 1 ? '' : 's'}</span>
+                <span class="status-badge status-ok">${ok} correcto${ok === 1 ? '' : 's'}</span>
+                <span class="status-badge ${withErrors > 0 ? 'status-err' : ''}">${withErrors} con error${withErrors === 1 ? '' : 'es'}</span>`;
         }
 
         function renderHistory() {
@@ -331,8 +371,10 @@
             document.getElementById('countLabel').textContent =
                 state.batches.length > 0 ? `(${state.batches.length})` : '';
 
+            renderSummary();
+
             if (state.batches.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay importaciones.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay importaciones.</td></tr>';
                 return;
             }
 
@@ -341,12 +383,35 @@
                     <td class="mono" title="${esc(b.fullPath)}">${esc(b.fileName)}</td>
                     <td>${esc(b.handler)}</td>
                     <td class="mono">${b.startedLabel}</td>
-                    <td><span class="status-badge ${b.statusClass}">${esc(b.statusLabel)}</span></td>
+                    <td>
+                        <span class="status-badge ${b.statusClass}">${esc(b.statusLabel)}</span>
+                        ${b.failed > 0 ? `<div class="row-reason">${esc(b.reasonPreview ?? 'Cargando motivo…')}</div>` : ''}
+                    </td>
+                    <td class="cell-unavailable" title="El backend no registra todavía la cuenta financiera detectada por cada importación.">No disponible</td>
                     <td class="num">${b.inserted}</td>
                     <td class="num">${b.duplicates}</td>
                     <td class="num">${b.skipped}</td>
                     <td class="num">${b.failed}</td>
                 </tr>`).join('');
+        }
+
+        // ── Motivos reales de falla — reusa GET /api/imports/{id} (sin endpoints nuevos) ──
+
+        async function attachFailureReasons() {
+            const targets = state.batches.filter(b => b.failed > 0 && b.reasonPreview === undefined);
+            if (targets.length === 0) return;
+            await Promise.all(targets.map(async b => {
+                try {
+                    const data = await getJson(`${API}/api/imports/${b.id}`);
+                    const lines = (data.lines ?? []).map(toLineViewModel);
+                    b.reasonPreview = lines.length === 0
+                        ? 'Sin diagnóstico registrado.'
+                        : (lines.length === 1 ? lines[0].reason : `${lines[0].reason} (+${lines.length - 1} más)`);
+                } catch (e) {
+                    b.reasonPreview = 'No se pudo obtener el motivo.';
+                }
+            }));
+            renderHistory();
         }
 
         document.getElementById('historyBody').addEventListener('click', e => {
