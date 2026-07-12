@@ -111,6 +111,40 @@
 
         /* PR-L2: barra contextual de clasificación en lote — aparece solo cuando
            hay selección, para una sola lista (sin dos lados, sin balance). */
+        /* PR-P2: mismo patrón de barra que .filter-bar/.batch-bar (padding,
+           border-bottom, flex-wrap) — badges con los tokens ya existentes de
+           .status-badge, sin ningún color nuevo. */
+        .summary-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        /* Mismos tokens --amber/--amber-bg que ya usa .status-badge.status-reviewed
+           y .warning-badge — "incompleto" no es un error (por eso no --red),
+           es la misma familia visual que el resto de la pantalla ya usa para
+           "necesita atención". */
+        .coverage-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--amber-bg);
+            color: #f5dcb0;
+            font-size: 12px;
+        }
+
+        .quick-filters {
+            display: flex;
+            gap: 6px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
         .batch-bar {
             display: none;
             align-items: center;
@@ -425,6 +459,19 @@
             <div class="panel-head">
                 <h2>Movimientos <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
             </div>
+            <!-- PR-P2: totales del período completo (nunca del filtro rápido
+                 activo, ver renderSummary) — para que el usuario sepa cuánto
+                 trabajo le falta y si el Dashboard representa el mes completo,
+                 sin recalcular nada nuevo: mismos datos que ya trae state.movements. -->
+            <div class="summary-bar" id="summaryBar">
+                <span class="status-badge" id="summaryTotal">— movimientos</span>
+                <span class="status-badge status-confirmed" id="summaryClassified">— clasificados</span>
+                <span class="status-badge status-reviewed" id="summaryPending">— pendientes</span>
+                <span class="status-badge" id="summaryPct">—% completado</span>
+            </div>
+            <div class="coverage-bar" id="coverageBar" style="display:none">
+                <strong>Dashboard incompleto.</strong> Hay movimientos sin clasificar.
+            </div>
             <div class="filter-bar">
                 <div class="field"><label for="fFrom">Desde</label><input type="date" id="fFrom"></div>
                 <div class="field"><label for="fTo">Hasta</label><input type="date" id="fTo"></div>
@@ -433,6 +480,16 @@
                 <button class="sm" id="btnApplyFilters">Aplicar</button>
                 <div class="spacer"></div>
                 <div id="listToast"></div>
+            </div>
+            <!-- PR-P2: filtro rápido sobre state.movements ya cargado — sin
+                 pedir nada nuevo al backend. 'primary' marca el filtro activo,
+                 alternado por updateViewFilterButtons(); reutiliza la misma
+                 clase que ya usa cualquier botón primario del archivo, sin
+                 agregar un estado visual nuevo. -->
+            <div class="quick-filters" id="quickFilters">
+                <button class="sm primary" data-filter="all">Todos</button>
+                <button class="sm" data-filter="pending">Pendientes</button>
+                <button class="sm" data-filter="classified">Clasificados</button>
             </div>
             <!-- PR-L2: solo aparece con selección activa. Una sola lista, una sola
                  acción. -->
@@ -576,6 +633,11 @@
         const state = {
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
+            // PR-P2: filtro rápido de la grilla ('all'/'pending'/'classified') —
+            // vive aparte de movementFilters porque no viaja al backend, solo
+            // decide qué subconjunto de state.movements ya cargado se renderiza
+            // (ver filterMovements/renderMovements).
+            viewFilter: 'all',
             accounts: [],
             categories: [],
             counterparties: [],
@@ -814,18 +876,66 @@
         // (comparte identidad con su descripción), no una acción — no pertenece a
         // .act-cell junto al botón de clasificar.
 
+        // PR-P2: subconjunto de state.movements según el filtro rápido activo —
+        // puramente client-side, sobre datos ya cargados, sin tocar
+        // movementFilters (esos sí viajan a GET /api/movements).
+        function filterMovements(filter) {
+            switch (filter) {
+                case 'pending': return state.movements.filter(m => m.status === 'Pending');
+                case 'classified': return state.movements.filter(m => m.status !== 'Pending');
+                default: return state.movements;
+            }
+        }
+
+        function updateViewFilterButtons() {
+            document.querySelectorAll('#quickFilters button[data-filter]').forEach(btn => {
+                btn.classList.toggle('primary', btn.dataset.filter === state.viewFilter);
+            });
+        }
+
+        // PR-P2: totales del período completo — siempre sobre state.movements
+        // sin filtrar, nunca sobre el subconjunto del filtro rápido activo, para
+        // que "cuánto me falta" y "¿confío en el Dashboard?" no dependan de qué
+        // se esté mirando en ese momento. Mismo conteo que ya existe (m.status),
+        // sin ningún cálculo nuevo.
+        function renderSummary() {
+            const total = state.movements.length;
+            const pending = state.movements.filter(m => m.status === 'Pending').length;
+            const classified = total - pending;
+            const pct = total > 0 ? Math.round((classified / total) * 100) : 0;
+
+            document.getElementById('summaryTotal').textContent = `${total} movimiento${total !== 1 ? 's' : ''}`;
+            document.getElementById('summaryClassified').textContent = `${classified} clasificado${classified !== 1 ? 's' : ''}`;
+            document.getElementById('summaryPending').textContent = `${pending} pendiente${pending !== 1 ? 's' : ''}`;
+            document.getElementById('summaryPct').textContent = `${pct}% completado`;
+
+            document.getElementById('coverageBar').style.display = pending > 0 ? 'flex' : 'none';
+        }
+
         function renderMovements() {
             const tbody = document.getElementById('movementsBody');
-            document.getElementById('countLabel').textContent =
-                state.movements.length > 0 ? `(${state.movements.length})` : '';
 
-            if (state.movements.length === 0) {
+            // PR-P2: si el filtro rápido activo se queda sin resultados pero
+            // todavía hay movimientos en el período (ej: se estaba viendo
+            // "Pendientes" y se acaba de clasificar el último), se vuelve a
+            // "Todos" — nunca se deja una grilla vacía que parezca un error.
+            if (state.movements.length > 0 && filterMovements(state.viewFilter).length === 0) {
+                state.viewFilter = 'all';
+            }
+            updateViewFilterButtons();
+            renderSummary();
+
+            const visible = filterMovements(state.viewFilter);
+            document.getElementById('countLabel').textContent =
+                visible.length > 0 ? `(${visible.length})` : '';
+
+            if (visible.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay movimientos para este período.</td></tr>';
                 updateBatchBar();
                 return;
             }
 
-            tbody.innerHTML = state.movements.map(renderMovementRow).join('');
+            tbody.innerHTML = visible.map(renderMovementRow).join('');
             updateBatchBar();
         }
 
@@ -1041,6 +1151,16 @@
                 state.movementFilters.search = document.getElementById('searchInput').value.trim() || null;
                 loadMovements();
             }, 300);
+        });
+
+        // PR-P2: filtro rápido — solo cambia state.viewFilter y vuelve a
+        // renderizar; no toca movementFilters ni dispara loadMovements (no hay
+        // ningún dato nuevo que pedir al backend, ver filterMovements).
+        document.getElementById('quickFilters').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-filter]');
+            if (!btn) return;
+            state.viewFilter = btn.dataset.filter;
+            renderMovements();
         });
 
         // ── Selección de filas ───────────────────────────────────────────────────
