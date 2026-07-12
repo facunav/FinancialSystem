@@ -248,18 +248,6 @@
             white-space: normal;
         }
 
-        .acct-select {
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            color: var(--text);
-            padding: 4px 6px;
-            font: 12px var(--sans);
-            max-width: 160px;
-        }
-            .acct-select:disabled { opacity: .5 }
-            .acct-select option:disabled { color: var(--faint) }
-
         .status-badge {
             display: inline-block;
             font-size: 11px;
@@ -271,6 +259,14 @@
             .status-badge.status-pending { color: var(--dim); background: var(--surface2); border-color: var(--border) }
             .status-badge.status-reviewed { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
             .status-badge.status-confirmed { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+
+        /* PR-P1: cuenta financiera pasa a ser de solo lectura en esta pantalla —
+           ya no es una decisión de clasificación, es un dato del movimiento
+           importado (ver renderAccountCell). Mismo tratamiento visual que
+           .status-reviewed (ámbar, ya existente) para señalar, sin agregar
+           ningún color nuevo, que a ese movimiento le falta un dato que
+           debería haber llegado resuelto desde la importación. */
+        .status-badge.status-account-missing { color: #f5dcb0; background: var(--amber-bg); border-color: var(--amber) }
 
         /* Columna "Alerta" (K6): grupo sospechoso detectado por ISuspicionDetector
            (posible duplicado / posible split) — solo informativo, sin acción
@@ -350,7 +346,7 @@
         }
             .modal-field label.req::after { content: ' *'; color: var(--red) }
 
-        .modal-field select, .modal-field textarea {
+        .modal-field select, .modal-field textarea, .modal-field input[type=text] {
             width: 100%;
             background: var(--surface2);
             border: 1px solid var(--border);
@@ -359,7 +355,7 @@
             padding: 8px 10px;
             font: 13px var(--sans);
         }
-            .modal-field select:focus, .modal-field textarea:focus {
+            .modal-field select:focus, .modal-field textarea:focus, .modal-field input[type=text]:focus {
                 outline: 2px solid var(--green);
                 outline-offset: 1px;
             }
@@ -504,18 +500,21 @@
                     <select id="cMovementType">
                         <option value="Purchase">Compra</option>
                         <option value="Transfer">Transferencia</option>
-                        <option value="Payment">Pago</option>
+                        <option value="Payment">Pago de deuda o factura</option>
                         <option value="Receipt">Cobro</option>
                         <option value="Fee">Comisión</option>
                         <option value="Interest">Interés</option>
-                        <option value="Refund">Reintegro</option>
-                        <option value="Adjustment">Ajuste</option>
+                        <option value="Refund">Reintegro / devolución</option>
+                        <option value="Adjustment">Ajuste contable</option>
                         <option value="Other">Otro</option>
                     </select>
                 </div>
                 <div class="modal-field">
                     <label for="cCounterparty">Contraparte (opcional)</label>
-                    <select id="cCounterparty"><option value="">— Sin contraparte —</option></select>
+                    <div style="display:flex; gap:6px">
+                        <select id="cCounterparty" style="flex:1"><option value="">— Sin contraparte —</option></select>
+                        <button type="button" class="sm" id="btnNewCounterparty">+ Nueva</button>
+                    </div>
                 </div>
                 <div class="modal-field">
                     <label for="cComment">Comentario (opcional)</label>
@@ -528,6 +527,33 @@
             <div class="modal-foot">
                 <button id="btnClassifyCancel">Cancelar</button>
                 <button class="primary" id="btnClassifySave">Guardar clasificación</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal secundario: alta rápida de Contraparte (PR-P1) ──
+         Se abre desde "+ Nueva" junto al select de Contraparte del modal de
+         clasificación, sin salir de esta pantalla ni de ese modal. Único campo:
+         Nombre — el backend (POST /api/counterparties) ya no exige Type desde
+         PR-O7, así que no hace falta pedirlo acá tampoco. Al crear: se refresca
+         el combo de Contraparte, se selecciona la nueva automáticamente, y la
+         clasificación en curso sigue exactamente donde estaba. -->
+    <div class="modal-overlay" id="counterpartyOverlay" style="z-index:60">
+        <div class="modal" style="width:360px">
+            <div class="modal-head">
+                <h2>Nueva contraparte</h2>
+                <button class="close-x" id="btnCloseCounterparty" aria-label="Cerrar">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-field">
+                    <label for="cpName" class="req">Nombre</label>
+                    <input type="text" id="cpName" placeholder="Ej: Farmacia Amancay">
+                </div>
+                <div id="counterpartyToast"></div>
+            </div>
+            <div class="modal-foot">
+                <button id="btnCounterpartyCancel">Cancelar</button>
+                <button class="primary" id="btnCounterpartyCreate">Crear</button>
             </div>
         </div>
     </div>
@@ -551,7 +577,6 @@
             movements: [],
             movementFilters: { from: null, to: null, financialAccountId: null, search: null },
             accounts: [],
-            activeAccounts: [],
             categories: [],
             counterparties: [],
             selectedMovement: null,
@@ -563,7 +588,6 @@
         // Esta pantalla lista solo banco/tarjeta — GET /api/movements ya excluye
         // legacy, ver K1.
         const SOURCE_TO_ENTITY_TYPE = { BankDebit: 'BankStatement', CreditCard: 'Transaction' };
-        const SOURCE_TO_ACCOUNT_PATH = { BankDebit: 'bank-statements', CreditCard: 'transactions' };
 
         const STATUS_LABELS = { Pending: 'Pendiente', Reviewed: 'Revisado', Confirmed: 'Confirmado' };
         const STATUS_CLASSES = { Pending: 'status-pending', Reviewed: 'status-reviewed', Confirmed: 'status-confirmed' };
@@ -715,12 +739,10 @@
 
         (async function loadAccounts() {
             try {
-                const all = await getJson(`${API}/api/accounts?includeDeactivated=true`);
-                state.accounts = all;
-                state.activeAccounts = all.filter(a => !a.isDeactivated).sort((a, b) => a.name.localeCompare(b.name));
+                state.accounts = await getJson(`${API}/api/accounts?includeDeactivated=true`);
                 populateAccountFilter();
             } catch (e) {
-                // El filtro y el selector de cuenta quedan vacíos hasta el próximo intento.
+                // El filtro de cuenta queda vacío hasta el próximo intento.
             }
         })();
 
@@ -836,8 +858,19 @@
             return `<span class="status-badge ${cls}">${esc(label)}</span>`;
         }
 
+        // PR-P1: la cuenta financiera pasa a ser de solo lectura acá — es un dato
+        // del movimiento importado, no una decisión de esta pantalla (ver
+        // análisis de flujo de clasificación). "Sin cuenta detectada" es
+        // deliberadamente distinto de un <select> vacío: no invita a elegir nada,
+        // solo informa que ese dato debería haber llegado resuelto desde la
+        // importación y todavía no lo está.
         function renderAccountCell(m) {
-            return `<select class="acct-select" data-source-id="${m.sourceId}" data-source="${m.source}">${accountOptionsFor(m.financialAccountId)}</select>`;
+            if (!m.financialAccountId) {
+                return '<span class="status-badge status-account-missing">Sin cuenta detectada</span>';
+            }
+            const acc = state.accounts.find(a => a.id === m.financialAccountId);
+            const name = acc ? acc.name : 'Cuenta asignada';
+            return `<span class="status-badge status-pending" title="${esc(name)}">${esc(name)}</span>`;
         }
 
         // K6: solo información — sin acción propia. Resolver el grupo (marcar como
@@ -988,23 +1021,6 @@
             return byDimension;
         }
 
-        // Si la cuenta asignada actualmente no está entre las activas (se
-        // desactivó después de asignarse), se agrega igual como opción
-        // deshabilitada para no perder la referencia visual.
-        function accountOptionsFor(currentId) {
-            let html = '<option value="">— Sin cuenta —</option>';
-            let currentIsActive = false;
-            for (const a of state.activeAccounts) {
-                if (a.id === currentId) currentIsActive = true;
-                html += `<option value="${a.id}"${a.id === currentId ? ' selected' : ''}>${esc(a.name)}</option>`;
-            }
-            if (currentId && !currentIsActive) {
-                const acc = state.accounts.find(a => a.id === currentId);
-                html += `<option value="${currentId}" selected disabled>${esc(acc ? acc.name : 'Cuenta')} (desactivada)</option>`;
-            }
-            return html;
-        }
-
         // ── Filtros ──────────────────────────────────────────────────────────────
 
         document.getElementById('btnApplyFilters').addEventListener('click', () => {
@@ -1027,33 +1043,15 @@
             }, 300);
         });
 
-        // ── Asignación de cuenta financiera ──────────────────────────────────────
+        // ── Selección de filas ───────────────────────────────────────────────────
+        // PR-P1: la cuenta financiera dejó de asignarse desde acá (ver
+        // renderAccountCell) — este listener ya solo cubre el checkbox de
+        // selección para clasificación en lote.
 
         document.getElementById('movementsBody').addEventListener('change', e => {
             const cb = e.target.closest('.row-select');
-            if (cb) { toggleRowSelection(cb.dataset.sourceId, cb.checked); return; }
-
-            const sel = e.target.closest('.acct-select');
-            if (!sel) return;
-            assignFinancialAccount(sel.dataset.sourceId, sel.dataset.source, sel.value || null, sel);
+            if (cb) toggleRowSelection(cb.dataset.sourceId, cb.checked);
         });
-
-        async function assignFinancialAccount(sourceId, source, financialAccountId, selectEl) {
-            const path = SOURCE_TO_ACCOUNT_PATH[source];
-
-            selectEl.disabled = true;
-            try {
-                await putJson(`${API}/api/${path}/${sourceId}/financial-account`, { financialAccountId });
-                const movement = state.movements.find(m => m.sourceId === sourceId);
-                if (movement) movement.financialAccountId = financialAccountId;
-                showToast('listToast', 'Cuenta actualizada', 'ok');
-            } catch (e) {
-                showToast('listToast', `No se pudo actualizar la cuenta: ${e.message}`, 'err');
-                renderMovements(); // revierte el <select> al valor real
-            } finally {
-                selectEl.disabled = false;
-            }
-        }
 
         // ── Selección en lote (PR-L2) ────────────────────────────────────────────
         // Una sola lista, un solo Set de seleccionados — no hay "lado A/lado B" ni
@@ -1133,6 +1131,23 @@
             return movement.suggestions.find(s => s.dimension === dimension)?.value;
         }
 
+        // PR-P1: inferencia liviana, exclusiva de esta pantalla, para preseleccionar
+        // Impacto financiero cuando el movimiento todavía no tiene clasificación ni
+        // sugerencia del backend — no toca ClassificationSuggestionService ni ningún
+        // endpoint nuevo, solo lee texto y monto que ya están en pantalla. "PAGO DE
+        // TARJETA.../CUENTA VISA-MASTERCARD NRO..." son los dos patrones reales
+        // (verificados contra extractos BBVA reales) para pago de resumen de
+        // tarjeta — siempre Pago de deuda, nunca Gasto real. Para todo lo demás, el
+        // signo del importe alcanza: en este modelo (FinancialMovement.Amount)
+        // positivo = gasto, negativo = ingreso, sin excepción — nunca ambiguo.
+        function inferFinancialImpact(movement) {
+            const desc = (movement.description || '').toUpperCase();
+            if (desc.includes('PAGO DE TARJETA') || desc.includes('CUENTA VISA NRO') || desc.includes('CUENTA MASTERCARD NRO')) {
+                return 'DebtPayment';
+            }
+            return movement.amount > 0 ? 'Expense' : 'Income';
+        }
+
         function openClassifyModal(sourceId) {
             const movement = state.movements.find(m => m.sourceId === sourceId);
             if (!movement) return;
@@ -1152,7 +1167,7 @@
             // precargado y puede cambiarlo como cualquier otro, nunca se bloquea ni
             // se envía nada sin que el usuario confirme "Guardar clasificación".
             document.getElementById('cCategory').value = movement.categoryId ?? suggestionValue(movement, 'Category') ?? '';
-            document.getElementById('cImpact').value = movement.financialImpact ?? suggestionValue(movement, 'FinancialImpact') ?? 'Expense';
+            document.getElementById('cImpact').value = movement.financialImpact ?? suggestionValue(movement, 'FinancialImpact') ?? inferFinancialImpact(movement);
             document.getElementById('cMovementType').value = movement.movementType ?? suggestionValue(movement, 'MovementType') ?? 'Purchase';
             document.getElementById('cCounterparty').value = movement.counterpartyId ?? suggestionValue(movement, 'Counterparty') ?? '';
             document.getElementById('cComment').value = '';
@@ -1213,6 +1228,58 @@
         document.getElementById('classifyOverlay').addEventListener('click', e => {
             if (e.target.id === 'classifyOverlay') closeClassifyModal();
         });
+
+        // ── Alta rápida de Contraparte, sin salir de la clasificación (PR-P1) ────
+        // Modal secundario e independiente de #classifyOverlay — al crear, solo
+        // refresca el combo #cCounterparty y selecciona la nueva; el modal de
+        // clasificación de atrás nunca se cierra ni pierde lo que el usuario ya
+        // había elegido en los demás campos.
+
+        document.getElementById('btnNewCounterparty').addEventListener('click', openCounterpartyModal);
+
+        function openCounterpartyModal() {
+            document.getElementById('cpName').value = '';
+            document.getElementById('counterpartyToast').innerHTML = '';
+            document.getElementById('counterpartyOverlay').classList.add('open');
+            document.getElementById('cpName').focus();
+        }
+
+        function closeCounterpartyModal() {
+            document.getElementById('counterpartyOverlay').classList.remove('open');
+        }
+
+        document.getElementById('btnCloseCounterparty').addEventListener('click', closeCounterpartyModal);
+        document.getElementById('btnCounterpartyCancel').addEventListener('click', closeCounterpartyModal);
+        document.getElementById('counterpartyOverlay').addEventListener('click', e => {
+            if (e.target.id === 'counterpartyOverlay') closeCounterpartyModal();
+        });
+
+        document.getElementById('btnCounterpartyCreate').addEventListener('click', createCounterpartyInline);
+
+        async function createCounterpartyInline() {
+            const name = document.getElementById('cpName').value.trim();
+            if (!name) {
+                showToast('counterpartyToast', 'El nombre es requerido', 'err');
+                return;
+            }
+
+            const btn = document.getElementById('btnCounterpartyCreate');
+            btn.disabled = true;
+            try {
+                const created = await postJson(`${API}/api/counterparties`, { name });
+                state.counterparties = await getJson(`${API}/api/counterparties`);
+                document.getElementById('cCounterparty').innerHTML =
+                    '<option value="">— Sin contraparte —</option>' +
+                    state.counterparties.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+                document.getElementById('cCounterparty').value = created.id;
+                closeCounterpartyModal();
+                showToast('classifyToast', `Contraparte "${name}" creada`, 'ok');
+            } catch (e) {
+                showToast('counterpartyToast', e.message, 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        }
 
         document.getElementById('btnClassifySave').addEventListener('click', saveClassification);
 
