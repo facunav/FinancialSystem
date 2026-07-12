@@ -210,6 +210,28 @@
             background: var(--green-bg);
         }
 
+        /* PR-U2: clasificación ya confirmada de un movimiento, en el mismo slot que
+           las sugerencias (.suggestion-chips, reutilizado tal cual como contenedor —
+           es puro layout, sin color propio) — nunca conviven con sugerencias en la
+           misma fila (m.suggestions siempre vacío para un movimiento clasificado,
+           ver backend). Paleta neutra (mismos tokens que .status-badge.status-pending,
+           sin ningún color nuevo) más el prefijo "✓" en el texto (mismo criterio que
+           ya usa .warning-badge con "⚠") para que "esto ya se clasificó" se lea
+           distinto de "esto es una sugerencia" sin depender solo del color. */
+        .classification-chip {
+            display: inline-block;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            color: var(--dim);
+            background: var(--surface2);
+        }
+
         .empty, .loading {
             padding: 32px;
             text-align: center;
@@ -733,6 +755,7 @@
                     <td class="desc-cell">
                         <div class="truncate" title="${esc(m.description)}">${esc(m.description)}</div>
                         ${renderSuggestionChips(m)}
+                        ${renderClassificationChips(m)}
                     </td>
                     <td class="mono">$${fmt(m.amount)}</td>
                     <td>${renderStatusCell(m)}</td>
@@ -774,6 +797,10 @@
         // quickAcceptValues/renderActionsCell. Para cualquier otro caso (parcial,
         // o con alguna confianza Medium/Low), sigue pasando por "Clasificar" como
         // siempre. Estos chips en sí siguen sin acción propia.
+        // PR-U2: mismo slot visual (la celda Descripción) que renderClassificationChips
+        // — nunca se muestran a la vez: un movimiento clasificado siempre trae
+        // m.suggestions vacío (ver backend), así que esta función ya devuelve ''
+        // apenas eso ocurre, sin necesidad de chequear m.status acá tampoco.
         function renderSuggestionChips(m) {
             if (!m.suggestions || m.suggestions.length === 0) return '';
             const chips = m.suggestions.map(s => {
@@ -784,26 +811,67 @@
             return `<div class="suggestion-chips">${chips}</div>`;
         }
 
-        // Category/Counterparty resuelven contra los catálogos ya cargados para el
-        // modal (state.categories/state.counterparties) — si todavía no cargaron
-        // (loadCategories/loadCounterparties son independientes de loadMovements,
-        // sin await entre ellas), se muestra el valor crudo como resultado
-        // razonable: nunca rompe, se corrige solo en el próximo render. Movement
-        // Type/FinancialImpact no necesitan su propio mapa de traducción: ya están
-        // traducidos en las <option> de #cMovementType/#cImpact (ver optionLabel).
-        function suggestionValueLabel(s) {
-            switch (s.dimension) {
-                case 'Category': return state.categories.find(c => c.id === s.value)?.displayName ?? s.value;
-                case 'Counterparty': return state.counterparties.find(c => c.id === s.value)?.name ?? s.value;
-                case 'MovementType': return optionLabel('cMovementType', s.value);
-                case 'FinancialImpact': return optionLabel('cImpact', s.value);
-                default: return s.value;
+        // PR-U2: extraído de lo que antes era el cuerpo de suggestionValueLabel,
+        // para que renderClassificationChips resuelva el mismo tipo de etiqueta sin
+        // duplicar las 4 ramas — Category/Counterparty resuelven contra los
+        // catálogos ya cargados para el modal (state.categories/state.counterparties)
+        // — si todavía no cargaron (loadCategories/loadCounterparties son
+        // independientes de loadMovements, sin await entre ellas), se muestra el
+        // valor crudo como resultado razonable: nunca rompe, se corrige solo en el
+        // próximo render. MovementType/FinancialImpact no necesitan su propio mapa
+        // de traducción: ya están traducidos en las <option> de #cMovementType/
+        // #cImpact (ver optionLabel).
+        function resolveDimensionLabel(dimension, value) {
+            switch (dimension) {
+                case 'Category': return state.categories.find(c => c.id === value)?.displayName ?? value;
+                case 'Counterparty': return state.counterparties.find(c => c.id === value)?.name ?? value;
+                case 'MovementType': return optionLabel('cMovementType', value);
+                case 'FinancialImpact': return optionLabel('cImpact', value);
+                default: return value;
             }
+        }
+
+        function suggestionValueLabel(s) {
+            return resolveDimensionLabel(s.dimension, s.value);
         }
 
         function optionLabel(selectId, value) {
             const opt = document.querySelector(`#${selectId} option[value="${value}"]`);
             return opt ? opt.textContent : value;
+        }
+
+        // PR-U2: clasificación ya asignada, en el mismo slot que renderSuggestionChips
+        // (ver su comentario) — solo para movimientos que ya salieron de Pending,
+        // así que nunca compite con las sugerencias. DIMENSION_TO_MOVEMENT_FIELD +
+        // SUGGESTION_DIMENSION_ORDER fijan el mismo orden que ya usan las
+        // sugerencias y el modal (Categoría → Impacto → Tipo → Contraparte).
+        // Counterparty se omite cuando es null — "sin contraparte" es un estado de
+        // clasificación válido, no un chip vacío (mismo criterio que ya usa
+        // BuildSuggestions en el backend para esta misma dimensión opcional). El
+        // prefijo "✓" (mismo criterio que ya usa renderWarningCell con "⚠") marca
+        // que esto es un valor confirmado, no una recomendación — para que se lea
+        // distinto de un vistazo, no solo por el color de .classification-chip.
+        const DIMENSION_TO_MOVEMENT_FIELD = {
+            Category: 'categoryId',
+            FinancialImpact: 'financialImpact',
+            MovementType: 'movementType',
+            Counterparty: 'counterpartyId',
+        };
+
+        function renderClassificationChips(m) {
+            if (m.status === 'Pending') return '';
+
+            const chips = SUGGESTION_DIMENSION_ORDER
+                .map(dim => ({ dimension: dim, value: m[DIMENSION_TO_MOVEMENT_FIELD[dim]] }))
+                .filter(c => c.value !== null && c.value !== undefined)
+                .map(c => {
+                    const dimLabel = SUGGESTION_DIMENSION_LABELS[c.dimension] ?? c.dimension;
+                    const valueLabel = resolveDimensionLabel(c.dimension, c.value);
+                    return `<span class="classification-chip">✓ ${esc(dimLabel)}: ${esc(valueLabel)}</span>`;
+                })
+                .join('');
+
+            return `<div class="suggestion-chips">${chips}</div>`;
         }
 
         // PR-U1: "Aceptar sugerencia" solo cuando quickAcceptValues resuelve las 4
