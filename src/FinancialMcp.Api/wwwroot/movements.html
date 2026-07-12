@@ -366,6 +366,37 @@
 
         .modal-field textarea { resize: vertical; min-height: 56px }
 
+        /* PR-U4: listado de movimientos seleccionados dentro del modal en modo
+           lote (state.modalMode === 'batch') — recuperado de
+           group-reconciliation.html (retirada en PR-L4): mismo patrón de scroll
+           propio y acotado (max-height + overflow-y en el propio contenedor, no
+           en .modal-body), para no empujar el formulario fuera de vista con
+           selecciones grandes. Tokens ya existentes (--dim/--surface2/--border),
+           sin ningún color nuevo. Puramente informativo, sin ninguna acción
+           propia dentro. */
+        .batch-list {
+            max-height: 90px;
+            overflow-y: auto;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 10px;
+        }
+
+        .batch-list-item {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--dim);
+            line-height: 1.7;
+        }
+            /* Mismo mecanismo de truncamiento que .truncate ya usa en la tabla
+               principal (overflow/text-overflow/white-space heredados de acá
+               abajo) — solo se acota el ancho al espacio disponible dentro del
+               modal (460px), más angosto que la celda Descripción de la tabla. */
+            .batch-list-item .truncate { max-width: 200px }
+
         .modal-foot {
             padding: 12px 18px;
             border-top: 1px solid var(--border);
@@ -448,6 +479,13 @@
                 <button class="close-x" id="btnCloseClassify" aria-label="Cerrar">✕</button>
             </div>
             <div class="modal-body">
+                <!-- PR-U4: solo visible en modo lote (ver openBatchModal/openClassifyModal) -->
+                <div id="batchListWrap" style="display:none">
+                    <div class="modal-field">
+                        <label>Movimientos seleccionados</label>
+                        <div class="batch-list" id="batchList"></div>
+                    </div>
+                </div>
                 <div class="modal-field">
                     <label for="cCategory" class="req">Categoría</label>
                     <select id="cCategory"><option value="">Cargando…</option></select>
@@ -1120,6 +1158,10 @@
             document.getElementById('cComment').value = '';
             document.getElementById('btnClassifySave').textContent = 'Guardar clasificación';
             document.getElementById('classifyToast').innerHTML = '';
+            // PR-U4: el modal es compartido con el modo lote (ver openBatchModal) —
+            // se oculta acá para no dejar visible el listado de una apertura en
+            // lote anterior.
+            document.getElementById('batchListWrap').style.display = 'none';
             document.getElementById('classifyOverlay').classList.add('open');
         }
 
@@ -1128,6 +1170,11 @@
         // Pendientes (ver renderMovementRow), sin ninguna clasificación previa de
         // la que partir. Muestra el total como chequeo rápido antes de aplicar la
         // misma clasificación a todas.
+        // PR-U4: además del total, lista el detalle (fecha/descripción/importe) de
+        // cada movimiento seleccionado, para revisar exactamente qué se va a
+        // clasificar antes de confirmar — reutiliza `selected`, ya calculado acá
+        // mismo para `total`, sin recorrer state.movements una segunda vez ni
+        // pedir ningún dato adicional al backend.
         function openBatchModal() {
             const n = state.selectedIds.size;
             if (n === 0) return;
@@ -1139,6 +1186,13 @@
             document.getElementById('classifyModalTitle').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
             document.getElementById('classifySubtitle').textContent =
                 `Se aplicará la misma clasificación a los ${n} movimientos seleccionados · Total $${fmt(total)}`;
+            document.getElementById('batchListWrap').style.display = 'block';
+            document.getElementById('batchList').innerHTML = selected.map(m => `
+                <div class="batch-list-item">
+                    <span>${fmtDate(m.date)}</span>
+                    <div class="truncate" title="${esc(m.description)}">${esc(m.description)}</div>
+                    <span>$${fmt(m.amount)}</span>
+                </div>`).join('');
             document.getElementById('cCategory').value = '';
             document.getElementById('cImpact').value = 'Expense';
             document.getElementById('cMovementType').value = 'Purchase';
