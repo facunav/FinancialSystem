@@ -145,7 +145,7 @@ Continúa la numeración de letra usada en Review & Classification Engine v2 (qu
 | **L** — Visibilidad de cobertura | Indicador de cuánto del período está clasificado vs. pendiente, en dashboard y nav. | 📋 Planificada |
 | **M** — Cuentas de inversión | Adelanto acotado de Fase 4 (README): habilitar `FinancialAccount.Type=Investment` y transferencias hacia/desde ella. El modelo completo de movimientos internos de inversión (dividendos, compra/venta de activos) queda fuera de este roadmap y requiere su propio documento. | 📋 Planificada |
 | **N** — Simplificación del formulario de clasificación | Derivar `FinancialImpact` por defecto para los `MovementType` no ambiguos, sin eliminar el campo. | 📋 Planificada |
-| **O** — Importación Manual e Historial | Botón "Importar" desde la UI, reutilizando `IFileImportRouter` (sin duplicar el motor que ya usa el Worker) + detección automática de cuenta financiera por `AccountNumber`. Tiene una decisión de arquitectura pendiente de resolver antes del primer PR. | 📋 Planificada — ver `docs/Epics/EpicaO-ImportacionManual.md` |
+| **O** — Importación Manual e Historial | Botón "Importar" desde la UI, reutilizando el mismo motor de importación que ya usa el Worker (`IFileImportRouter` → Handlers → Parsers → Importers, sin duplicarlo) + detección automática de cuenta financiera por `AccountNumber`. Tiene una decisión de arquitectura pendiente de resolver antes del primer PR. | 📋 Planificada — ver `docs/Epics/EpicaO-ImportacionManual.md` |
 
 Detalle PR-por-PR de cada épica: `docs/Epics/` (por ahora existen las de las Épicas I y O; las siguientes se documentan a medida que se empiezan).
 
