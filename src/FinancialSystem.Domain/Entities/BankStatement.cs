@@ -68,4 +68,16 @@ public class BankStatement
     /// </summary>
     public Guid? FinancialAccountId { get; set; }
     public FinancialAccount? FinancialAccount { get; set; }
+
+    // ── Enriquecimiento desde Tarjeta de Débito ────────────────────
+
+    /// <summary>
+    /// Comercio real de la compra, cuando este movimiento se pudo relacionar sin
+    /// ambigüedad con una operación del extracto de Tarjeta de Débito. Ej: "OPENPAY*CAMPO VERDE".
+    /// Null si no hubo match o si el movimiento no es una compra con débito.
+    /// </summary>
+    public string? Merchant { get; set; }
+
+    /// <summary>Fecha/hora exacta de la compra según el extracto de Tarjeta de Débito. Null junto con Merchant.</summary>
+    public DateTime? MerchantAtUtc { get; set; }
 }

@@ -72,5 +72,12 @@ internal sealed class BankStatementConfiguration : IEntityTypeConfiguration<Bank
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(e => e.FinancialAccountId);
+
+        // ── Enriquecimiento desde Tarjeta de Débito (opcional) ─────
+        builder.Property(e => e.Merchant)
+            .HasMaxLength(256);
+
+        builder.Property(e => e.MerchantAtUtc)
+            .HasColumnType("timestamp with time zone");
     }
 }
