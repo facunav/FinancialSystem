@@ -159,6 +159,21 @@
             .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
             .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
 
+        /* ── Indicador de importación en curso (mismo mecanismo de spinner que
+           dashboard.html, escalado para uso inline junto al toast) ── */
+        .spinner-sm {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--green);
+            border-radius: 50%;
+            vertical-align: middle;
+            margin-right: 6px;
+            animation: spin .7s linear infinite;
+        }
+            @keyframes spin { to { transform: rotate(360deg) } }
+
         /* ── Modal de detalle ── */
         .modal-overlay {
             position: fixed;
@@ -457,7 +472,13 @@
 
         async function importFile(file) {
             const btn = document.getElementById('btnImport');
+            const originalLabel = btn.textContent;
             btn.disabled = true;
+            btn.textContent = 'Importando…';
+            // El backend no informa progreso real (ver PR-O-UX) — el spinner solo
+            // comunica "el sistema sigue trabajando", no un porcentaje de avance.
+            document.getElementById('importToast').innerHTML =
+                '<span class="spinner-sm"></span>Importando archivo…';
             try {
                 await postFile(`${API}/api/imports`, file);
                 // El backend no distingue en la respuesta si la importación tuvo
@@ -471,6 +492,7 @@
                 showToast('importToast', e.message, 'err', 6000);
             } finally {
                 btn.disabled = false;
+                btn.textContent = originalLabel;
             }
         }
 
