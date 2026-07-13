@@ -145,8 +145,9 @@ Continúa la numeración de letra usada en Review & Classification Engine v2 (qu
 | **L** — Visibilidad de cobertura | Indicador de cuánto del período está clasificado vs. pendiente, en dashboard y nav. | 📋 Planificada |
 | **M** — Cuentas de inversión | Adelanto acotado de Fase 4 (README): habilitar `FinancialAccount.Type=Investment` y transferencias hacia/desde ella. El modelo completo de movimientos internos de inversión (dividendos, compra/venta de activos) queda fuera de este roadmap y requiere su propio documento. | 📋 Planificada |
 | **N** — Simplificación del formulario de clasificación | Derivar `FinancialImpact` por defecto para los `MovementType` no ambiguos, sin eliminar el campo. | 📋 Planificada |
+| **O** — Importación Manual e Historial | Botón "Importar" desde la UI, reutilizando `IFileImportRouter` (sin duplicar el motor que ya usa el Worker) + detección automática de cuenta financiera por `AccountNumber`. Tiene una decisión de arquitectura pendiente de resolver antes del primer PR. | 📋 Planificada — ver `docs/Epics/EpicaO-ImportacionManual.md` |
 
-Detalle PR-por-PR de cada épica: `docs/Epics/` (por ahora solo existe el de la Épica I; las siguientes se documentan a medida que se empiezan).
+Detalle PR-por-PR de cada épica: `docs/Epics/` (por ahora existen las de las Épicas I y O; las siguientes se documentan a medida que se empiezan).
 
 ---
 
@@ -170,9 +171,15 @@ K (UX)  ◀───────────┘   [K reutiliza los mismos endpoi
 L (Cobertura)  — independiente, puede ir en paralelo con cualquiera.
 
 N (Simplificación de formulario) — depende de K (mismo formulario que reemplaza K2).
+
+O (Importación Manual)  — independiente en el diseño (reutiliza IFileImportRouter
+   sin modificarlo), pero conviene hacerla después de I: importar manualmente
+   sobre un pipeline con los bugs de idempotencia de I sin corregir reproduciría
+   esos mismos bugs con más frecuencia (uso manual = más corridas que el watcher
+   automático).
 ```
 
-No hay dependencia dura entre I y J/K — pueden desarrollarse en paralelo si hace falta. J es prerrequisito de M. N es un ajuste sobre el formulario que entrega K, por lo que debe ir después.
+No hay dependencia dura entre I y J/K — pueden desarrollarse en paralelo si hace falta. J es prerrequisito de M. N es un ajuste sobre el formulario que entrega K, por lo que debe ir después. O no depende de J/K/L/M/N.
 
 ---
 

@@ -61,6 +61,7 @@ Contiene:
 ### Hosts adicionales
 
 * `FinancialSystem.Worker` — `ImportsFolderWatcherHostedService` (importación en background) y `TransactionInsightsWorker`. No consume el motor de revisión — clasificar es siempre una acción del usuario vía Api.
+  **Rol real de `ImportsFolderWatcherHostedService` (Épica O):** es exclusivamente un disparador — observa una carpeta (`FileSystemWatcher` + debounce + espera de archivo listo) y llama a `IFileImportRouter.RouteAsync(filePath, ct)`, la misma interfaz que cualquier otro caller. No contiene lógica de negocio ni decide bancos/cuentas. `IFileImportRouter` vive en Application/Infrastructure, no en el host `Worker` — los tres hosts (`Worker`, `FinancialMcp.Api`, `FinancialSystem.McpServer`) registran `AddApplication()`+`AddInfrastructure()` de forma idéntica, así que el router y todos los handlers ya están disponibles en la Api sin cambios. Detalle completo, comparación de alternativas y decisión pendiente de importación manual: `docs/Epics/EpicaO-ImportacionManual.md`.
 * `FinancialSystem.McpServer` — expone `FinancialTools` (4 herramientas), que delegan a `IFinancialMetricsService` sin lógica propia.
 
 ---
