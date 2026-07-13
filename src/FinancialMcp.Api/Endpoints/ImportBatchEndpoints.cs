@@ -59,11 +59,12 @@ public static class ImportBatchEndpoints
             return Results.BadRequest("Nombre de archivo inválido.");
 
         var tempDir = Path.Combine(env.ContentRootPath, "TempImports", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
         var savedPath = Path.Combine(tempDir, safeFileName);
 
         try
         {
+            Directory.CreateDirectory(tempDir);
+
             await using (var stream = new FileStream(savedPath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 await file.CopyToAsync(stream, ct);
@@ -85,19 +86,29 @@ public static class ImportBatchEndpoints
 
     private static void TryDeleteTempImport(string filePath, string tempDir, ILogger logger)
     {
+        // Archivo y directorio se intentan por separado: que uno falle no debe impedir
+        // el intento del otro, y cada fallo se loguea con el path que realmente
+        // corresponde (para poder distinguir, por ejemplo, un antivirus reteniendo el
+        // archivo de un problema de permisos sobre el directorio).
         try
         {
             if (File.Exists(filePath))
                 File.Delete(filePath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo eliminar el archivo temporal de importación '{FilePath}'", filePath);
+        }
 
-            // Solo borra el directorio temporal si quedó vacío — nunca falla la
-            // limpieza del archivo por esto.
+        try
+        {
+            // Solo borra el directorio temporal si quedó vacío.
             if (Directory.Exists(tempDir) && !Directory.EnumerateFileSystemEntries(tempDir).Any())
                 Directory.Delete(tempDir);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "No se pudo eliminar el archivo temporal de importación '{FilePath}'", filePath);
+            logger.LogWarning(ex, "No se pudo eliminar el directorio temporal de importación '{TempDir}'", tempDir);
         }
     }
 
