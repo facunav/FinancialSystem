@@ -14,4 +14,7 @@ public sealed class FileIngestionOptions
 
     public string[] BbvaBankStatementFilePatterns { get; set; } =
        ["Caja*.xls", "*ahorros*.xls", "*corriente*.xls"];
+
+    public string[] BbvaDebitCardFilePatterns { get; set; } =
+       ["*ltimos_movimientos*.xlsx", "*Movimientos*Debito*.xlsx"];
 }

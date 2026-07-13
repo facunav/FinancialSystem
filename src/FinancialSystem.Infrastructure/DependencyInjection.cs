@@ -73,6 +73,8 @@ public static class DependencyInjection
         services.AddSingleton<BbvaBankStatementParser>();
         services.AddSingleton<BbvaBankStatementImporter>();
         services.AddSingleton<IFileImportHandler, BbvaBankStatementImportHandler>();
+        services.AddSingleton<BbvaDebitCardParser>();
+        services.AddSingleton<IFileImportHandler, BbvaDebitCardEnrichmentHandler>();
         services.AddSingleton<IFileImportHandler, TransactionImportHandler>();
 
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
