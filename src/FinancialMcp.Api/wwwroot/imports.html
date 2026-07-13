@@ -149,6 +149,16 @@
 
         .cell-unavailable { color: var(--faint); font-style: italic }
 
+        /* ── Toast (mismo patrón que movements.html) ── */
+        .toast {
+            font: 12px var(--mono);
+            padding: 6px 12px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+            .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
+            .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
         /* ── Modal de detalle ── */
         .modal-overlay {
             position: fixed;
@@ -255,7 +265,12 @@
         <div class="panel">
             <div class="panel-head">
                 <h2>Corridas de importación <span id="countLabel" style="text-transform:none;color:var(--faint)"></span></h2>
-                <button class="sm" id="btnRefresh">Actualizar</button>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <div id="importToast"></div>
+                    <input type="file" id="fileInput" accept=".pdf,.csv,.xlsx,.xls" style="display:none">
+                    <button class="sm" id="btnImport">Importar archivo</button>
+                    <button class="sm" id="btnRefresh">Actualizar</button>
+                </div>
             </div>
             <div style="overflow-x:auto">
                 <table>
@@ -422,6 +437,55 @@
 
         document.getElementById('btnRefresh').addEventListener('click', loadHistory);
 
+        // ── Importación manual: POST /api/imports (PR-O2) ──────────────────────────
+        // El botón solo dispara el selector de archivos del SO y sube lo que el
+        // usuario elija — no decide parser, banco, ni nada del motor de importación,
+        // eso ya lo resuelve el backend (IFileImportRouter, sin cambios acá).
+
+        document.getElementById('btnImport').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        document.getElementById('fileInput').addEventListener('change', async e => {
+            const file = e.target.files[0];
+            // Limpiar ya mismo permite volver a elegir el mismo archivo si el usuario
+            // necesita reintentar tras un error, sin que falte el evento 'change'.
+            e.target.value = '';
+            if (!file) return;
+            await importFile(file);
+        });
+
+        async function importFile(file) {
+            const btn = document.getElementById('btnImport');
+            btn.disabled = true;
+            try {
+                await postFile(`${API}/api/imports`, file);
+                // El backend no distingue en la respuesta si la importación tuvo
+                // errores internos (fila con formato inválido, etc.) — eso ya se ve en
+                // el estado real de la fila una vez refrescado el historial, con el
+                // motivo real (ver attachFailureReasons). El toast solo confirma que
+                // el archivo se envió y se procesó.
+                showToast('importToast', `"${file.name}" procesado. Revisá el resultado en la tabla.`, 'ok');
+                await loadHistory();
+            } catch (e) {
+                showToast('importToast', e.message, 'err', 6000);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function postFile(url, file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            const r = await fetch(url, { method: 'POST', body: formData });
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
         // ── Detalle: GET /api/imports/{id} ─────────────────────────────────────────
 
         function openModal() { document.getElementById('detailOverlay').classList.add('open'); }
@@ -492,6 +556,12 @@
         }
 
         function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function showToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
 
         function shortFileName(path) {
             if (!path) return '—';
