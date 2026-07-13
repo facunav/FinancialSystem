@@ -45,7 +45,12 @@ public sealed record MovementView(
     MovementType? MovementType,
     FinancialImpact? FinancialImpact,
     MovementWarning? Warning,
-    IReadOnlyList<ClassificationSuggestion> Suggestions);
+    IReadOnlyList<ClassificationSuggestion> Suggestions,
+    // PR3: comercio real y fecha/hora exacta, cuando el BankStatement de origen fue
+    // enriquecido desde Tarjeta de Débito (ver MovementLoader/LoadClassifiedAsync).
+    // Null en movimientos de Transaction o sin enriquecer — no reemplaza Description.
+    string? Merchant,
+    DateTime? MerchantAtUtc);
 
 /// <summary>
 /// Grupo sospechoso (K6) al que pertenece este movimiento, según ISuspicionDetector —

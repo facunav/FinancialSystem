@@ -214,6 +214,14 @@
             white-space: nowrap;
         }
 
+        /* PR3: descripción original del banco cuando el comercio (Tarjeta de Débito)
+           pasa a ser el texto principal — ver renderDescriptionCell. */
+        .merchant-original {
+            font-size: 11px;
+            color: var(--faint);
+            margin-top: 2px;
+        }
+
         /* PR-S5: sugerencias de clasificación (IClassificationSuggestionService) —
            información de solo lectura asociada al movimiento, nunca a la acción de
            clasificar (por eso vive junto a la descripción, no en .act-cell). Verde
@@ -750,6 +758,7 @@
 
         const fmt = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
         const fmtDate = iso => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
+        const fmtTime = iso => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
         // ── View model — desacoplado de MovementListItemDto ────────────────────────
 
@@ -758,6 +767,8 @@
                 sourceId: dto.sourceId,
                 date: dto.date,
                 description: dto.description,
+                merchant: dto.merchant ?? null,
+                merchantAtUtc: dto.merchantAtUtc ?? null,
                 amount: dto.amount,
                 currency: dto.currency,
                 source: dto.source,
@@ -950,7 +961,7 @@
                     <td class="cb-cell"><input type="checkbox" class="row-select" data-source-id="${m.sourceId}"${checked}${disabled}></td>
                     <td>${fmtDate(m.date)}</td>
                     <td class="desc-cell">
-                        <div class="truncate" title="${esc(m.description)}">${esc(m.description)}</div>
+                        ${renderDescriptionCell(m)}
                         ${renderSuggestionChips(m)}
                         ${renderClassificationChips(m)}
                     </td>
@@ -960,6 +971,19 @@
                     <td>${renderWarningCell(m)}</td>
                     <td class="act-cell">${renderActionsCell(m)}</td>
                 </tr>`;
+        }
+
+        // PR3: si el BankStatement de origen fue enriquecido desde Tarjeta de Débito
+        // (m.merchant != null), el comercio pasa a ser el texto principal y la
+        // descripción original del banco baja a una segunda línea — nunca se pierde.
+        function renderDescriptionCell(m) {
+            if (!m.merchant) {
+                return `<div class="truncate" title="${esc(m.description)}">${esc(m.description)}</div>`;
+            }
+            const time = m.merchantAtUtc ? ` · ${fmtTime(m.merchantAtUtc)}` : '';
+            return `
+                <div class="truncate" title="${esc(m.merchant)}">${esc(m.merchant)}${esc(time)}</div>
+                <div class="truncate merchant-original" title="${esc(m.description)}">${esc(m.description)}</div>`;
         }
 
         function renderStatusCell(m) {

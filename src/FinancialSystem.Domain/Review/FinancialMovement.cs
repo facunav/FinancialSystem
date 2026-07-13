@@ -69,6 +69,17 @@ public sealed record FinancialMovement
     /// </summary>
     public Guid? FinancialAccountId { get; init; }
 
+    /// <summary>
+    /// Comercio real, cuando este movimiento (BankStatement) fue enriquecido a partir del
+    /// extracto de Tarjeta de Débito. Null si no hubo enriquecimiento o la fuente no aplica
+    /// (Transaction). No reemplaza <see cref="Description"/> — ver PR3,
+    /// docs/patch/enriquecimiento-tarjeta-debito.md.
+    /// </summary>
+    public string? Merchant { get; init; }
+
+    /// <summary>Fecha/hora exacta de la compra según Tarjeta de Débito. Null junto con Merchant.</summary>
+    public DateTime? MerchantAtUtc { get; init; }
+
     public override string ToString() =>
         $"[{Source}] {Date:dd/MM/yy} | {Description} | {Currency} {Amount:N2}";
 }

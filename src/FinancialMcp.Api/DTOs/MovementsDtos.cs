@@ -37,7 +37,12 @@ public sealed record MovementListItemDto(
     // PR-S4: contexto de solo lectura, lista vacía (nunca null) si el motor no
     // encontró señal suficiente. Nunca presente en movimientos ya clasificados (ver
     // MovementView.Suggestions). Todavía sin consumidor en movements.html — ver PR-S5.
-    IReadOnlyList<ClassificationSuggestionDto> Suggestions)
+    IReadOnlyList<ClassificationSuggestionDto> Suggestions,
+    // PR3: comercio real y fecha/hora exacta desde Tarjeta de Débito, cuando el
+    // BankStatement de origen fue enriquecido. Null si no aplica — no reemplaza
+    // Description (ver MovementView.Merchant).
+    string? Merchant,
+    DateTime? MerchantAtUtc)
 {
     public static MovementListItemDto Create(MovementView m) => new(
         m.SourceId,
@@ -53,7 +58,9 @@ public sealed record MovementListItemDto(
         m.MovementType?.ToString(),
         m.FinancialImpact?.ToString(),
         m.Warning is null ? null : MovementWarningDto.Create(m.Warning),
-        m.Suggestions.Select(ClassificationSuggestionDto.Create).ToList());
+        m.Suggestions.Select(ClassificationSuggestionDto.Create).ToList(),
+        m.Merchant,
+        m.MerchantAtUtc);
 }
 
 public sealed record MovementWarningDto(

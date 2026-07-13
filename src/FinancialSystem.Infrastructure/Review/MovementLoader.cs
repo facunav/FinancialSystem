@@ -65,6 +65,8 @@ internal sealed class MovementLoader : IMovementLoader
         OriginalId = statement.RowNumber?.ToString(),
         SourceFile = statement.SourceFile,
         FinancialAccountId = statement.FinancialAccountId,
+        Merchant = statement.Merchant,
+        MerchantAtUtc = statement.MerchantAtUtc,
     };
 
     private static FinancialMovement ToFinancialMovement(Transaction transaction) => new()

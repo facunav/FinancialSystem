@@ -97,7 +97,9 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         Status: null, CategoryId: null, CounterpartyId: null,
         MovementType: null, FinancialImpact: null,
         Warning: warning,
-        Suggestions: suggestions);
+        Suggestions: suggestions,
+        Merchant: m.Merchant,
+        MerchantAtUtc: m.MerchantAtUtc);
 
     // PR-L4: antes ISuspicionDetector corría por separado sobre references y candidates,
     // así que un grupo nunca podía mezclar banco/tarjeta con legacy. Ahora IMovementLoader
@@ -152,13 +154,20 @@ internal sealed class MovementsQueryService : IMovementsQueryService
             .Select(i => i.SourceId)
             .ToList();
 
-        var bankAccountById = bankStatementIds.Count == 0
-            ? new Dictionary<Guid, Guid?>()
+        // PR3: junto con FinancialAccountId se trae Merchant/MerchantAtUtc — mismo query,
+        // sin agregar una consulta nueva — para que un movimiento ya clasificado también
+        // muestre el comercio si se enriqueció (el enriquecimiento puede llegar después
+        // de la clasificación, ver docs/patch/enriquecimiento-tarjeta-debito.md).
+        var bankInfoById = bankStatementIds.Count == 0
+            ? new Dictionary<Guid, (Guid? FinancialAccountId, string? Merchant, DateTime? MerchantAtUtc)>()
             : await _db.BankStatements
                 .AsNoTracking()
                 .Where(b => bankStatementIds.Contains(b.Id))
-                .Select(b => new { b.Id, b.FinancialAccountId })
-                .ToDictionaryAsync(x => x.Id, x => x.FinancialAccountId, cancellationToken);
+                .Select(b => new { b.Id, b.FinancialAccountId, b.Merchant, b.MerchantAtUtc })
+                .ToDictionaryAsync(
+                    x => x.Id,
+                    x => (x.FinancialAccountId, x.Merchant, x.MerchantAtUtc),
+                    cancellationToken);
 
         var transactionAccountById = transactionIds.Count == 0
             ? new Dictionary<Guid, Guid?>()
@@ -171,8 +180,9 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         return items.Select(i =>
         {
             var isBankStatement = i.SourceEntityType == SourceEntityType.BankStatement;
+            var bankInfo = isBankStatement ? bankInfoById.GetValueOrDefault(i.SourceId) : default;
             var financialAccountId = isBankStatement
-                ? bankAccountById.GetValueOrDefault(i.SourceId)
+                ? bankInfo.FinancialAccountId
                 : transactionAccountById.GetValueOrDefault(i.SourceId);
             var source = isBankStatement ? MovementSource.BankDebit : MovementSource.CreditCard;
             var classifiedMovement = i.ClassifiedMovement!;
@@ -187,7 +197,9 @@ internal sealed class MovementsQueryService : IMovementsQueryService
                 // parte de un grupo sospechoso ni recibir una sugerencia (no tiene
                 // sentido sugerir algo que el usuario ya clasificó).
                 Warning: null,
-                Suggestions: []);
+                Suggestions: [],
+                Merchant: bankInfo.Merchant,
+                MerchantAtUtc: bankInfo.MerchantAtUtc);
         }).ToList();
     }
 
