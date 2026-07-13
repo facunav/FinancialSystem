@@ -28,11 +28,19 @@ public static class ImportBatchEndpoints
     // el watcher nunca lo vea y no se procese dos veces. RouteAsync se espera por
     // completo antes de responder — para este PR, ver el resultado significa consultar
     // GET /api/imports/history después, igual que ya hace imports.html hoy.
+    //
+    // El archivo solo necesita existir mientras dura RouteAsync (el propio motor de
+    // importación no reabre SourceFile una vez terminado — ver
+    // docs/Epics/EpicaO-ImportacionManual.md). No hay ningún beneficio hoy en
+    // conservarlo, así que se borra siempre en el finally, haya salido bien o mal la
+    // importación. El borrado es best-effort: si falla, se loguea y no afecta el
+    // resultado ya devuelto al handler.
 
     private static async Task<IResult> Upload(
         IFormFile? file,
         [FromServices] IFileImportRouter router,
         [FromServices] IWebHostEnvironment env,
+        [FromServices] ILogger<Program> logger,
         CancellationToken ct)
     {
         if (file is null || file.Length == 0)
@@ -50,22 +58,47 @@ public static class ImportBatchEndpoints
         if (string.IsNullOrWhiteSpace(safeFileName))
             return Results.BadRequest("Nombre de archivo inválido.");
 
-        var uploadDir = Path.Combine(env.ContentRootPath, "ManualImports", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(uploadDir);
-        var savedPath = Path.Combine(uploadDir, safeFileName);
+        var tempDir = Path.Combine(env.ContentRootPath, "TempImports", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var savedPath = Path.Combine(tempDir, safeFileName);
 
-        await using (var stream = new FileStream(savedPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        try
         {
-            await file.CopyToAsync(stream, ct);
+            await using (var stream = new FileStream(savedPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await file.CopyToAsync(stream, ct);
+            }
+
+            await router.RouteAsync(savedPath, ct);
+
+            return Results.Ok(new
+            {
+                FileName = safeFileName,
+                Message = "Importación procesada. Consultá el historial (/api/imports/history) para ver el resultado."
+            });
         }
-
-        await router.RouteAsync(savedPath, ct);
-
-        return Results.Ok(new
+        finally
         {
-            FileName = safeFileName,
-            Message = "Importación procesada. Consultá el historial (/api/imports/history) para ver el resultado."
-        });
+            TryDeleteTempImport(savedPath, tempDir, logger);
+        }
+    }
+
+    private static void TryDeleteTempImport(string filePath, string tempDir, ILogger logger)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+
+            // Solo borra el directorio temporal si quedó vacío — nunca falla la
+            // limpieza del archivo por esto.
+            if (Directory.Exists(tempDir) && !Directory.EnumerateFileSystemEntries(tempDir).Any())
+                Directory.Delete(tempDir);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo eliminar el archivo temporal de importación '{FilePath}'", filePath);
+        }
     }
 
     // ── GET /api/imports/history?take=50 ──────────────────────────────────────
