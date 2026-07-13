@@ -13,7 +13,7 @@ public sealed class FileIngestionOptions
     public string[] LegacyExpenseFilePatterns { get; set; } = ["Cuentas*.xlsx"];
 
     public string[] BbvaBankStatementFilePatterns { get; set; } =
-       ["Caja*.xls", "*ahorros*.xls", "*corriente*.xls"];
+       ["Caja*.xls", "*ahorros*.xls", "*corriente*.xls", "Detalle_mov_cuenta*.xls"];
 
     public string[] BbvaDebitCardFilePatterns { get; set; } =
        ["*ltimos_movimientos*.xlsx", "*Movimientos*Debito*.xlsx"];
