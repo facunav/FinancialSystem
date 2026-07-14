@@ -166,6 +166,41 @@ Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantie
 
 ---
 
+## M9 — Diagnosticar números de cuenta detectados sin `FinancialAccount` coincidente
+
+**Objetivo.** Que cuando el archivo trae un `AccountNumber` (extraído por `BbvaBankStatementParser`) y no existe ninguna `FinancialAccount` activa con ese número, el sistema deje de descartar ese hecho en silencio: debe persistirse como diagnóstico/warning de la corrida, visible en el historial de importaciones.
+
+**Alcance de esta historia — solo Parte A (diagnóstico).** Ver "Parte B" más abajo para lo que queda explícitamente fuera.
+
+**Problema que resuelve.** Gap encontrado al investigar por qué, tras M5, una importación con un número de cuenta no registrado "importa correctamente" sin ninguna señal para el usuario. `AssignFinancialAccountAsync` (`BbvaBankStatementImporter`) ya distingue internamente 0 matches / 1 match / >1 matches, pero solo actúa (asigna) en el caso de match único y solo deja rastro — en el log, no en ningún lado visible al usuario — en el caso ambiguo. El caso de 0 matches, que es exactamente "número de cuenta desconocido", no genera ningún registro: ni en log, ni en `ImportBatch`, ni en `ImportBatchLine`. No es un hallazgo del análisis original (`ImportWorkflowReview.md`) — surge de validar M5 contra un caso real donde la cuenta del archivo no estaba dada de alta.
+
+**Beneficio para el usuario.** Deja de haber un caso de "importó pero no dice nada": si el sistema vio un número de cuenta y no lo reconoce, el usuario se entera al revisar el historial, en vez de descubrirlo indirectamente mirando movimiento por movimiento en `movements.html`.
+
+**Riesgos.** Bajo. Es una adición de un diagnóstico a un canal que ya existe y ya se persiste (`ImportRunResult.Diagnostics` → `ImportBatchLine`, vía `FileImportRouter.PersistImportBatchAsync`) — no se crea ninguna tabla, campo persistido nuevo, ni endpoint. El riesgo principal es de alcance: `PersistAsync` hoy no devuelve diagnósticos (solo `(Inserted, Duplicates)`), así que hay que extender esa forma de retorno — mismo tipo de ajuste que ya requieren M1 y M3, ver análisis de solapamiento más abajo.
+
+**Dependencias.** Depende de M5 (ya implementada) — reutiliza `AssignFinancialAccountAsync`, que es quien ya tiene la información en el momento exacto en que se descarta.
+
+**Criterios de aceptación.**
+- Al importar un archivo con `AccountNumber` extraído y ninguna `FinancialAccount` activa coincidente, el detalle de la corrida (`GET /api/imports/{id}`) incluye una línea explicando que se detectó ese número y no coincide con ninguna cuenta registrada.
+- El caso de match único (M5) y el caso ambiguo (ya logueado) no cambian de comportamiento — esta historia solo agrega la señal que falta para 0 matches.
+- No se persiste ningún campo nuevo en `BankStatement` ni en `FinancialAccount`; el diagnóstico usa el mismo canal que ya usan los demás handlers.
+
+**Tamaño estimado.** S.
+
+---
+
+### Parte B de este hallazgo — UX futura (explícitamente fuera de alcance de M9)
+
+No forma parte de esta historia, no tiene criterios de aceptación ni tamaño estimado todavía — se deja documentada para no perder el hallazgo, a la espera de una decisión de producto:
+
+- Sugerir activamente la creación de una `FinancialAccount` cuando se detecta un número sin coincidencia (más allá de solo diagnosticarlo).
+- Precargar el formulario de alta de cuenta (`accounts.html`) con el número y, si es inferible, el tipo de cuenta detectado.
+- Acciones directas desde `imports.html` (ej. un botón "Crear cuenta" en la fila del batch) o desde `accounts.html` (un listado de "números vistos sin cuenta asociada").
+
+Requiere, antes de diseñarse: decidir si la creación debe ser un paso explícito del usuario (más seguro, más fricción) o si alguna vez se contempla una creación semi-automática con confirmación — la misma clase de decisión de producto que ya frena a M7. No se toca en esta épica hasta que M9 esté resuelta y haya una decisión tomada.
+
+---
+
 # Orden recomendado de implementación
 
 1. **M2** — corrección acotada, bajo riesgo, con evidencia exacta del error; desbloquea M5.
@@ -174,12 +209,14 @@ Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantie
 4. **M5** — una vez resuelto M2, ya hay número de cuenta real para cruzar.
 5. **M6** — cierra el caso que M5 no cubre automáticamente.
 6. **M4** — el propio análisis sugiere esperarla hasta poder dimensionar cuánto pesa el problema una vez resueltos M1/M2/M5.
-7. **M7** — decisión de producto, puede tomarse en cualquier momento del proceso, en paralelo con lo anterior.
-8. **M8** — cosmético, sin urgencia; encaja en cualquier hueco del calendario.
+7. **M9** — depende solo de M5 (ya resuelta); mismo tipo de cambio de bajo riesgo que M2, natural encararla apenas se prioricen diagnósticos.
+8. **M7** — decisión de producto, puede tomarse en cualquier momento del proceso, en paralelo con lo anterior.
+9. **M8** — cosmético, sin urgencia; encaja en cualquier hueco del calendario.
 
 ## Qué puede desarrollarse en paralelo
 
 - **M1 y M2** son completamente independientes entre sí (tocan handlers distintos) y pueden avanzar al mismo tiempo.
+- **M9** puede avanzar en paralelo con M1/M3/M4 — depende únicamente de M5 (ya resuelta), no de ninguna historia de diagnóstico pendiente.
 - **M7** (la decisión sobre "Alerta") no bloquea ni depende de ninguna otra historia — puede resolverse en paralelo con cualquiera de las anteriores.
 - **M8** puede tomarse en cualquier momento sin coordinación con el resto.
 
@@ -189,6 +226,7 @@ Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantie
 - **M6** conviene que espere a **M5** — para que la asignación manual sea el camino de excepción, no el principal, y no se termine construyendo una UI de asignación manual que la automática vuelve innecesaria en la mayoría de los casos.
 - **M3** conviene que espere a **M1** — evita tocar el contrato de resultado de los handlers en dos rondas separadas.
 - **M4** conviene esperar hasta tener M1, M2 y M5 resueltas, para dimensionar el problema real con esas causas ya corregidas.
+- **M9** no tiene que esperar a M1/M3, pero conviene evaluarla junto con M3 si se decide extender `PersistAsync` para devolver diagnósticos en la misma ronda — ver análisis de solapamiento en la sección M9.
 
 ## Qué podría descartarse si el producto evoluciona de otra manera
 
@@ -196,6 +234,7 @@ Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantie
 - **M6** — si la autodetección de M5 cubre en la práctica la enorme mayoría de los casos reales, la asignación manual puede no valer la fricción de construirla; quedaría como mecanismo de excepción que en los hechos casi nunca se usa.
 - **M7** — la decisión misma puede resultar en descartar la columna "Alerta" directamente, en cuyo caso no hay historia de implementación de acción que seguir.
 - **M8** — es puramente cosmético; puede posponerse indefinidamente sin costo funcional real.
+- **M9** — si la Parte B (sugerir/crear cuenta) nunca se prioriza, el diagnóstico de M9 puede terminar siendo información que nadie actúa; igual vale más barato que M4 así que el riesgo de "construir algo que no se use" es menor.
 
 ---
 
