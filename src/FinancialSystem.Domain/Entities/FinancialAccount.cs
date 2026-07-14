@@ -10,8 +10,10 @@ namespace FinancialSystem.Domain.Entities;
 ///
 /// RELACIÓN CON BankStatement/Transaction:
 ///   FK opcional (nullable) desde ambas — un movimiento puede existir sin cuenta
-///   asignada. La asignación es manual por ahora; no hay wiring automático desde
-///   el pipeline de importación (ver docs/RoadMaps/FinancialMcp-vNext.md, Épica J).
+///   asignada. Para BBVA Caja de Ahorro, BbvaBankStatementImporter asigna
+///   automáticamente cuando AccountNumber coincide sin ambigüedad con una cuenta
+///   activa (ver docs/Architecture/EpicaMImportWorkflow.md, historia M5); el resto
+///   de los casos (sin match, otras fuentes) sigue siendo manual.
 ///
 /// BASE PARA ÉPICA M:
 ///   Type=Investment es un valor válido desde ahora (ver ADR-004) pero no habilita
@@ -28,7 +30,11 @@ public class FinancialAccount
     /// <summary>Tipo de cuenta.</summary>
     public FinancialAccountType Type { get; set; }
 
-    /// <summary>Número de cuenta o tarjeta, si aplica. Solo referencia — no se usa para matching automático.</summary>
+    /// <summary>
+    /// Número de cuenta o tarjeta, si aplica. Usado por BbvaBankStatementImporter para
+    /// autoasignar FinancialAccountId en importaciones de Caja de Ahorro (match exacto,
+    /// solo si es la única cuenta activa con ese número — ver historia M5).
+    /// </summary>
     public string? AccountNumber { get; set; }
 
     public string Currency { get; set; } = "ARS";

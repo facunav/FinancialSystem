@@ -62,9 +62,10 @@ public class BankStatement
     // ── Cuenta financiera ────────────────────────────────────────
 
     /// <summary>
-    /// Cuenta financiera asociada a este movimiento. Nullable: la asignación es manual
-    /// por ahora — no hay wiring automático desde el pipeline de importación (ver
-    /// docs/RoadMaps/FinancialMcp-vNext.md, Épica J).
+    /// Cuenta financiera asociada a este movimiento. Nullable: para BBVA Caja de Ahorro,
+    /// BbvaBankStatementImporter la asigna automáticamente cuando AccountNumber coincide
+    /// sin ambigüedad con una FinancialAccount activa (ver docs/Architecture/EpicaMImportWorkflow.md,
+    /// historia M5); si no hay match, o para otras fuentes, la asignación sigue siendo manual.
     /// </summary>
     public Guid? FinancialAccountId { get; set; }
     public FinancialAccount? FinancialAccount { get; set; }
