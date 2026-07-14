@@ -10,10 +10,12 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements;
 /// <summary>
 /// Parsea las filas ya leídas del XLS BBVA Caja de Ahorros.
 ///
-/// ESTRUCTURA CONFIRMADA CON EL ARCHIVO REAL:
-///   Fila 0 (base-0): "Detalle de Movimientos de Cuenta: CA$ 214-45099/4"
-///   Fila 1:          "Fecha | Concepto | (vacío) | Importe | Saldo"
-///   Fila 2+:         Datos de movimientos
+/// ESTRUCTURA CONFIRMADA CON EL ARCHIVO REAL (releída fila por fila,
+/// ver docs/Architecture/auditoriasemanticamovimientosreales.md):
+///   Fila 0 (base-0): vacía
+///   Fila 1:          "Detalle de Movimientos de Cuenta: CA$ 214-45099/4"
+///   Fila 2:          "Fecha | Concepto | (vacío) | Importe | Saldo"
+///   Fila 3+:         Datos de movimientos
 ///
 /// COLUMNAS (base-0):
 ///   0 = Fecha    → "dd/MM/yyyy" (siempre string en este archivo)
@@ -28,9 +30,9 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements;
 public sealed class BbvaBankStatementParser
 {
     private const string BankName  = "BBVA";
-    private const int TitleRowIdx  = 0;
-    private const int HeaderRowIdx = 1;
-    private const int DataStartIdx = 2;
+    private const int TitleRowIdx  = 1;
+    private const int HeaderRowIdx = 2;
+    private const int DataStartIdx = 3;
 
     private const int ColFecha    = 0;
     private const int ColConcepto = 1;
@@ -67,7 +69,7 @@ public sealed class BbvaBankStatementParser
 
         if (rows.Count < DataStartIdx + 1)
         {
-            diagnostics.Add("Archivo sin filas de datos (menos de 3 filas totales)");
+            diagnostics.Add("Archivo sin filas de datos (menos de 4 filas totales)");
             return new ParseResult(statements, 0, diagnostics);
         }
 
