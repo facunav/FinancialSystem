@@ -151,11 +151,19 @@ public sealed class BbvaTransactionLineParser
         {
             var usdAmountResult = CurrencyDetector.TryExtractUsdAmount(rawLine);
             if (usdAmountResult.Success)
+            {
                 finalAmount = usdAmountResult.Value!;
+            }
             else
+            {
+                // Sin un monto en USD confiable, la transacción se registra en ARS con
+                // el monto ya extraído (Paso 2) — moneda e importe deben cambiar juntos,
+                // nunca uno sin el otro (ver CurrencyDetector.TryExtractUsdAmount).
+                currency = "ARS";
                 _logger.LogWarning(
-                    "Línea USD sin monto extraíble en USD, usando monto ARS como fallback. Línea: '{Line}'",
+                    "Línea con marca USD pero sin monto en USD extraíble, se registra en ARS. Línea: '{Line}'",
                     rawLine);
+            }
         }
 
         // ── PASO 5: Construir entidad ──────────────────────────────
