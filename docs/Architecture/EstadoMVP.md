@@ -16,7 +16,7 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 |---|---|---|
 | Importar banco (Caja de Ahorro) | ✅ Terminada | Patrón de archivo real reconocido; desfasaje de fila corregido (M2). |
 | Importar tarjeta de débito | ✅ Terminada | Enriquecimiento contra Caja de Ahorro funcionando; cuenta financiera asignada automáticamente (M5). |
-| Importar tarjeta de crédito (Visa/Mastercard PDF) | ⚠ Bug bloqueante | Funciona, pero puede persistir `Currency="USD"` con `Amount` en pesos — confirmado línea por línea contra el código, no es hipótesis. |
+| Importar tarjeta de crédito (Visa/Mastercard PDF) | ✅ Bug corregido | `Currency="USD"` con `Amount` en pesos — causa raíz confirmada en `CurrencyDetector.TryExtractUsdAmount` (segundo intento permisivo que tomaba el total en pesos como si fuera el monto en USD), corregida en `BbvaTransactionLineParser.cs`/`CurrencyDetector.cs`. Mastercard no tenía este bug. 3 tests de regresión agregados. |
 | Reconciliar automáticamente (débito↔banco) | ✅ Terminada | Simulado contra 95 operaciones reales de débito y 108 de banco: 91 enriquecidas, 4 ambiguas (correctamente conservador), 0 sin match. |
 | Clasificar gastos (categoría, medio, contraparte) | ✅ Terminada | `movements.html`, motor de sugerencias, aceptar sugerencia en 1 clic — verificado en código, ya implementado. |
 | Corregir manualmente sin fricción | ✅ Terminada | Creación de contraparte sin salir de pantalla — verificado en código (`createCounterpartyInline`). |
@@ -30,9 +30,9 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 
 ## 3. Bugs bloqueantes, en orden de resolución
 
-**1. Moneda/importe en tarjeta de crédito.** Mecanismo confirmado: `BbvaTransactionLineParser` (Visa) decide correctamente con `CurrencyDetector.Detect` (`\bUSD\b`) si debe re-extraer el monto en dólares — pero esa decisión se descarta. `TransactionNormalizer.ResolveCurrency` vuelve a adivinar la moneda desde la descripción ya limpia, con `ImportValueParser.DetectCurrencyFromText` (`Contains("USD")`, sin límite de palabra) — un criterio distinto y más laxo. Cuando "USD" aparece pegado a la palabra anterior sin espacio (patrón real, documentado en el propio comentario del parser), el primer detector no lo ve pero el segundo sí — la transacción queda etiquetada `Currency="USD"` con el monto en pesos.
+**1. Moneda/importe en tarjeta de crédito — ✅ CORREGIDO.** El mecanismo confirmado por lectura directa del código, al implementar el fix, resultó distinto al diseñado en las rondas de análisis previas: `TransactionNormalizer`/`ImportValueParser.DetectCurrencyFromText`/`CurrencyHint` no estaban involucrados (`CurrencyHint` ya se poblaba correctamente desde `PdfStatementParserBase.cs`). El bug real vivía enteramente en `CurrencyDetector.TryExtractUsdAmount`: un segundo intento que, cuando "USD" no tenía un monto pegado al lado, tomaba el primer monto disponible en el resto de la línea — en la práctica, el total en pesos — y lo devolvía como si fuera el monto en dólares. Corregido eliminando ese segundo intento y hardeando `BbvaTransactionLineParser` para que, sin un monto en USD confiable, registre la transacción en ARS (moneda e importe cambian juntos). `MastercardTransactionLineParser` no tenía este bug. 3 tests de regresión agregados en `tests/FinancialSystem.Infrastructure.Tests/Parsing/BbvaTransactionLineParserTests.cs`.
 
-**Diseño acordado para el fix** (ya revisado en profundidad en rondas anteriores, no se vuelve a discutir): cada parser declara su decisión de moneda con certeza explícita en el mismo paso donde decide el importe; el único lugar que resuelve "no se pudo determinar" queda centralizado y explícito, no una re-detección heurística. Sin Value Object `Money` — no hay ninguna operación real del producto hoy que lo justifique.
+**Hallazgo relacionado, fuera de alcance de este fix, movido al backlog**: `CurrencyDetector.Detect` (`\bUSD\b`) no reconoce "USD" cuando aparece pegado sin espacio a la palabra anterior (ej. `...8GUSD`, patrón real documentado en el comentario del parser) — una transacción en dólares así formateada queda silenciosamente clasificada como ARS. Es un bug distinto (misdetección, no inconsistencia Currency/Amount) y no se tocó en este PR.
 
 **2. Idempotencia de tarjeta PDF.** Reimportar el mismo resumen puede duplicar movimientos o romper la corrida contra el índice único sin manejo.
 
@@ -45,6 +45,7 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 ## 4. Backlog — producto futuro (nada se pierde, solo se saca del camino)
 
 **Modelo de cuentas avanzado**: `Institution`/`ProductType`/`Identifier`, tarjetas de crédito como `FinancialAccount` distinta, `Money` como Value Object.
+**Parsing**: `CurrencyDetector.Detect` no reconoce "USD" pegado sin espacio a la palabra anterior (ej. `...8GUSD`) — transacción en dólares clasificada silenciosamente como ARS. Distinto del bug ya corregido arriba.
 **Inversiones**: `FinancialAccount.Type=Investment`, `InvestmentAccount`.
 **Brokers / Cripto / Wallets / Multi-banco**: sin importador ni modelo hoy, ninguno con trabajo previo real.
 **Reconciliación de dominio**: superposición `Counterparty.OwnAccount/OwnCard/Investment` vs. `FinancialAccount` — decisión de una línea pendiente (ver ADR-001), no bloquea nada.
@@ -67,8 +68,8 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 
 ## 6. Orden exacto de trabajo hasta MVP estable
 
-1. **Fix de moneda/importe en tarjeta de crédito** (bug #1) — el de mayor impacto, ataca directamente "cuánto gasté".
-2. **Idempotencia de tarjeta PDF** (bug #2).
+1. ~~**Fix de moneda/importe en tarjeta de crédito** (bug #1)~~ — ✅ Hecho.
+2. **Idempotencia de tarjeta PDF** (bug #2) — siguiente tarea.
 3. **Fix de XSS en dashboard** (bug #3) — chico, se hace junto con el punto anterior.
 4. **Badge de pendientes de clasificar** — única funcionalidad del MVP todavía no empezada; el dato ya es calculable, es la tarea más chica de las cuatro.
 5. **Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.
