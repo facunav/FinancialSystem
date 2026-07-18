@@ -3,6 +3,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Helpers;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -84,7 +85,7 @@ internal sealed class ImportFileProcessingSink(
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var inserted = 0;
+        var candidates = new List<(ParsedTransaction Parsed, string ExternalId)>();
         var duplicates = 0;
 
         foreach (var parsed in normalized)
@@ -97,6 +98,29 @@ internal sealed class ImportFileProcessingSink(
                 parsed.Date, parsed.Amount, parsed.Description, parsed.CouponNumber);
 
             if (!seen.Add(externalId))
+            {
+                duplicates++;
+                continue;
+            }
+
+            candidates.Add((parsed, externalId));
+        }
+
+        // Idempotencia entre corridas: una sola query batch para saber qué ExternalId ya
+        // existen (mismo patrón que BbvaBankStatementImporter.PersistAsync) — sin esto,
+        // reimportar un archivo ya importado chocaba contra el índice único de
+        // Transactions.ExternalId sin manejo, y perdía también las filas nuevas del mismo
+        // archivo (SaveChangesAsync es una sola transacción implícita).
+        var incomingIds = candidates.Select(c => c.ExternalId).ToHashSet();
+        var existingIds = await db.Transactions
+            .Where(t => incomingIds.Contains(t.ExternalId))
+            .Select(t => t.ExternalId)
+            .ToHashSetAsync(cancellationToken);
+
+        var inserted = 0;
+        foreach (var (parsed, externalId) in candidates)
+        {
+            if (existingIds.Contains(externalId))
             {
                 duplicates++;
                 continue;
@@ -118,7 +142,11 @@ internal sealed class ImportFileProcessingSink(
             inserted++;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        if (inserted > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         totalSw.Stop();
 
         logger.LogInformation(
