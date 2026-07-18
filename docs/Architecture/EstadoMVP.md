@@ -21,7 +21,7 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 | Clasificar gastos (categoría, medio, contraparte) | ✅ Terminada | `movements.html`, motor de sugerencias, aceptar sugerencia en 1 clic — verificado en código, ya implementado. |
 | Corregir manualmente sin fricción | ✅ Terminada | Creación de contraparte sin salir de pantalla — verificado en código (`createCounterpartyInline`). |
 | Saber cuánto/dónde/con qué medio/categoría | ✅ Terminada | `FinancialMetricsService` + 4 herramientas MCP, ya funcionando sobre `ClassifiedMovement`. |
-| Visualizar (dashboard) | ⚠ Bug de seguridad | Funciona, pero `dashboard.html` es la única de 5 pantallas sin función de escape — un nombre de categoría puede inyectar HTML sin escapar. |
+| Visualizar (dashboard) | ✅ Bug corregido | `dashboard.html` ya usa `esc()` (copiada de las otras 4 pantallas) en las 3 interpolaciones que recibían texto del backend sin escapar. |
 | Detectar movimientos sin clasificar | ❌ No empezada | El dato ya es calculable (filtrar por `Status == null`); ningún script completa el badge que ya existe en el HTML. |
 | Idempotencia real de tarjeta PDF | ✅ Bug corregido | `ImportFileProcessingSink` ahora consulta `ExternalId` existentes contra la base antes de insertar (mismo patrón que `BbvaBankStatementImporter.PersistAsync`). Reimportar ya no lanza excepción ni pierde las transacciones nuevas de un archivo parcialmente repetido. 2 tests con EF Core InMemory agregados. |
 | MCP con datos confiables | 🟡 Parcial | Las 4 herramientas ya existen; su confiabilidad depende de cerrar el bug de moneda primero — no hace falta backend nuevo para las preguntas más simples. |
@@ -36,7 +36,7 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 
 **2. Idempotencia de tarjeta PDF — ✅ CORREGIDO.** Confirmado por lectura directa: el sink solo dedupeaba dentro del mismo archivo (`HashSet` en memoria), sin consultar la base — reimportar chocaba contra el índice único de `Transactions.ExternalId` sin manejo, y al ser `SaveChangesAsync` una sola transacción implícita, se perdían también las transacciones nuevas del mismo archivo (no "se duplicaba" — fallaba toda la corrida). Corregido con la misma consulta batch que ya usa `BbvaBankStatementImporter.PersistAsync`. 2 tests con EF Core InMemory agregados en `tests/FinancialSystem.Infrastructure.Tests/Imports/ImportFileProcessingSinkIdempotencyTests.cs`.
 
-**3. XSS en dashboard.html.** Severidad acotada (self-XSS en app de un solo usuario), fix barato — siguiente tarea.
+**3. XSS en dashboard.html — ✅ CORREGIDO.** `esc()` copiada byte a byte de `movements.html`/`imports.html`/`accounts.html`/`counterparties.html` (idéntica en las 4). Se envolvieron las 3 interpolaciones que recibían texto del backend sin escapar: `categoryDisplayName` (lista de categorías), `categoryDisplayName` (comparación vs. mes anterior) y `monthLabel` (tooltip del gráfico de tendencia). Los campos numéricos y los que ya usaban `textContent` no se tocaron.
 
 Ningún otro bug bloqueante encontrado con evidencia de código en esta revisión.
 
@@ -68,10 +68,10 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 
 ## 6. Orden exacto de trabajo hasta MVP estable
 
-1. ~~**Fix de moneda/importe en tarjeta de crédito** (bug #1)~~ — ✅ Hecho.
-2. ~~**Idempotencia de tarjeta PDF** (bug #2)~~ — ✅ Hecho.
-3. **Fix de XSS en dashboard** (bug #3) — siguiente tarea.
-4. **Badge de pendientes de clasificar** — única funcionalidad del MVP todavía no empezada; el dato ya es calculable, es la tarea más chica de las cuatro.
+1. ~~**Fix de moneda/importe en tarjeta de crédito** (bug #1)~~ — ✅ Hecho. Etapa 0 completa.
+2. ~~**Idempotencia de tarjeta PDF** (bug #2)~~ — ✅ Hecho. Etapa 0 completa.
+3. ~~**Fix de XSS en dashboard** (bug #3)~~ — ✅ Hecho. Etapa 0 completa.
+4. **Badge de pendientes de clasificar** — última funcionalidad del MVP sin empezar; el dato ya es calculable, es la tarea más chica que queda. Siguiente tarea.
 5. **Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.
 
 Con estos 4 puntos técnicos cerrados, el MVP tal como fue definido queda completo — todo lo demás documentado en esta conversación es backlog de producto futuro, no camino a un MVP usable.
