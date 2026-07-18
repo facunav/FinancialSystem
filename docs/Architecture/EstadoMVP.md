@@ -23,7 +23,7 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 | Saber cuánto/dónde/con qué medio/categoría | ✅ Terminada | `FinancialMetricsService` + 4 herramientas MCP, ya funcionando sobre `ClassifiedMovement`. |
 | Visualizar (dashboard) | ⚠ Bug de seguridad | Funciona, pero `dashboard.html` es la única de 5 pantallas sin función de escape — un nombre de categoría puede inyectar HTML sin escapar. |
 | Detectar movimientos sin clasificar | ❌ No empezada | El dato ya es calculable (filtrar por `Status == null`); ningún script completa el badge que ya existe en el HTML. |
-| Idempotencia real de tarjeta PDF | ❌ No empezada | Confirmado en código: solo dedupea en memoria dentro del mismo archivo, sin consultar la base antes de insertar. |
+| Idempotencia real de tarjeta PDF | ✅ Bug corregido | `ImportFileProcessingSink` ahora consulta `ExternalId` existentes contra la base antes de insertar (mismo patrón que `BbvaBankStatementImporter.PersistAsync`). Reimportar ya no lanza excepción ni pierde las transacciones nuevas de un archivo parcialmente repetido. 2 tests con EF Core InMemory agregados. |
 | MCP con datos confiables | 🟡 Parcial | Las 4 herramientas ya existen; su confiabilidad depende de cerrar el bug de moneda primero — no hace falta backend nuevo para las preguntas más simples. |
 
 ---
@@ -34,9 +34,9 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 
 **Hallazgo relacionado, fuera de alcance de este fix, movido al backlog**: `CurrencyDetector.Detect` (`\bUSD\b`) no reconoce "USD" cuando aparece pegado sin espacio a la palabra anterior (ej. `...8GUSD`, patrón real documentado en el comentario del parser) — una transacción en dólares así formateada queda silenciosamente clasificada como ARS. Es un bug distinto (misdetección, no inconsistencia Currency/Amount) y no se tocó en este PR.
 
-**2. Idempotencia de tarjeta PDF.** Reimportar el mismo resumen puede duplicar movimientos o romper la corrida contra el índice único sin manejo.
+**2. Idempotencia de tarjeta PDF — ✅ CORREGIDO.** Confirmado por lectura directa: el sink solo dedupeaba dentro del mismo archivo (`HashSet` en memoria), sin consultar la base — reimportar chocaba contra el índice único de `Transactions.ExternalId` sin manejo, y al ser `SaveChangesAsync` una sola transacción implícita, se perdían también las transacciones nuevas del mismo archivo (no "se duplicaba" — fallaba toda la corrida). Corregido con la misma consulta batch que ya usa `BbvaBankStatementImporter.PersistAsync`. 2 tests con EF Core InMemory agregados en `tests/FinancialSystem.Infrastructure.Tests/Imports/ImportFileProcessingSinkIdempotencyTests.cs`.
 
-**3. XSS en dashboard.html.** Severidad acotada (self-XSS en app de un solo usuario), fix barato, se resuelve junto con lo anterior.
+**3. XSS en dashboard.html.** Severidad acotada (self-XSS en app de un solo usuario), fix barato — siguiente tarea.
 
 Ningún otro bug bloqueante encontrado con evidencia de código en esta revisión.
 
@@ -69,8 +69,8 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 ## 6. Orden exacto de trabajo hasta MVP estable
 
 1. ~~**Fix de moneda/importe en tarjeta de crédito** (bug #1)~~ — ✅ Hecho.
-2. **Idempotencia de tarjeta PDF** (bug #2) — siguiente tarea.
-3. **Fix de XSS en dashboard** (bug #3) — chico, se hace junto con el punto anterior.
+2. ~~**Idempotencia de tarjeta PDF** (bug #2)~~ — ✅ Hecho.
+3. **Fix de XSS en dashboard** (bug #3) — siguiente tarea.
 4. **Badge de pendientes de clasificar** — única funcionalidad del MVP todavía no empezada; el dato ya es calculable, es la tarea más chica de las cuatro.
 5. **Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.
 
