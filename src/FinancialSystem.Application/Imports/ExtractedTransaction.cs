@@ -7,5 +7,6 @@ public sealed record ExtractedTransaction(
     decimal Amount,
     string? CurrencyHint = null,
     string? CouponNumber = null,
-    string? RawLine = null,         
-    string? SourceLocation = null);
+    string? RawLine = null,
+    string? SourceLocation = null,
+    string? AccountNumber = null);

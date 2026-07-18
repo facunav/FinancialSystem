@@ -117,6 +117,13 @@ internal sealed class ImportFileProcessingSink(
             .Select(t => t.ExternalId)
             .ToHashSetAsync(cancellationToken);
 
+        // Cuenta financiera: mismo patrón que BbvaBankStatementImporter.AssignFinancialAccountAsync
+        // -- una sola query batch, porque el número de cuenta es el mismo para todo el
+        // archivo (viene del encabezado del PDF, no por transacción). A diferencia de
+        // BankStatement, Transaction no persiste su propio AccountNumber, así que acá se
+        // resuelve el FinancialAccountId antes de construir cada fila, no después.
+        var financialAccountId = await ResolveFinancialAccountIdAsync(db, candidates, cancellationToken);
+
         var inserted = 0;
         foreach (var (parsed, externalId) in candidates)
         {
@@ -137,7 +144,8 @@ internal sealed class ImportFileProcessingSink(
                 CouponNumber = parsed.CouponNumber,
                 RawLine = parsed.RawLine,
                 SourceFile = filePath,
-                ExternalId = externalId
+                ExternalId = externalId,
+                FinancialAccountId = financialAccountId
             });
             inserted++;
         }
@@ -158,5 +166,47 @@ internal sealed class ImportFileProcessingSink(
 
         return new ImportRunResult(
             inserted, duplicates, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics);
+    }
+
+    /// <summary>
+    /// Resuelve FinancialAccountId cuando el número de cuenta extraído del encabezado
+    /// del PDF coincide, de forma exacta y sin ambigüedad, con una única FinancialAccount
+    /// activa. Si no hay número de cuenta, no hay match, o hay más de una cuenta con el
+    /// mismo número, no asigna nada -- la transacción queda igual que hoy (sin cuenta).
+    /// Mismo patrón que BbvaBankStatementImporter.AssignFinancialAccountAsync.
+    /// </summary>
+    private async Task<Guid?> ResolveFinancialAccountIdAsync(
+        IApplicationDbContext db,
+        IReadOnlyList<(ParsedTransaction Parsed, string ExternalId)> candidates,
+        CancellationToken ct)
+    {
+        var accountNumber = candidates
+            .Select(c => c.Parsed.AccountNumber)
+            .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+
+        if (string.IsNullOrWhiteSpace(accountNumber))
+            return null;
+
+        var matches = await db.FinancialAccounts
+            .Where(a => !a.IsDeactivated && a.AccountNumber == accountNumber)
+            .Select(a => a.Id)
+            .ToListAsync(ct);
+
+        if (matches.Count != 1)
+        {
+            if (matches.Count > 1)
+                logger.LogWarning(
+                    "Transaction importer: {Count} cuentas financieras activas coinciden con el número " +
+                    "'{AccountNumber}' — no se asigna automáticamente (ambiguo)",
+                    matches.Count, accountNumber);
+            return null;
+        }
+
+        logger.LogInformation(
+            "Transaction importer: cuenta financiera {FinancialAccountId} asignada automáticamente " +
+            "(número '{AccountNumber}')",
+            matches[0], accountNumber);
+
+        return matches[0];
     }
 }

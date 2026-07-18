@@ -7,5 +7,6 @@ public sealed record ParsedTransaction(
     string? Currency = null,
     string? CouponNumber = null,
     string? RawLine = null,
-    string? sourceFile = null 
+    string? sourceFile = null,
+    string? AccountNumber = null
 );

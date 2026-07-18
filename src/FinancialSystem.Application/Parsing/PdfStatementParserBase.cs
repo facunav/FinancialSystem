@@ -28,6 +28,15 @@ namespace FinancialSystem.Application.Parsing;
 /// </summary>
 public abstract class PdfStatementParserBase : IStatementParser, IFileParser
 {
+    // Encabezado común a los resúmenes BBVA de tarjeta de crédito (Visa y Mastercard
+    // comparten el mismo formato de plantilla): "Visa Signature cuenta 1278896210
+    // CONSOLIDADO" / "Mastercard Black cuenta 1278939005 CONSOLIDADO" — confirmado
+    // contra resúmenes reales de ambos. Vive acá (no por subclase) porque el patrón es
+    // idéntico entre bancos/productos; si algún parser futuro no lo tiene, simplemente
+    // no matchea y el número de cuenta queda null, igual que hoy.
+    private static readonly Regex AccountNumberPattern = new(
+        @"cuenta\s+(\d+)\s+CONSOLIDADO", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IPdfTextExtractor _textExtractor;
     private readonly ILogger _logger;
 
@@ -196,6 +205,12 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
         }
 
         var outcome = ParseLines(lines, filePath, ct);
+
+        // Número de cuenta: una sola vez por documento (viene del encabezado, no de
+        // cada línea de transacción) — mismo criterio que
+        // BbvaBankStatementParser.ExtractAccountNumber para Caja de Ahorro.
+        var accountNumber = ExtractAccountNumber(lines);
+
         var extracted = outcome.Transactions
             .Select(t => new ExtractedTransaction(
                 t.Date,
@@ -204,7 +219,8 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
                 t.Currency,
                 t.CouponNumber,
                 t.RawLine,
-                t.SourceFile))
+                t.SourceFile,
+                accountNumber))
             .ToList();
 
         sw.Stop();
@@ -237,6 +253,23 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
     protected abstract ParseResult<Transaction> ParseLine(string line);
 
     // ── Helpers privados ──────────────────────────────────────────
+
+    /// <summary>
+    /// Busca el número de cuenta en el encabezado del documento (mismas primeras
+    /// FingerprintScanLines líneas que ya escanea CanHandle). Null si no aparece —
+    /// el llamador debe tratarlo igual que hoy trata la ausencia de este dato.
+    /// </summary>
+    private string? ExtractAccountNumber(IReadOnlyList<string> documentLines)
+    {
+        foreach (var line in documentLines.Take(FingerprintScanLines))
+        {
+            var match = AccountNumberPattern.Match(line);
+            if (match.Success)
+                return match.Groups[1].Value;
+        }
+
+        return null;
+    }
 
     private bool IsSectionStart(string line) =>
         SectionStartPatterns.Any(p => p.IsMatch(line));

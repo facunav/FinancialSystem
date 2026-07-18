@@ -1,5 +1,6 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
+using FinancialSystem.Domain.Entities;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.Normalization;
 using FinancialSystem.Infrastructure.Persistence;
@@ -67,6 +68,59 @@ public class ImportFileProcessingSinkIdempotencyTests
 
         await using var db = OpenDb(dbName);
         Assert.Equal(2, await db.Transactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task HandleFileAsync_ConCuentaFinancieraCoincidente_AsignaFinancialAccountId()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var financialAccountId = await SeedFinancialAccountAsync(dbName, "1278896210");
+
+        // Número de cuenta extraído del encabezado del PDF ("Visa Signature cuenta
+        // 1278896210 CONSOLIDADO"), igual para todas las transacciones del archivo.
+        var transaccion = new ExtractedTransaction(
+            new DateTime(2026, 6, 15), "PLAYSTATION USD 4,99", 4.99m, "USD", "886221",
+            null, null, "1278896210");
+
+        var sink = CreateSink(dbName, [transaccion]);
+        await sink.HandleFileAsync("Visa_Junio.pdf");
+
+        await using var db = OpenDb(dbName);
+        var transaction = await db.Transactions.SingleAsync();
+        Assert.Equal(financialAccountId, transaction.FinancialAccountId);
+    }
+
+    [Fact]
+    public async Task HandleFileAsync_SinCuentaFinancieraCoincidente_FinancialAccountIdQuedaNull()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        // Ninguna FinancialAccount sembrada -- comportamiento actual preservado: sin
+        // match, la transacción queda sin cuenta asignada, igual que hoy.
+        var transaccion = new ExtractedTransaction(
+            new DateTime(2026, 6, 15), "PLAYSTATION USD 4,99", 4.99m, "USD", "886221",
+            null, null, "1278896210");
+
+        var sink = CreateSink(dbName, [transaccion]);
+        await sink.HandleFileAsync("Visa_Junio.pdf");
+
+        await using var db = OpenDb(dbName);
+        var transaction = await db.Transactions.SingleAsync();
+        Assert.Null(transaction.FinancialAccountId);
+    }
+
+    private static async Task<Guid> SeedFinancialAccountAsync(string dbName, string accountNumber)
+    {
+        await using var db = OpenDb(dbName);
+        var account = new FinancialAccount
+        {
+            Name = "Visa BBVA",
+            Type = FinancialAccountType.Card,
+            AccountNumber = accountNumber,
+            IsDeactivated = false,
+        };
+        db.FinancialAccounts.Add(account);
+        await db.SaveChangesAsync();
+        return account.Id;
     }
 
     private static ImportFileProcessingSink CreateSink(
