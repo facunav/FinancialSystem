@@ -151,6 +151,13 @@
                 border-radius: 20px;
                 color: var(--faint);
             }
+            /* Pendientes de clasificar > 0 — mismos tokens --amber/--amber-bg que ya
+               usa .status-badge.status-reviewed y .status-account-missing en
+               movements.html para "necesita atención, no es un error". */
+            .nav a .badge.badge-attention {
+                background: var(--amber-bg);
+                color: var(--amber);
+            }
             /* Próximas secciones — deshabilitadas visualmente */
             .nav a.soon {
                 opacity: .4;
@@ -970,17 +977,19 @@
             updatePeriodLabel();
 
             try {
-                const [summary, categories, trend, comparison] = await Promise.all([
+                const [summary, categories, trend, comparison, pendingCount] = await Promise.all([
                     fetchSummary(currentYear, currentMonth),
                     fetchByCategory(currentYear, currentMonth),
                     fetchTrend(TREND_MONTHS),
                     fetchComparison(currentYear, currentMonth),
+                    fetchPendingCount(currentYear, currentMonth),
                 ]);
 
                 renderKPIs(summary, comparison);
                 renderCategories(categories);
                 renderComparison(comparison);
                 renderTrend(trend);
+                renderPendingBadge(pendingCount);
                 updateLastUpdated();
 
             } catch (err) {
@@ -1006,6 +1015,25 @@
         }
         async function fetchComparison(year, month) {
             return getJson(`${API}/api/metrics/compare?year=${year}&month=${month}`);
+        }
+        // Reutiliza /api/movements (Épica K, ya existente) — mismo from/to que
+        // fetchByCategory. El status de un movimiento sin clasificar llega como
+        // "Pending" (ver MovementListItemDto.Create), nunca null.
+        async function fetchPendingCount(year, month) {
+            const from = `${year}-${pad(month)}-01`;
+            const to = `${year}-${pad(month)}-${daysInMonth(year, month)}`;
+            const movements = await getJson(`${API}/api/movements?from=${from}&to=${to}`);
+            return movements.filter(m => m.status === 'Pending').length;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // RENDER: badge de pendientes de clasificar (nav "Movimientos")
+        // ─────────────────────────────────────────────────────────────────────────
+        function renderPendingBadge(count) {
+            const badge = document.getElementById('navPending');
+            if (!badge) return;
+            badge.textContent = String(count);
+            badge.classList.toggle('badge-attention', count > 0);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
