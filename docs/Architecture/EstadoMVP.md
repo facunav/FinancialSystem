@@ -22,7 +22,7 @@ Importar todos los movimientos (banco, débito, crédito) sin duplicarse ni perd
 | Corregir manualmente sin fricción | ✅ Terminada | Creación de contraparte sin salir de pantalla — verificado en código (`createCounterpartyInline`). |
 | Saber cuánto/dónde/con qué medio/categoría | ✅ Terminada | `FinancialMetricsService` + 4 herramientas MCP, ya funcionando sobre `ClassifiedMovement`. |
 | Visualizar (dashboard) | ✅ Bug corregido | `dashboard.html` ya usa `esc()` (copiada de las otras 4 pantallas) en las 3 interpolaciones que recibían texto del backend sin escapar. |
-| Detectar movimientos sin clasificar | ❌ No empezada | El dato ya es calculable (filtrar por `Status == null`); ningún script completa el badge que ya existe en el HTML. |
+| Detectar movimientos sin clasificar | ✅ Terminada | Badge `#navPending` (ya existía en el HTML) ahora completado desde `GET /api/movements` (reutilizado, sin endpoint nuevo) — cuenta `status === 'Pending'` del período actual del dashboard. |
 | Idempotencia real de tarjeta PDF | ✅ Bug corregido | `ImportFileProcessingSink` ahora consulta `ExternalId` existentes contra la base antes de insertar (mismo patrón que `BbvaBankStatementImporter.PersistAsync`). Reimportar ya no lanza excepción ni pierde las transacciones nuevas de un archivo parcialmente repetido. 2 tests con EF Core InMemory agregados. |
 | MCP con datos confiables | 🟡 Parcial | Las 4 herramientas ya existen; su confiabilidad depende de cerrar el bug de moneda primero — no hace falta backend nuevo para las preguntas más simples. |
 
@@ -71,9 +71,9 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 1. ~~**Fix de moneda/importe en tarjeta de crédito** (bug #1)~~ — ✅ Hecho. Etapa 0 completa.
 2. ~~**Idempotencia de tarjeta PDF** (bug #2)~~ — ✅ Hecho. Etapa 0 completa.
 3. ~~**Fix de XSS en dashboard** (bug #3)~~ — ✅ Hecho. Etapa 0 completa.
-4. **Badge de pendientes de clasificar** — última funcionalidad del MVP sin empezar; el dato ya es calculable, es la tarea más chica que queda. Siguiente tarea.
+4. ~~**Badge de pendientes de clasificar**~~ — ✅ Hecho.
 5. **Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.
 
-Con estos 4 puntos técnicos cerrados, el MVP tal como fue definido queda completo — todo lo demás documentado en esta conversación es backlog de producto futuro, no camino a un MVP usable.
+**Con los 4 puntos técnicos cerrados, el MVP tal como fue definido está funcionalmente completo.** Solo queda el punto 5 (consolidación documental) — no es código, es dejar `FinancialMcp-vNext.md` alineado con este documento. Todo lo demás mencionado en esta conversación es backlog de producto futuro, no camino a un MVP usable.
 
 No implementé nada, no modifiqué ningún archivo del repositorio.
