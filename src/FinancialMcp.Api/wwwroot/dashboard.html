@@ -1100,7 +1100,7 @@
                 row.className = 'cat-item';
                 row.innerHTML = `
                     <div class="cat-dot" style="background:${color}"></div>
-                    <div class="cat-name">${cat.categoryDisplayName}</div>
+                    <div class="cat-name">${esc(cat.categoryDisplayName)}</div>
                     <div class="cat-bar-wrap">
                         <div class="cat-bar-track">
                             <div class="cat-bar-fill" style="width:${cat.percentageOfTotal}%;background:${color}"></div>
@@ -1141,7 +1141,7 @@
                 const arrow = v.trend === 'up' ? '↑' : v.trend === 'down' ? '↓' : '→';
                 const sign = v.variationPct > 0 ? '+' : '';
                 row.innerHTML = `
-                    <span>${v.categoryDisplayName}</span>
+                    <span>${esc(v.categoryDisplayName)}</span>
                     <span class="cmp-curr">${ars(v.currentAmount)}</span>
                     <span class="cmp-prev">${ars(v.previousAmount)}</span>
                     <span class="cmp-var ${varCls}">${arrow} ${sign}${v.variationPct.toFixed(0)}%</span>`;
@@ -1272,7 +1272,7 @@
                 tt.style.display = 'block';
                 tt.style.left = `${xOf(idx) / W * 100}%`;
                 tt.style.top = '4px';
-                tt.innerHTML = `<strong>${p.monthLabel}</strong><br>
+                tt.innerHTML = `<strong>${esc(p.monthLabel)}</strong><br>
                     Gastos: ${ars(p.totalExpenses)}<br>
                     Ingresos: ${ars(p.totalIncome)}<br>
                     Balance: ${ars(p.netBalance)}<br>
@@ -1331,6 +1331,8 @@
         // FORMATTERS
         // ─────────────────────────────────────────────────────────────────────────
         const NUM = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
         function ars(val) { return `$${NUM.format(Math.round(val ?? 0))}` }
         function arsShort(val) {
