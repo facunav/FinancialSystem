@@ -82,6 +82,13 @@ internal sealed class ImportFileProcessingSink(
             normalized.Count,
             filePath);
 
+        // [DIAG-FA] Instrumentación temporal — remover al cerrar el diagnóstico.
+        var diagAccountNumbers = normalized.Select(p => p.AccountNumber).Distinct().ToList();
+        logger.LogWarning(
+            "[DIAG-FA] (2) ParsedTransaction.AccountNumber distintos en {FilePath}: [{Values}]",
+            filePath,
+            string.Join(", ", diagAccountNumbers.Select(v => $"'{v ?? "<null>"}'")));
+
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -124,12 +131,20 @@ internal sealed class ImportFileProcessingSink(
         // resuelve el FinancialAccountId antes de construir cada fila, no después.
         var financialAccountId = await ResolveFinancialAccountIdAsync(db, candidates, cancellationToken);
 
+        // [DIAG-FA] Instrumentación temporal — remover al cerrar el diagnóstico.
+        logger.LogWarning(
+            "[DIAG-FA] (7) financialAccountId a asignar en este HandleFileAsync: {FinancialAccountId}",
+            financialAccountId?.ToString() ?? "<null>");
+
         var inserted = 0;
         foreach (var (parsed, externalId) in candidates)
         {
             if (existingIds.Contains(externalId))
             {
                 duplicates++;
+                logger.LogWarning(
+                    "[DIAG-FA] Fila con ExternalId={ExternalId} ya existe en Transactions -- se saltea sin tocar su FinancialAccountId",
+                    externalId);
                 continue;
             }
 
@@ -148,6 +163,10 @@ internal sealed class ImportFileProcessingSink(
                 FinancialAccountId = financialAccountId
             });
             inserted++;
+
+            logger.LogWarning(
+                "[DIAG-FA] (7) Transaction insertada ExternalId={ExternalId} -> FinancialAccountId={FinancialAccountId}",
+                externalId, financialAccountId?.ToString() ?? "<null>");
         }
 
         if (inserted > 0)
@@ -180,17 +199,39 @@ internal sealed class ImportFileProcessingSink(
         IReadOnlyList<(ParsedTransaction Parsed, string ExternalId)> candidates,
         CancellationToken ct)
     {
+        // [DIAG-FA] Instrumentación temporal — remover al cerrar el diagnóstico.
+        logger.LogWarning(
+            "[DIAG-FA] ResolveFinancialAccountIdAsync invocado — candidates.Count={Count}",
+            candidates.Count);
+
         var accountNumber = candidates
             .Select(c => c.Parsed.AccountNumber)
             .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
 
-        if (string.IsNullOrWhiteSpace(accountNumber))
-            return null;
+        // [DIAG-FA] (3) valor que llega acá.
+        logger.LogWarning(
+            "[DIAG-FA] (3) accountNumber resuelto de candidates: '{AccountNumber}'",
+            accountNumber ?? "<null>");
 
-        var matches = await db.FinancialAccounts
+        if (string.IsNullOrWhiteSpace(accountNumber))
+        {
+            logger.LogWarning("[DIAG-FA] accountNumber vacío/null — return null sin consultar FinancialAccounts");
+            return null;
+        }
+
+        var query = db.FinancialAccounts
             .Where(a => !a.IsDeactivated && a.AccountNumber == accountNumber)
-            .Select(a => a.Id)
-            .ToListAsync(ct);
+            .Select(a => a.Id);
+
+        // [DIAG-FA] (4) SQL/LINQ exacto que se va a ejecutar.
+        logger.LogWarning("[DIAG-FA] (4) Query: {Sql}", query.ToQueryString());
+
+        var matches = await query.ToListAsync(ct);
+
+        // [DIAG-FA] (5) cuántas filas devolvió.
+        logger.LogWarning(
+            "[DIAG-FA] (5) matches.Count={Count} para accountNumber='{AccountNumber}'",
+            matches.Count, accountNumber);
 
         if (matches.Count != 1)
         {
@@ -201,6 +242,9 @@ internal sealed class ImportFileProcessingSink(
                     matches.Count, accountNumber);
             return null;
         }
+
+        // [DIAG-FA] (6) Id encontrado.
+        logger.LogWarning("[DIAG-FA] (6) Id encontrado: {FinancialAccountId}", matches[0]);
 
         logger.LogInformation(
             "Transaction importer: cuenta financiera {FinancialAccountId} asignada automáticamente " +

@@ -211,6 +211,11 @@ public abstract class PdfStatementParserBase : IStatementParser, IFileParser
         // BbvaBankStatementParser.ExtractAccountNumber para Caja de Ahorro.
         var accountNumber = ExtractAccountNumber(lines);
 
+        // [DIAG-FA] Instrumentación temporal — remover al cerrar el diagnóstico.
+        _logger.LogWarning(
+            "[DIAG-FA] (1) ExtractAccountNumber({Parser}, {FilePath}) -> '{AccountNumber}'",
+            ParserId, filePath, accountNumber ?? "<null>");
+
         var extracted = outcome.Transactions
             .Select(t => new ExtractedTransaction(
                 t.Date,
