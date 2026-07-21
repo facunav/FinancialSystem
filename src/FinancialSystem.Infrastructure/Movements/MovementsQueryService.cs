@@ -99,7 +99,10 @@ internal sealed class MovementsQueryService : IMovementsQueryService
         Warning: warning,
         Suggestions: suggestions,
         Merchant: m.Merchant,
-        MerchantAtUtc: m.MerchantAtUtc);
+        MerchantAtUtc: m.MerchantAtUtc,
+        // Pendiente: todavía no existe ClassifiedMovement, así que no hay período
+        // financiero propio todavía.
+        EffectiveDate: null);
 
     // PR-L4: antes ISuspicionDetector corría por separado sobre references y candidates,
     // así que un grupo nunca podía mezclar banco/tarjeta con legacy. Ahora IMovementLoader
@@ -199,7 +202,8 @@ internal sealed class MovementsQueryService : IMovementsQueryService
                 Warning: null,
                 Suggestions: [],
                 Merchant: bankInfo.Merchant,
-                MerchantAtUtc: bankInfo.MerchantAtUtc);
+                MerchantAtUtc: bankInfo.MerchantAtUtc,
+                EffectiveDate: classifiedMovement.EffectiveDate);
         }).ToList();
     }
 

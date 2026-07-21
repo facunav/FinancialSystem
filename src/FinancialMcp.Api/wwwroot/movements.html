@@ -330,6 +330,22 @@
 
         .act-cell { display: flex; gap: 6px }
 
+        /* Indicador de período financiero ajustado manualmente (EffectiveDate !=
+           fecha bancaria) — mismo tratamiento visual que .warning-badge pero en tono
+           neutro (no es una alerta, es información). Nunca reemplaza la fecha
+           bancaria mostrada en la celda: se agrega al lado. */
+        .effective-date-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            color: var(--faint);
+            background: var(--surface2);
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
         /* ── Toast ── */
         .toast {
             font: 12px var(--mono);
@@ -388,7 +404,7 @@
         }
             .modal-field label.req::after { content: ' *'; color: var(--red) }
 
-        .modal-field select, .modal-field textarea, .modal-field input[type=text] {
+        .modal-field select, .modal-field textarea, .modal-field input[type=text], .modal-field input[type=date] {
             width: 100%;
             background: var(--surface2);
             border: 1px solid var(--border);
@@ -397,6 +413,21 @@
             padding: 8px 10px;
             font: 13px var(--sans);
         }
+
+        /* PR: período financiero editable — colapsado por default (ver
+           openClassifyModal/btnToggleEffectiveDate). link-btn reutiliza la tipografía
+           de button.sm sin fondo/borde, para que se lea como una acción de baja
+           jerarquía, no como un campo obligatorio más. */
+        .link-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--faint);
+            font: 12px var(--sans);
+            text-decoration: underline;
+            cursor: pointer;
+        }
+            .link-btn:hover { color: var(--text) }
             .modal-field select:focus, .modal-field textarea:focus, .modal-field input[type=text]:focus {
                 outline: 2px solid var(--green);
                 outline-offset: 1px;
@@ -584,6 +615,19 @@
                 <div class="modal-field">
                     <label for="cComment">Comentario (opcional)</label>
                     <textarea id="cComment" placeholder="Detalle adicional…"></textarea>
+                </div>
+                <!-- Período financiero (EffectiveDate): colapsado por default, nunca
+                     visible en modo lote (ver openBatchModal/openClassifyModal). No
+                     cambia ni reemplaza la fecha bancaria mostrada en el listado. -->
+                <div class="modal-field" id="effectiveDateField">
+                    <button type="button" class="link-btn" id="btnToggleEffectiveDate">¿Corresponde a otro período financiero?</button>
+                    <div id="effectiveDateInputWrap" style="display:none; margin-top:8px">
+                        <label for="cEffectiveDate">Período financiero (opcional)</label>
+                        <input type="date" id="cEffectiveDate">
+                        <p style="font-size:11px; color:var(--faint); margin-top:6px">
+                            Ajusta a qué mes cuenta este movimiento en el Dashboard, sin cambiar la fecha bancaria real.
+                        </p>
+                    </div>
                 </div>
                 <!-- PR-L2: solo visible durante saveBatchClassify. -->
                 <div id="classifyProgress" class="progress-line" style="display:none"></div>
@@ -959,7 +1003,7 @@
             return `
                 <tr data-source-id="${m.sourceId}">
                     <td class="cb-cell"><input type="checkbox" class="row-select" data-source-id="${m.sourceId}"${checked}${disabled}></td>
-                    <td>${fmtDate(m.date)}</td>
+                    <td>${fmtDate(m.date)}${renderEffectiveDateBadge(m)}</td>
                     <td class="desc-cell">
                         ${renderDescriptionCell(m)}
                         ${renderSuggestionChips(m)}
@@ -1014,6 +1058,16 @@
             const w = m.warning;
             const label = SUSPICION_LABELS[w.reason] ?? w.reason;
             return `<span class="warning-badge" title="${esc(w.description)}">⚠ ${esc(label)}</span>`;
+        }
+
+        // Indicador de período financiero ajustado manualmente -- nunca reemplaza
+        // la fecha bancaria de la celda (Date/OriginalDate), solo la acompaña. El
+        // usuario no tiene que recordar que hizo un ajuste: queda visible cada vez
+        // que ve la fila, con las dos fechas explícitas en el tooltip.
+        function renderEffectiveDateBadge(m) {
+            if (!hasAdjustedPeriod(m)) return '';
+            const title = `Ajustado manualmente para análisis financiero: cuenta como ${fmtDate(m.effectiveDate)} (banco: ${fmtDate(m.date)})`;
+            return `<span class="effective-date-badge" title="${esc(title)}">↦ ${fmtDate(m.effectiveDate)}</span>`;
         }
 
         // PR-S5: solo información — sin acción propia. Nunca hay sugerencias en
@@ -1321,7 +1375,40 @@
             // se oculta acá para no dejar visible el listado de una apertura en
             // lote anterior.
             document.getElementById('batchListWrap').style.display = 'none';
+            document.getElementById('effectiveDateField').style.display = 'block';
+            resetEffectiveDateField(movement);
             document.getElementById('classifyOverlay').classList.add('open');
+        }
+
+        // Si el movimiento ya tiene un período financiero ajustado (EffectiveDate
+        // distinto de la fecha bancaria), el control arranca expandido y precargado
+        // -- para que reclasificar no esconda un ajuste ya hecho (ver revisión de
+        // UX: el usuario no debe "recordar" que lo hizo, tiene que verlo). Si no
+        // hay ajuste, arranca colapsado y vacío -- comportamiento actual, sin
+        // fricción para el caso común.
+        function resetEffectiveDateField(movement) {
+            const wrap = document.getElementById('effectiveDateInputWrap');
+            const toggle = document.getElementById('btnToggleEffectiveDate');
+            const input = document.getElementById('cEffectiveDate');
+
+            if (movement && hasAdjustedPeriod(movement)) {
+                input.value = toDateInputValue(movement.effectiveDate);
+                wrap.style.display = 'block';
+                toggle.style.display = 'none';
+            } else {
+                input.value = '';
+                wrap.style.display = 'none';
+                toggle.style.display = 'inline';
+            }
+        }
+
+        function hasAdjustedPeriod(m) {
+            return !!m.effectiveDate && fmtDate(m.effectiveDate) !== fmtDate(m.date);
+        }
+
+        function toDateInputValue(iso) {
+            const d = new Date(iso);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
         // PR-L2: mismo modal, segundo modo. Sin precarga de categoría/tipo/contraparte
@@ -1359,6 +1446,11 @@
             document.getElementById('cComment').value = '';
             document.getElementById('btnClassifySave').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
             document.getElementById('classifyToast').innerHTML = '';
+            // Período financiero: nunca en modo lote -- un mismo ajuste no debe
+            // aplicarse a movimientos distintos (ver revisión de UX). El campo ni
+            // siquiera queda disponible para abrirse acá.
+            document.getElementById('effectiveDateField').style.display = 'none';
+            resetEffectiveDateField(null);
             document.getElementById('classifyOverlay').classList.add('open');
         }
 
@@ -1371,6 +1463,11 @@
         document.getElementById('btnClassifyCancel').addEventListener('click', closeClassifyModal);
         document.getElementById('classifyOverlay').addEventListener('click', e => {
             if (e.target.id === 'classifyOverlay') closeClassifyModal();
+        });
+
+        document.getElementById('btnToggleEffectiveDate').addEventListener('click', () => {
+            document.getElementById('effectiveDateInputWrap').style.display = 'block';
+            document.getElementById('btnToggleEffectiveDate').style.display = 'none';
         });
 
         // ── Alta rápida de Contraparte, sin salir de la clasificación (PR-P1) ────
@@ -1457,13 +1554,22 @@
         }
 
         async function saveClassify(movement, categoryId) {
+            // Solo se envía si el control está expandido y con valor -- colapsado
+            // (caso común, sin ajuste) significa "no tocar el período financiero
+            // actual", nunca "resetearlo a la fecha bancaria" (ver
+            // ClassifyMovementHandler: null = conservar, nunca recalcular).
+            const effectiveDateInput = document.getElementById('cEffectiveDate');
+            const effectiveDateVisible = document.getElementById('effectiveDateInputWrap').style.display !== 'none';
+            const effectiveDate = (effectiveDateVisible && effectiveDateInput.value) ? effectiveDateInput.value : null;
+
             await classifyMovement(
                 movement,
                 categoryId,
                 document.getElementById('cMovementType').value,
                 document.getElementById('cImpact').value,
                 document.getElementById('cCounterparty').value || null,
-                document.getElementById('cComment').value.trim() || null);
+                document.getElementById('cComment').value.trim() || null,
+                effectiveDate);
             closeClassifyModal();
             showToast('listToast', 'Clasificación guardada', 'ok');
         }
@@ -1476,7 +1582,8 @@
         // el view model local, igual que ya hacía saveClassify).
         // GET /api/movements incluye pendientes y clasificados (K3): el
         // movimiento sigue en la lista, solo cambia su estado.
-        async function classifyMovement(movement, categoryId, movementType, financialImpact, counterpartyId, comment) {
+        async function classifyMovement(
+            movement, categoryId, movementType, financialImpact, counterpartyId, comment, effectiveDate = null) {
             const body = {
                 sourceEntityType: SOURCE_TO_ENTITY_TYPE[movement.source],
                 sourceId: movement.sourceId,
@@ -1485,6 +1592,11 @@
                 financialImpact,
                 counterpartyId,
                 comment,
+                // null = no tocar el período financiero actual (ver saveClassify).
+                // quickAcceptSuggestion nunca lo pasa: solo aplica a Pendientes, que
+                // recién van a crear su ClassifiedMovement -- EffectiveDate nace
+                // siempre igual a la fecha bancaria, no hay nada que "ajustar" todavía.
+                effectiveDate,
             };
 
             await postJson(`${API}/api/movement-review/classify`, body);
@@ -1493,6 +1605,7 @@
             movement.counterpartyId = body.counterpartyId;
             movement.movementType = body.movementType;
             movement.financialImpact = body.financialImpact;
+            if (effectiveDate) movement.effectiveDate = effectiveDate;
             // Un movimiento clasificado nunca trae sugerencias del backend (ver
             // MovementView.Suggestions) — se limpia también acá para que los chips
             // y el botón "Aceptar sugerencia" desaparezcan en el mismo render, sin

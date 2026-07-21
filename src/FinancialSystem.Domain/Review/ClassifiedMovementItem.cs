@@ -48,7 +48,14 @@ public class ClassifiedMovementItem
     // ── Snapshot inmutable del momento de la clasificación ───────────────────
 
     public decimal OriginalAmount { get; set; }
-    public DateTime OriginalDate { get; set; }
+
+    /// <summary>
+    /// Fecha real del hecho bancario. init-only: a diferencia de EffectiveDate en
+    /// ClassifiedMovement (editable por diseño), este campo nunca debe cambiar después
+    /// de creado — la garantía ahora la exige el compilador, no solo este comentario.
+    /// </summary>
+    public DateTime OriginalDate { get; init; }
+
     public string OriginalDescription { get; set; } = string.Empty;
     public string OriginalCurrency { get; set; } = "ARS";
     public string? OriginalSourceFile { get; set; }

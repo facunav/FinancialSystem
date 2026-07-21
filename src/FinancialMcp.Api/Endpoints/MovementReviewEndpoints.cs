@@ -34,7 +34,8 @@ public static class MovementReviewEndpoints
             request.MovementType,
             request.FinancialImpact,
             request.CounterpartyId,
-            request.Comment);
+            request.Comment,
+            request.EffectiveDate);
 
         var result = await handler.Handle(command, ct);
 

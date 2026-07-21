@@ -12,6 +12,9 @@ namespace FinancialSystem.Api.DTOs;
 
 // ── POST /api/movement-review/classify ───────────────────────────────────────
 
+// EffectiveDate es opcional y por lo tanto no rompe clientes existentes que no lo
+// envían (deserializa a null). Solo tiene efecto al reclasificar — ver
+// ClassifyMovementCommand/ClassifyMovementHandler.
 public sealed record ClassifyMovementRequest(
     [property: JsonConverter(typeof(JsonStringEnumConverter))] SourceEntityType SourceEntityType,
     Guid SourceId,
@@ -19,6 +22,7 @@ public sealed record ClassifyMovementRequest(
     [property: JsonConverter(typeof(JsonStringEnumConverter))] MovementType MovementType,
     [property: JsonConverter(typeof(JsonStringEnumConverter))] FinancialImpact FinancialImpact,
     Guid? CounterpartyId,
-    string? Comment);
+    string? Comment,
+    DateTime? EffectiveDate = null);
 
 public sealed record ClassifyMovementResponseDto(Guid ClassifiedMovementId, string Status);

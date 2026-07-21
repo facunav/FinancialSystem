@@ -50,7 +50,12 @@ public sealed record MovementView(
     // enriquecido desde Tarjeta de Débito (ver MovementLoader/LoadClassifiedAsync).
     // Null en movimientos de Transaction o sin enriquecer — no reemplaza Description.
     string? Merchant,
-    DateTime? MerchantAtUtc);
+    DateTime? MerchantAtUtc,
+    // Período financiero (ClassifiedMovement.EffectiveDate). Null en pendientes:
+    // todavía no existe clasificación, así que tampoco existe todavía un período
+    // financiero distinto de Date. En clasificados, distinto de Date solo si el
+    // usuario lo ajustó explícitamente al clasificar/reclasificar.
+    DateTime? EffectiveDate);
 
 /// <summary>
 /// Grupo sospechoso (K6) al que pertenece este movimiento, según ISuspicionDetector —

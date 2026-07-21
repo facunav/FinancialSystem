@@ -73,6 +73,13 @@ public sealed class ClassifyMovementHandler
             existing.Comment = command.Comment;
             existing.ProcessedAt = now;
 
+            // Sin EffectiveDate en el comando: no tocar el campo. Nunca
+            // "command.EffectiveDate ?? OriginalDate" — eso resetearía silenciosamente
+            // un período financiero ya ajustado a mano en una reclasificación posterior
+            // (cambiar de categoría, por ejemplo) que no tenía intención de tocar la fecha.
+            if (command.EffectiveDate is { } newEffectiveDate)
+                existing.EffectiveDate = newEffectiveDate;
+
             await _db.SaveChangesAsync(cancellationToken);
             return ClassifyMovementResult.Success(existing.Id);
         }

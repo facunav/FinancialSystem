@@ -42,7 +42,11 @@ public sealed record MovementListItemDto(
     // BankStatement de origen fue enriquecido. Null si no aplica — no reemplaza
     // Description (ver MovementView.Merchant).
     string? Merchant,
-    DateTime? MerchantAtUtc)
+    DateTime? MerchantAtUtc,
+    // Período financiero (ClassifiedMovement.EffectiveDate). Null en pendientes.
+    // Distinto de Date solo si el usuario lo ajustó explícitamente al clasificar.
+    // Date sigue siendo, siempre, la fecha bancaria real (ver MovementView.EffectiveDate).
+    DateTime? EffectiveDate)
 {
     public static MovementListItemDto Create(MovementView m) => new(
         m.SourceId,
@@ -60,7 +64,8 @@ public sealed record MovementListItemDto(
         m.Warning is null ? null : MovementWarningDto.Create(m.Warning),
         m.Suggestions.Select(ClassificationSuggestionDto.Create).ToList(),
         m.Merchant,
-        m.MerchantAtUtc);
+        m.MerchantAtUtc,
+        m.EffectiveDate);
 }
 
 public sealed record MovementWarningDto(
