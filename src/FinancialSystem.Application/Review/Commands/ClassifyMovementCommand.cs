@@ -6,10 +6,10 @@ namespace FinancialSystem.Application.Review.Commands;
 /// Clasifica manualmente un movimiento crudo sin coincidencia externa
 /// (crea un ClassifiedMovement con Status=Reviewed).
 ///
-/// EffectiveDate es opcional y solo tiene efecto al reclasificar un movimiento ya
-/// existente: null significa "no tocar el período financiero actual". En la creación
-/// de un ClassifiedMovement nuevo se ignora — EffectiveDate siempre nace igual a la
-/// fecha bancaria del movimiento (ver ClassifyMovementHandler).
+/// EffectiveDate es opcional. Al crear un ClassifiedMovement nuevo: si viene, se usa
+/// como período financiero inicial; si no, nace igual a la fecha bancaria del
+/// movimiento. Al reclasificar uno existente: null significa "no tocar el período
+/// financiero actual" — nunca se recalcula ni se resetea (ver ClassifyMovementHandler).
 /// </summary>
 public sealed record ClassifyMovementCommand(
     SourceEntityType SourceEntityType,

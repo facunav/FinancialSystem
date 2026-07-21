@@ -78,7 +78,7 @@ public sealed class ClassifyMovementHandler
             // un período financiero ya ajustado a mano en una reclasificación posterior
             // (cambiar de categoría, por ejemplo) que no tenía intención de tocar la fecha.
             if (command.EffectiveDate is { } newEffectiveDate)
-                existing.EffectiveDate = newEffectiveDate;
+                existing.EffectiveDate = ToUtc(newEffectiveDate);
 
             await _db.SaveChangesAsync(cancellationToken);
             return ClassifyMovementResult.Success(existing.Id);
@@ -86,7 +86,12 @@ public sealed class ClassifyMovementHandler
 
         var classifiedMovement = new ClassifiedMovement
         {
-            EffectiveDate = source.Date,
+            // Si el comando trae EffectiveDate (usuario ajustó el período financiero
+            // ya en la primera clasificación), se usa ese valor; si no, nace igual a
+            // la fecha bancaria, como siempre.
+            EffectiveDate = command.EffectiveDate is { } initialEffectiveDate
+                ? ToUtc(initialEffectiveDate)
+                : source.Date,
             TotalAmount = Math.Abs(source.Amount),
             Currency = source.Currency,
             Description = source.Description,
@@ -153,4 +158,12 @@ public sealed class ClassifyMovementHandler
 
     private sealed record SourceSnapshot(
         DateTime Date, string Description, decimal Amount, string Currency, string? SourceFile);
+
+    // EffectiveDate proveniente de ClassifyMovementCommand llega deserializado del
+    // request HTTP y puede tener Kind=Unspecified (ej. "2026-03-01" sin offset).
+    // ClassifiedMovement.EffectiveDate mapea a timestamp with time zone en
+    // PostgreSQL, que rechaza escribir un DateTime sin Kind=Utc -- mismo patrón que
+    // ya usa el resto del proyecto para esta columna (ver TransactionNormalizer,
+    // BbvaBankStatementParser, FinancialMetricsService, MovementLoader).
+    private static DateTime ToUtc(DateTime date) => DateTime.SpecifyKind(date, DateTimeKind.Utc);
 }

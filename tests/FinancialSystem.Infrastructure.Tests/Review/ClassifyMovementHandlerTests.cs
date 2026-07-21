@@ -19,7 +19,7 @@ namespace FinancialSystem.Infrastructure.Tests.Review;
 public class ClassifyMovementHandlerTests
 {
     [Fact]
-    public async Task Handle_MovimientoNuevo_EffectiveDateNaceIgualAOriginalDate()
+    public async Task Handle_MovimientoNuevo_SinEffectiveDate_NaceIgualAOriginalDate()
     {
         var dbName = Guid.NewGuid().ToString();
         var categoryId = await SeedCategoryAsync(dbName);
@@ -35,6 +35,31 @@ public class ClassifyMovementHandlerTests
         await using var db = OpenDb(dbName);
         var classified = await db.ClassifiedMovements.SingleAsync();
         Assert.Equal(bankDate, classified.EffectiveDate);
+    }
+
+    [Fact]
+    public async Task Handle_MovimientoNuevo_ConEffectiveDateDesdeApi_UsaEseValorNormalizadoAUtc()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName);
+        var bankDate = new DateTime(2026, 1, 31, 0, 0, 0, DateTimeKind.Utc);
+        var transactionId = await SeedTransactionAsync(dbName, bankDate);
+
+        // Simula lo que llega realmente desde el request HTTP: un <input type="date">
+        // manda "2026-02-01" sin offset, que System.Text.Json deserializa con
+        // Kind=Unspecified -- no Utc.
+        var requestEffectiveDate = DateTime.SpecifyKind(new DateTime(2026, 2, 1), DateTimeKind.Unspecified);
+
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null, requestEffectiveDate));
+
+        Assert.True(result.IsSuccess);
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(new DateTime(2026, 2, 1), classified.EffectiveDate);
+        Assert.Equal(DateTimeKind.Utc, classified.EffectiveDate.Kind);
     }
 
     [Fact]
@@ -70,7 +95,7 @@ public class ClassifyMovementHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ReclasificarConEffectiveDate_ActualizaSoloEseCampo()
+    public async Task Handle_ReclasificarConEffectiveDate_ActualizaSoloEseCampoNormalizadoAUtc()
     {
         var dbName = Guid.NewGuid().ToString();
         var categoryId = await SeedCategoryAsync(dbName);
@@ -81,14 +106,17 @@ public class ClassifyMovementHandlerTests
             SourceEntityType.Transaction, transactionId, categoryId,
             MovementType.Purchase, FinancialImpact.Expense, null, null));
 
-        var newEffectiveDate = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        // Mismo caso real que en la creación: el request HTTP manda una fecha sin
+        // offset, deserializada con Kind=Unspecified.
+        var requestEffectiveDate = DateTime.SpecifyKind(new DateTime(2026, 3, 1), DateTimeKind.Unspecified);
         await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
             SourceEntityType.Transaction, transactionId, categoryId,
-            MovementType.Purchase, FinancialImpact.Expense, null, null, newEffectiveDate));
+            MovementType.Purchase, FinancialImpact.Expense, null, null, requestEffectiveDate));
 
         await using var db = OpenDb(dbName);
         var updated = await db.ClassifiedMovements.SingleAsync();
-        Assert.Equal(newEffectiveDate, updated.EffectiveDate);
+        Assert.Equal(new DateTime(2026, 3, 1), updated.EffectiveDate);
+        Assert.Equal(DateTimeKind.Utc, updated.EffectiveDate.Kind);
 
         // La fecha bancaria del snapshot nunca cambia, sin importar cuántas veces se
         // reclasifique ni qué EffectiveDate se haya pedido.
