@@ -26,3 +26,11 @@ public sealed record ClassifyMovementRequest(
     DateTime? EffectiveDate = null);
 
 public sealed record ClassifyMovementResponseDto(Guid ClassifiedMovementId, string Status);
+
+// ── GET /api/movement-review/effective-date-suggestion ────────────────────────
+//
+// V1 mínima: sugiere EffectiveDate = primer día del mes siguiente cuando existen
+// al menos 2 correcciones manuales previas de la misma Counterparty (Income) ya
+// corridas al mes siguiente. Nunca se aplica sola -- solo prellena el campo que
+// ya existe en movements.html, el usuario siempre confirma o cambia el valor.
+public sealed record EffectiveDateSuggestionResponse(bool HasSuggestion, DateTime? SuggestedEffectiveDate);

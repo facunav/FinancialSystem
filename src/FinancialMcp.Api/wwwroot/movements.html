@@ -1483,6 +1483,39 @@
             document.getElementById('btnToggleEffectiveDate').style.display = 'none';
         });
 
+        // Sugerencia automática de período financiero -- V1 mínima. Dispara al elegir
+        // Contraparte, solo en clasificación individual (nunca en modo lote, que ya
+        // oculta este campo por diseño) y solo para Income. Nunca pisa un período ya
+        // ajustado a mano -- solo actúa sobre el estado "sin ajuste" (colapsado), y
+        // descarta la respuesta si mientras tanto cambió la contraparte seleccionada
+        // (fetch fuera de orden) o se cerró/cambió el modal.
+        document.getElementById('cCounterparty').addEventListener('change', async () => {
+            if (state.modalMode !== 'classify') return;
+            if (document.getElementById('cImpact').value !== 'Income') return;
+            if (document.getElementById('effectiveDateInputWrap').style.display !== 'none') return;
+
+            const counterpartyId = document.getElementById('cCounterparty').value;
+            if (!counterpartyId || !state.selectedMovement) return;
+
+            let suggestion;
+            try {
+                suggestion = await getJson(
+                    `${API}/api/movement-review/effective-date-suggestion` +
+                    `?counterpartyId=${counterpartyId}&originalDate=${encodeURIComponent(state.selectedMovement.date)}`);
+            } catch {
+                return; // solo-lectura, best-effort: un fallo acá no interrumpe la clasificación
+            }
+
+            if (document.getElementById('cCounterparty').value !== counterpartyId) return;
+            if (state.modalMode !== 'classify') return;
+            if (document.getElementById('effectiveDateInputWrap').style.display !== 'none') return;
+            if (!suggestion.hasSuggestion) return;
+
+            document.getElementById('cEffectiveDate').value = toDateInputValue(suggestion.suggestedEffectiveDate);
+            document.getElementById('effectiveDateInputWrap').style.display = 'block';
+            document.getElementById('btnToggleEffectiveDate').style.display = 'none';
+        });
+
         // ── Alta rápida de Contraparte, sin salir de la clasificación (PR-P1) ────
         // Modal secundario e independiente de #classifyOverlay — al crear, solo
         // refresca el combo #cCounterparty y selecciona la nueva; el modal de
