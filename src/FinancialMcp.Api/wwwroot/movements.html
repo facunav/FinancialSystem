@@ -1394,6 +1394,11 @@
             const toggle = document.getElementById('btnToggleEffectiveDate');
             const input = document.getElementById('cEffectiveDate');
 
+            // Cada apertura de modal parte de "no hay sugerencia activa" -- evita que
+            // una sugerencia aplicada en una sesión previa del modal quede marcada como
+            // vigente en la sesión nueva (ver listener de #cImpact más abajo).
+            state.effectiveDateSuggested = false;
+
             if (movement && hasAdjustedPeriod(movement)) {
                 input.value = toDateInputValue(movement.effectiveDate);
                 wrap.style.display = 'block';
@@ -1481,6 +1486,56 @@
         document.getElementById('btnToggleEffectiveDate').addEventListener('click', () => {
             document.getElementById('effectiveDateInputWrap').style.display = 'block';
             document.getElementById('btnToggleEffectiveDate').style.display = 'none';
+        });
+
+        // Sugerencia automática de período financiero -- V1 mínima. Dispara al elegir
+        // Contraparte, solo en clasificación individual (nunca en modo lote, que ya
+        // oculta este campo por diseño) y solo para Income. Nunca pisa un período ya
+        // ajustado a mano -- solo actúa sobre el estado "sin ajuste" (colapsado), y
+        // descarta la respuesta si mientras tanto cambió la contraparte seleccionada
+        // (fetch fuera de orden) o se cerró/cambió el modal.
+        document.getElementById('cCounterparty').addEventListener('change', async () => {
+            if (state.modalMode !== 'classify') return;
+            if (document.getElementById('cImpact').value !== 'Income') return;
+            if (document.getElementById('effectiveDateInputWrap').style.display !== 'none') return;
+
+            const counterpartyId = document.getElementById('cCounterparty').value;
+            if (!counterpartyId || !state.selectedMovement) return;
+
+            let suggestion;
+            try {
+                suggestion = await getJson(
+                    `${API}/api/movement-review/effective-date-suggestion` +
+                    `?counterpartyId=${counterpartyId}&originalDate=${encodeURIComponent(state.selectedMovement.date)}`);
+            } catch {
+                return; // solo-lectura, best-effort: un fallo acá no interrumpe la clasificación
+            }
+
+            if (document.getElementById('cCounterparty').value !== counterpartyId) return;
+            if (state.modalMode !== 'classify') return;
+            if (document.getElementById('effectiveDateInputWrap').style.display !== 'none') return;
+            if (!suggestion.hasSuggestion) return;
+
+            document.getElementById('cEffectiveDate').value = toDateInputValue(suggestion.suggestedEffectiveDate);
+            document.getElementById('effectiveDateInputWrap').style.display = 'block';
+            document.getElementById('btnToggleEffectiveDate').style.display = 'none';
+            state.effectiveDateSuggested = true;
+        });
+
+        // Si el usuario recibió una sugerencia automática (ver listener de
+        // #cCounterparty arriba) y después cambia Impacto a algo distinto de Income,
+        // esa sugerencia ya no aplica -- nunca debe persistirse un EffectiveDate
+        // sugerido para un movimiento que dejó de ser Income. No toca el campo si el
+        // valor actual viene de un ajuste manual/ya persistido (state.effectiveDateSuggested
+        // solo es true cuando lo puso esta misma sugerencia).
+        document.getElementById('cImpact').addEventListener('change', () => {
+            if (!state.effectiveDateSuggested) return;
+            if (document.getElementById('cImpact').value === 'Income') return;
+
+            document.getElementById('cEffectiveDate').value = '';
+            document.getElementById('effectiveDateInputWrap').style.display = 'none';
+            document.getElementById('btnToggleEffectiveDate').style.display = 'inline';
+            state.effectiveDateSuggested = false;
         });
 
         // ── Alta rápida de Contraparte, sin salir de la clasificación (PR-P1) ────
