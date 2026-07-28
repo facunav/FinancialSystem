@@ -4,6 +4,7 @@ using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FinancialSystem.Infrastructure.Tests.Review;
@@ -167,7 +168,7 @@ public class ClassifyMovementHandlerTests
     }
 
     private static ClassifyMovementHandler CreateHandler(string dbName) =>
-        new(OpenDb(dbName), new FakeDateTimeProvider());
+        new(OpenDb(dbName), new FakeDateTimeProvider(), NullLogger<ClassifyMovementHandler>.Instance);
 
     private static AppDbContext OpenDb(string dbName) =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);

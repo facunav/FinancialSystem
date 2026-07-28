@@ -2,13 +2,20 @@
 using FinancialSystem.Application.Metrics;
 using FinancialSystem.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FinancialSystem.Infrastructure.Metrics;
 
 internal sealed class FinancialMetricsService : IFinancialMetricsService
 {
     private readonly IApplicationDbContext _db;
-    public FinancialMetricsService(IApplicationDbContext db) => _db = db;
+    private readonly ILogger<FinancialMetricsService> _logger;
+
+    public FinancialMetricsService(IApplicationDbContext db, ILogger<FinancialMetricsService> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     // ── GetPeriodSummaryAsync ─────────────────────────────────────────────────
 
@@ -17,13 +24,45 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
     {
         var (fromUtc, toUtc) = ToUtcRange(from, to);
 
+        // INSTRUMENTACIÓN TEMPORAL (dashboard-income-wrong-month): rango exacto
+        // (con precisión de tick, formato "O") que se manda al filtro EF Core.
+        _logger.LogInformation(
+            "GetPeriodSummaryAsync: from={From} to={To} fromUtc={FromUtc:O} toUtc={ToUtc:O}",
+            from, to, fromUtc, toUtc);
+
         var rows = await _db.ClassifiedMovements
             .AsNoTracking()
             .Where(e => e.EffectiveDate >= fromUtc && e.EffectiveDate <= toUtc)
             .Select(e => new RawRow(e.TotalAmount, e.FinancialImpact, e.Status, e.Currency))
             .ToListAsync(ct);
 
-        return BuildSummary(from, to, rows);
+        // Diagnóstico de borde: trae (sin filtrar por el rango del summary) todo lo
+        // que esté a +/-2 días de cada límite, para ver el EffectiveDate exacto que
+        // Postgres devuelve y si cae de un lado u otro del corte -- incluye tanto lo
+        // que matcheó como lo que quedó justo afuera, para comparar contra fromUtc/toUtc.
+        var boundaryRows = await _db.ClassifiedMovements
+            .AsNoTracking()
+            .Where(e =>
+                (e.EffectiveDate >= fromUtc.AddDays(-2) && e.EffectiveDate <= fromUtc.AddDays(2)) ||
+                (e.EffectiveDate >= toUtc.AddDays(-2) && e.EffectiveDate <= toUtc.AddDays(2)))
+            .Select(e => new { e.Id, e.EffectiveDate, e.FinancialImpact, e.TotalAmount })
+            .ToListAsync(ct);
+
+        foreach (var r in boundaryRows)
+        {
+            var includedInRange = r.EffectiveDate >= fromUtc && r.EffectiveDate <= toUtc;
+            _logger.LogInformation(
+                "GetPeriodSummaryAsync: boundary row Id={Id} EffectiveDate={EffectiveDate:O} " +
+                "Impact={Impact} Amount={Amount} includedInRange={Included}",
+                r.Id, r.EffectiveDate, r.FinancialImpact, r.TotalAmount, includedInRange);
+        }
+
+        var summary = BuildSummary(from, to, rows);
+        _logger.LogInformation(
+            "GetPeriodSummaryAsync: result rowCount={RowCount} totalIncome={TotalIncome} totalExpenses={TotalExpenses}",
+            rows.Count, summary.TotalIncome, summary.TotalExpenses);
+
+        return summary;
     }
 
     // ── GetExpensesByCategoryAsync ────────────────────────────────────────────

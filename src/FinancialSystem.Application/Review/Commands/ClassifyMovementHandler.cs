@@ -2,6 +2,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FinancialSystem.Application.Review.Commands;
 
@@ -25,16 +26,29 @@ public sealed class ClassifyMovementHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly ILogger<ClassifyMovementHandler> _logger;
 
-    public ClassifyMovementHandler(IApplicationDbContext db, IDateTimeProvider dateTimeProvider)
+    public ClassifyMovementHandler(
+        IApplicationDbContext db, IDateTimeProvider dateTimeProvider, ILogger<ClassifyMovementHandler> logger)
     {
         _db = db;
         _dateTimeProvider = dateTimeProvider;
+        _logger = logger;
     }
 
     public async Task<ClassifyMovementResult> Handle(
         ClassifyMovementCommand command, CancellationToken cancellationToken = default)
     {
+        // INSTRUMENTACIÓN TEMPORAL (dashboard-income-wrong-month): EffectiveDate tal
+        // como llega deserializado del request, antes de cualquier ToUtc/SpecifyKind.
+        // Kind=Unspecified acá es normal (ver ToUtc); lo que importa es que Ticks
+        // coincida con lo que el usuario tipeó en el date picker.
+        _logger.LogInformation(
+            "ClassifyMovementHandler.Handle: SourceEntityType={SourceEntityType} SourceId={SourceId} " +
+            "commandEffectiveDate={EffectiveDate:O} commandEffectiveDateKind={Kind}",
+            command.SourceEntityType, command.SourceId,
+            command.EffectiveDate, command.EffectiveDate?.Kind);
+
         var source = await FindSourceAsync(command.SourceEntityType, command.SourceId, cancellationToken);
         if (source is null)
             return ClassifyMovementResult.Failure(ClassifyMovementFailureReason.SourceNotFound);
@@ -81,6 +95,21 @@ public sealed class ClassifyMovementHandler
                 existing.EffectiveDate = ToUtc(newEffectiveDate);
 
             await _db.SaveChangesAsync(cancellationToken);
+
+            // Lectura de diagnóstico: AsNoTracking fuerza un SELECT nuevo contra la DB,
+            // en vez de devolver el valor cacheado en el change tracker. Si Postgres/Npgsql
+            // redondea o trunca el valor al guardarlo, PersistedEffectiveDate va a diferir
+            // de InMemoryEffectiveDate acá.
+            var persisted = await _db.ClassifiedMovements
+                .AsNoTracking()
+                .Where(m => m.Id == existing.Id)
+                .Select(m => m.EffectiveDate)
+                .FirstAsync(cancellationToken);
+            _logger.LogInformation(
+                "ClassifyMovementHandler.Handle: RECLASSIFY ClassifiedMovementId={Id} " +
+                "inMemoryEffectiveDate={InMemory:O} readBackFromDb={Persisted:O}",
+                existing.Id, existing.EffectiveDate, persisted);
+
             return ClassifyMovementResult.Success(existing.Id);
         }
 
@@ -121,6 +150,16 @@ public sealed class ClassifyMovementHandler
 
         _db.ClassifiedMovements.Add(classifiedMovement);
         await _db.SaveChangesAsync(cancellationToken);
+
+        var persistedNew = await _db.ClassifiedMovements
+            .AsNoTracking()
+            .Where(m => m.Id == classifiedMovement.Id)
+            .Select(m => m.EffectiveDate)
+            .FirstAsync(cancellationToken);
+        _logger.LogInformation(
+            "ClassifyMovementHandler.Handle: CREATE ClassifiedMovementId={Id} " +
+            "inMemoryEffectiveDate={InMemory:O} readBackFromDb={Persisted:O}",
+            classifiedMovement.Id, classifiedMovement.EffectiveDate, persistedNew);
 
         return ClassifyMovementResult.Success(classifiedMovement.Id);
     }
