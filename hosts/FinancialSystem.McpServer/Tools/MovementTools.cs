@@ -34,11 +34,14 @@ public sealed class MovementTools
     private const int MaxDateRangeDays = 90;
 
     private readonly IMovementsQueryService _movementsQuery;
+    private readonly IMovementLookupService _movementLookup;
     private readonly IApplicationDbContext _db;
 
-    public MovementTools(IMovementsQueryService movementsQuery, IApplicationDbContext db)
+    public MovementTools(
+        IMovementsQueryService movementsQuery, IMovementLookupService movementLookup, IApplicationDbContext db)
     {
         _movementsQuery = movementsQuery;
+        _movementLookup = movementLookup;
         _db = db;
     }
 
@@ -167,6 +170,102 @@ public sealed class MovementTools
             sb.AppendLine($"  Impacto financiero:  {(m.FinancialImpact?.ToString() ?? "(sin clasificar)")}");
             sb.AppendLine($"  Estado:              {(m.Status?.ToString() ?? "Pendiente")}");
             sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Devuelve el detalle completo de un movimiento identificado por su tipo de origen y su Id " +
+        "-- los mismos datos que usa ClassifyMovementCommand para identificarlo, no una convención " +
+        "nueva. Incluye dato crudo, cuenta financiera, información técnica, clasificación (si ya la " +
+        "tiene), información de procesamiento y grupo de matching. Usar para investigar a fondo un " +
+        "movimiento puntual, por ejemplo uno encontrado con SearchMovements.")]
+    public async Task<string> GetMovement(
+        [Description("Tipo de origen: Transaction (tarjeta) o BankStatement (banco).")]
+        string sourceEntityType,
+        [Description("Id del movimiento en su tabla de origen (Transaction.Id o BankStatement.Id).")]
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        if (!Enum.TryParse(sourceEntityType, ignoreCase: true, out SourceEntityType parsedSource)
+            || parsedSource is not (SourceEntityType.Transaction or SourceEntityType.BankStatement))
+        {
+            return $"Error: sourceEntityType inválido ('{sourceEntityType}'). " +
+                   "Valores válidos: Transaction, BankStatement.";
+        }
+
+        var detail = await _movementLookup.GetBySourceAsync(parsedSource, sourceId, ct);
+        if (detail is null)
+            return $"No se encontró ningún {parsedSource} con Id {sourceId}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Id: {detail.SourceId} ({detail.SourceEntityType})");
+        sb.AppendLine();
+
+        sb.AppendLine("Movimiento:");
+        sb.AppendLine($"  Fecha bancaria:      {detail.Date:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"  Descripción:         {detail.Description}");
+        sb.AppendLine($"  Importe:             {detail.Currency} {detail.Amount:N2}");
+        sb.AppendLine($"  Cuenta financiera:   {detail.FinancialAccountName ?? "(sin asignar)"}");
+        sb.AppendLine();
+
+        sb.AppendLine("Información técnica:");
+        sb.AppendLine($"  Archivo de origen:   {detail.SourceFile ?? "-"}");
+        sb.AppendLine($"  ExternalId:          {detail.ExternalId ?? "-"}");
+        sb.AppendLine($"  Registrado (UTC):    {detail.SourceRecordedAtUtc:O}");
+        if (detail.SourceEntityType == SourceEntityType.Transaction)
+        {
+            sb.AppendLine($"  Cupón:               {detail.CouponNumber ?? "-"}");
+            sb.AppendLine($"  Línea cruda:         {detail.RawLine ?? "-"}");
+        }
+        else
+        {
+            sb.AppendLine($"  Banco:               {detail.BankName ?? "-"}");
+            sb.AppendLine($"  Cuenta (número):     {detail.AccountNumber ?? "-"}");
+            sb.AppendLine($"  Detalle:             {detail.BankDetail ?? "-"}");
+            sb.AppendLine($"  Saldo posterior:     {(detail.Balance is { } bal ? bal.ToString("N2") : "-")}");
+            sb.AppendLine($"  Hoja / fila:         {detail.SheetName ?? "-"} / {(detail.RowNumber?.ToString() ?? "-")}");
+            sb.AppendLine($"  Comercio (débito):   {detail.Merchant ?? "-"}");
+            sb.AppendLine($"  Hora comercio (UTC): {(detail.MerchantAtUtc is { } mAt ? mAt.ToString("O") : "-")}");
+        }
+        sb.AppendLine();
+
+        if (detail.Classification is null)
+        {
+            sb.AppendLine("Clasificación: pendiente (todavía no tiene ClassifiedMovement).");
+            return sb.ToString();
+        }
+
+        var c = detail.Classification;
+        sb.AppendLine("Clasificación:");
+        sb.AppendLine($"  ClassifiedMovementId: {c.ClassifiedMovementId}");
+        sb.AppendLine($"  Período financiero (EffectiveDate): {c.EffectiveDate:dd/MM/yyyy}");
+        sb.AppendLine($"  Categoría:            {c.CategoryName ?? "(desconocida)"}");
+        sb.AppendLine($"  Contraparte:          {c.CounterpartyName ?? "-"}");
+        sb.AppendLine($"  Tipo:                 {c.MovementType}");
+        sb.AppendLine($"  Impacto financiero:   {c.FinancialImpact}");
+        sb.AppendLine($"  Estado:               {c.Status}");
+        sb.AppendLine($"  Comentario:           {c.Comment ?? "-"}");
+        sb.AppendLine();
+
+        sb.AppendLine("Información de procesamiento:");
+        sb.AppendLine($"  Origen del procesamiento: {c.ProcessingSource}");
+        sb.AppendLine($"  MatchScore:          {(c.MatchScore is { } score ? score.ToString("N2") : "-")}");
+        sb.AppendLine($"  AmountDelta:         {(c.AmountDelta is { } delta ? delta.ToString("N2") : "-")}");
+        sb.AppendLine($"  Creado (UTC):        {c.CreatedAt:O}");
+        sb.AppendLine($"  Procesado (UTC):     {c.ProcessedAt:O}");
+        sb.AppendLine($"  Procesado por:       {c.ProcessedBy ?? "-"}");
+        sb.AppendLine();
+
+        sb.AppendLine($"Grupo de matching ({c.GroupItems.Count} ítem(s); este movimiento es {c.ItemRole}):");
+        foreach (var gi in c.GroupItems)
+        {
+            var marker = gi.SourceEntityType == detail.SourceEntityType && gi.SourceId == detail.SourceId
+                ? " (este)"
+                : "";
+            sb.AppendLine($"  - {gi.SourceEntityType} {gi.SourceId} — {gi.Role}{marker}");
         }
 
         return sb.ToString();

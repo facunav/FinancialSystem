@@ -80,6 +80,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialMetricsService, FinancialMetricsService>();
         services.AddScoped<IMovementLoader, Review.MovementLoader>();
         services.AddScoped<IMovementsQueryService, MovementsQueryService>();
+        services.AddScoped<IMovementLookupService, MovementLookupService>();
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
 
