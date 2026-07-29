@@ -257,10 +257,10 @@ public sealed class AuditTools
                 .Where(a => accountIds.Contains(a.Id))
                 .ToDictionaryAsync(a => a.Id, a => a.Name, ct);
 
-        var flagged = new List<(MovementView Movement, List<string> Motivos)>();
+        var flagged = new List<(MovementView Movement, List<Motivo> Motivos)>();
         foreach (var m in classified)
         {
-            var motivos = new List<string>();
+            var motivos = new List<Motivo>();
 
             if (suggestionsBySourceId.TryGetValue(m.SourceId, out var suggestions))
                 motivos.AddRange(BuildSuggestionMotivos(m, suggestions, categoryNames, counterpartyNames));
@@ -289,37 +289,58 @@ public sealed class AuditTools
             index++;
             sb.AppendLine($"Movimiento {index}");
             sb.AppendLine($"- Id: {m.SourceId}");
+            sb.AppendLine($"- Fecha: {m.Date:yyyy-MM-dd}");
             sb.AppendLine(
                 $"- Cuenta: {(m.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId, "(desconocida)") : "(sin asignar)")}");
-            sb.AppendLine($"- Fecha: {m.Date:yyyy-MM-dd}");
+            sb.AppendLine($"- Descripción: {m.Description}");
             sb.AppendLine($"- Importe: {m.Amount:N2}");
             sb.AppendLine($"- Moneda: {m.Currency}");
             sb.AppendLine($"- Categoría actual: {categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)")}");
             sb.AppendLine(
-                $"- Contraparte: {(m.CounterpartyId is { } cpId ? counterpartyNames.GetValueOrDefault(cpId, "(desconocida)") : "-")}");
-            sb.AppendLine($"- Tipo: {m.MovementType?.ToString() ?? "-"}");
-            sb.AppendLine($"- Impacto: {m.FinancialImpact?.ToString() ?? "-"}");
-            sb.AppendLine("- Motivos:");
+                $"- Contraparte actual: {(m.CounterpartyId is { } cpId ? counterpartyNames.GetValueOrDefault(cpId, "(desconocida)") : "-")}");
+            sb.AppendLine($"- Tipo actual: {m.MovementType?.ToString() ?? "-"}");
+            sb.AppendLine($"- Impacto actual: {m.FinancialImpact?.ToString() ?? "-"}");
+            sb.AppendLine("- Motivos encontrados:");
+
+            var motivoIndex = 0;
             foreach (var motivo in motivos)
-                sb.AppendLine($"  - {motivo}");
+            {
+                motivoIndex++;
+                sb.AppendLine($"  Motivo {motivoIndex}");
+                sb.AppendLine($"  - Origen: {motivo.Origen}");
+                sb.AppendLine($"  - Dimensión: {motivo.Dimension}");
+                sb.AppendLine($"  - Valor actual: {motivo.ValorActual}");
+                sb.AppendLine($"  - Valor sugerido: {motivo.ValorSugerido}");
+                // Confianza solo si el motor que produjo esta señal la calcula
+                // (IClassificationSuggestionService la expone siempre en sus
+                // resultados; la comparación contra Counterparty.Default* no tiene
+                // ninguna noción de confianza -- se omite la línea, no se inventa un
+                // valor).
+                if (motivo.Confianza is not null)
+                    sb.AppendLine($"  - Confianza: {motivo.Confianza}");
+            }
+
             sb.AppendLine();
         }
 
         return sb.ToString();
     }
 
-    // ── Señal 1: historial de descripción (IClassificationSuggestionService) ────
-    // Texto ya formateado en el momento de la comparación -- los diccionarios de
-    // nombres ya están resueltos en bloque antes de llegar acá, así que no hace
-    // falta ningún paso intermedio de codificar/decodificar el motivo.
+    // Origen | Dimensión | valor actual | valor sugerido | confianza (null si el
+    // origen de la señal no produce ninguna).
+    private sealed record Motivo(string Origen, string Dimension, string ValorActual, string ValorSugerido, string? Confianza);
 
-    private static List<string> BuildSuggestionMotivos(
+    // ── Señal 1: historial de descripción (IClassificationSuggestionService) ────
+
+    private const string SuggestionOrigen = "Historial de descripción idéntica (IClassificationSuggestionService)";
+
+    private static List<Motivo> BuildSuggestionMotivos(
         MovementView m,
         IReadOnlyList<ClassificationSuggestion> suggestions,
         Dictionary<Guid, string> categoryNames,
         Dictionary<Guid, string> counterpartyNames)
     {
-        var motivos = new List<string>();
+        var motivos = new List<Motivo>();
 
         foreach (var s in suggestions)
         {
@@ -328,27 +349,34 @@ public sealed class AuditTools
                 case SuggestionDimension.Category:
                     var suggestedCategoryId = (Guid)s.Value;
                     if (suggestedCategoryId != m.CategoryId)
-                        motivos.Add(
-                            "Historial de descripción idéntica: Categoría actual=" +
-                            $"\"{categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)")}\", sugerida=" +
-                            $"\"{categoryNames.GetValueOrDefault(suggestedCategoryId, "(desconocida)")}\" " +
-                            $"(confianza={s.Confidence}).");
+                        motivos.Add(new Motivo(
+                            SuggestionOrigen,
+                            "Categoría",
+                            categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)"),
+                            categoryNames.GetValueOrDefault(suggestedCategoryId, "(desconocida)"),
+                            s.Confidence.ToString()));
                     break;
 
                 case SuggestionDimension.MovementType:
                     var suggestedType = (MovementType)s.Value;
                     if (suggestedType != m.MovementType)
-                        motivos.Add(
-                            $"Historial de descripción idéntica: Tipo actual={m.MovementType?.ToString() ?? "-"}, " +
-                            $"sugerido={suggestedType} (confianza={s.Confidence}).");
+                        motivos.Add(new Motivo(
+                            SuggestionOrigen,
+                            "Tipo",
+                            m.MovementType?.ToString() ?? "-",
+                            suggestedType.ToString(),
+                            s.Confidence.ToString()));
                     break;
 
                 case SuggestionDimension.FinancialImpact:
                     var suggestedImpact = (FinancialImpact)s.Value;
                     if (suggestedImpact != m.FinancialImpact)
-                        motivos.Add(
-                            $"Historial de descripción idéntica: Impacto actual={m.FinancialImpact?.ToString() ?? "-"}, " +
-                            $"sugerido={suggestedImpact} (confianza={s.Confidence}).");
+                        motivos.Add(new Motivo(
+                            SuggestionOrigen,
+                            "Impacto",
+                            m.FinancialImpact?.ToString() ?? "-",
+                            suggestedImpact.ToString(),
+                            s.Confidence.ToString()));
                     break;
 
                 case SuggestionDimension.Counterparty:
@@ -358,10 +386,12 @@ public sealed class AuditTools
                         var actualName = m.CounterpartyId is { } cpId
                             ? counterpartyNames.GetValueOrDefault(cpId, "(desconocida)")
                             : "-";
-                        motivos.Add(
-                            $"Historial de descripción idéntica: Contraparte actual=\"{actualName}\", sugerida=" +
-                            $"\"{counterpartyNames.GetValueOrDefault(suggestedCounterpartyId, "(desconocida)")}\" " +
-                            $"(confianza={s.Confidence}).");
+                        motivos.Add(new Motivo(
+                            SuggestionOrigen,
+                            "Contraparte",
+                            actualName,
+                            counterpartyNames.GetValueOrDefault(suggestedCounterpartyId, "(desconocida)"),
+                            s.Confidence.ToString()));
                     }
                     break;
             }
@@ -371,27 +401,39 @@ public sealed class AuditTools
     }
 
     // ── Señal 2: Counterparty.Default* (ADR-003) ─────────────────────────────
+    // Sin Confianza: es una comparación de igualdad directa, no un motor con noción
+    // de confianza propia -- Motivo.Confianza queda null en los tres casos.
 
-    private static List<string> BuildDefaultMotivos(
+    private const string CounterpartyDefaultOrigen = "Default configurado en la contraparte (Counterparty.Default*, ADR-003)";
+
+    private static List<Motivo> BuildDefaultMotivos(
         MovementView m, CounterpartyDefaults defaults, Dictionary<Guid, string> categoryNames)
     {
-        var motivos = new List<string>();
+        var motivos = new List<Motivo>();
 
         if (defaults.DefaultCategoryId is { } defaultCategoryId && defaultCategoryId != m.CategoryId)
-            motivos.Add(
-                "Default configurado en la contraparte: Categoría actual=" +
-                $"\"{categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)")}\", default=" +
-                $"\"{categoryNames.GetValueOrDefault(defaultCategoryId, "(desconocida)")}\".");
+            motivos.Add(new Motivo(
+                CounterpartyDefaultOrigen,
+                "Categoría",
+                categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)"),
+                categoryNames.GetValueOrDefault(defaultCategoryId, "(desconocida)"),
+                Confianza: null));
 
         if (defaults.DefaultMovementType is { } defaultMovementType && defaultMovementType != m.MovementType)
-            motivos.Add(
-                $"Default configurado en la contraparte: Tipo actual={m.MovementType?.ToString() ?? "-"}, " +
-                $"default={defaultMovementType}.");
+            motivos.Add(new Motivo(
+                CounterpartyDefaultOrigen,
+                "Tipo",
+                m.MovementType?.ToString() ?? "-",
+                defaultMovementType.ToString(),
+                Confianza: null));
 
         if (defaults.DefaultFinancialImpact is { } defaultFinancialImpact && defaultFinancialImpact != m.FinancialImpact)
-            motivos.Add(
-                $"Default configurado en la contraparte: Impacto actual={m.FinancialImpact?.ToString() ?? "-"}, " +
-                $"default={defaultFinancialImpact}.");
+            motivos.Add(new Motivo(
+                CounterpartyDefaultOrigen,
+                "Impacto",
+                m.FinancialImpact?.ToString() ?? "-",
+                defaultFinancialImpact.ToString(),
+                Confianza: null));
 
         return motivos;
     }
