@@ -27,4 +27,15 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ProjectTools.cs lee docs/ desde el directorio de salida del build en tiempo de
+         ejecución: mismo mecanismo de copia que ya usa este proyecto para
+         appsettings.json/appsettings.Development.json, aplicado acá a docs/**/*.md
+         preservando la estructura de carpetas original. -->
+    <None Include="..\..\docs\**\*.md">
+      <Link>docs\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
