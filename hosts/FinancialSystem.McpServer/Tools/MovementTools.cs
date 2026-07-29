@@ -271,6 +271,119 @@ public sealed class MovementTools
         return sb.ToString();
     }
 
+    [McpServerTool]
+    [Description(
+        "Devuelve una explicación estructurada y estable de un movimiento -- mismas secciones " +
+        "siempre (Movimiento, Clasificación, Procesamiento, Matching, Observaciones), sin lenguaje " +
+        "natural. Reutiliza el mismo lookup que GetMovement (una sola consulta) pero organizado " +
+        "por tema, con una sección de Observaciones derivada exclusivamente de datos ya existentes " +
+        "-- no evalúa nada nuevo, no usa IA. Pensada para que un LLM la use como base de " +
+        "razonamiento sin tener que interpretar prosa.")]
+    public async Task<string> ExplainMovement(
+        [Description("Tipo de origen: Transaction (tarjeta) o BankStatement (banco).")]
+        string sourceEntityType,
+        [Description("Id del movimiento en su tabla de origen (Transaction.Id o BankStatement.Id).")]
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        if (!Enum.TryParse(sourceEntityType, ignoreCase: true, out SourceEntityType parsedSource)
+            || parsedSource is not (SourceEntityType.Transaction or SourceEntityType.BankStatement))
+        {
+            return $"Error: sourceEntityType inválido ('{sourceEntityType}'). " +
+                   "Valores válidos: Transaction, BankStatement.";
+        }
+
+        var detail = await _movementLookup.GetBySourceAsync(parsedSource, sourceId, ct);
+        if (detail is null)
+            return $"No se encontró ningún {parsedSource} con Id {sourceId}.";
+
+        var c = detail.Classification;
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"Id: {detail.SourceId} ({detail.SourceEntityType})");
+        sb.AppendLine();
+
+        sb.AppendLine("Movimiento");
+        sb.AppendLine($"- Banco: {detail.BankName ?? "-"}");
+        sb.AppendLine($"- Cuenta: {detail.FinancialAccountName ?? "(sin asignar)"}");
+        sb.AppendLine($"- Fecha bancaria: {detail.Date:yyyy-MM-dd}");
+        sb.AppendLine($"- EffectiveDate: {(c is not null ? c.EffectiveDate.ToString("yyyy-MM-dd") : "(sin clasificar)")}");
+        sb.AppendLine($"- Importe: {detail.Amount:N2}");
+        sb.AppendLine($"- Moneda: {detail.Currency}");
+        sb.AppendLine();
+
+        sb.AppendLine("Clasificación");
+        sb.AppendLine($"- Categoría: {(c is not null ? c.CategoryName ?? "(no resuelve)" : "-")}");
+        sb.AppendLine($"- Contraparte: {c?.CounterpartyName ?? "-"}");
+        sb.AppendLine($"- Tipo: {(c is not null ? c.MovementType.ToString() : "-")}");
+        sb.AppendLine($"- Impacto: {(c is not null ? c.FinancialImpact.ToString() : "-")}");
+        sb.AppendLine($"- Estado: {(c is not null ? c.Status.ToString() : "Pendiente")}");
+        sb.AppendLine();
+
+        sb.AppendLine("Procesamiento");
+        sb.AppendLine($"- ProcessingSource: {(c is not null ? c.ProcessingSource.ToString() : "-")}");
+        sb.AppendLine($"- MatchScore: {(c?.MatchScore is { } score ? score.ToString("N2") : "-")}");
+        sb.AppendLine($"- AmountDelta: {(c?.AmountDelta is { } delta ? delta.ToString("N2") : "-")}");
+        sb.AppendLine();
+
+        sb.AppendLine("Matching");
+        sb.AppendLine($"- Cantidad de Items: {(c is not null ? c.GroupItems.Count.ToString() : "0")}");
+        sb.AppendLine($"- Roles: {(c is not null && c.GroupItems.Count > 0 ? string.Join(", ", c.GroupItems.Select(i => i.Role.ToString())) : "-")}");
+        sb.AppendLine($"- Movimiento individual o grupo: {(c is not null ? (c.GroupItems.Count > 1 ? "Grupo" : "Individual") : "-")}");
+        sb.AppendLine();
+
+        sb.AppendLine("Observaciones");
+        var observations = BuildObservations(detail, c);
+        if (observations.Count == 0)
+            sb.AppendLine("- (sin observaciones)");
+        else
+            foreach (var observation in observations)
+                sb.AppendLine($"- {observation}");
+
+        return sb.ToString();
+    }
+
+    // Observaciones derivadas exclusivamente de campos que MovementDetail/
+    // MovementClassificationDetail ya exponen -- ninguna heurística nueva, ningún
+    // umbral inventado. Por eso, deliberadamente, no hay una observación de "score
+    // bajo": MatchScore no tiene ningún umbral definido en ningún lado del proyecto
+    // (era del motor de matching retirado en PR-L4) y agregar uno acá sería inventar
+    // un criterio que no existe -- ver Ideas futuras en el mensaje del PR.
+    private static List<string> BuildObservations(MovementDetail detail, MovementClassificationDetail? c)
+    {
+        var observations = new List<string>();
+
+        if (c is null)
+        {
+            observations.Add("Pendiente de clasificar.");
+            return observations;
+        }
+
+        if (c.EffectiveDate.Date != detail.Date.Date)
+            observations.Add("EffectiveDate fue ajustado manualmente (difiere de la fecha bancaria).");
+
+        observations.Add(c.CounterpartyId is not null
+            ? "Tiene contraparte asignada."
+            : "Sin contraparte asignada.");
+
+        if (c.CategoryName is null)
+            observations.Add("CategoryId no resuelve a ninguna categoría existente.");
+
+        if (!string.IsNullOrWhiteSpace(c.Comment))
+            observations.Add("Tiene comentario.");
+
+        if (c.ProcessedAt > c.CreatedAt)
+            observations.Add("Fue reclasificado al menos una vez (ProcessedAt posterior a CreatedAt).");
+
+        if (c.GroupItems.Count > 1)
+            observations.Add($"Pertenece a un grupo de matching de {c.GroupItems.Count} movimientos (no es 1:1).");
+
+        if (c.AmountDelta is { } amountDelta && amountDelta != 0)
+            observations.Add("Tiene una diferencia de importe registrada entre References y Candidates del grupo (AmountDelta != 0).");
+
+        return observations;
+    }
+
     // Resolución en bloque (2 queries, nunca una por fila) -- mismo criterio que ya
     // usa MovementsQueryService.LoadClassifiedAsync para resolver cuentas asignadas.
     // MovementView solo trae CategoryId/CounterpartyId (sin hidratar la entidad, ver
