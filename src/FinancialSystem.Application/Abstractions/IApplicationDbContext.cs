@@ -1,4 +1,5 @@
 using FinancialSystem.Domain.Entities;
+using FinancialSystem.Domain.Memory;
 using FinancialSystem.Domain.Review;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,8 @@ public interface IApplicationDbContext
     DbSet<ImportBatch> ImportBatches { get; }
     DbSet<ImportBatchLine> ImportBatchLines { get; }
     DbSet<FinancialAccount> FinancialAccounts { get; }
+    DbSet<Investigation> Investigations { get; }
+    DbSet<InvestigationReference> InvestigationReferences { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
