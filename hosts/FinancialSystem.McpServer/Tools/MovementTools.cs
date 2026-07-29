@@ -343,6 +343,182 @@ public sealed class MovementTools
         return sb.ToString();
     }
 
+    [McpServerTool]
+    [Description(
+        "Responde puntualmente '¿por qué este movimiento terminó con esta clasificación?' -- " +
+        "estado actual, cómo se obtuvo (ProcessingSource, sin inventar el origen si el sistema " +
+        "no lo registra), información de procesamiento, grupo de matching y observaciones, todo " +
+        "en formato estructurado. Reutiliza el mismo lookup que GetMovement/ExplainMovement (una " +
+        "sola consulta) -- no agrega IA, no compara contra IClassificationSuggestionService ni " +
+        "Counterparty.Default* (eso es auditoría, ver FindMisclassifiedMovements; acá solo se lee " +
+        "lo que ClassifiedMovement ya persiste sobre sí mismo).")]
+    public async Task<string> ExplainClassification(
+        [Description("Tipo de origen: Transaction (tarjeta) o BankStatement (banco).")]
+        string sourceEntityType,
+        [Description("Id del movimiento en su tabla de origen (Transaction.Id o BankStatement.Id).")]
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        if (!Enum.TryParse(sourceEntityType, ignoreCase: true, out SourceEntityType parsedSource)
+            || parsedSource is not (SourceEntityType.Transaction or SourceEntityType.BankStatement))
+        {
+            return $"Error: sourceEntityType inválido ('{sourceEntityType}'). " +
+                   "Valores válidos: Transaction, BankStatement.";
+        }
+
+        var detail = await _movementLookup.GetBySourceAsync(parsedSource, sourceId, ct);
+        if (detail is null)
+            return $"No se encontró ningún {parsedSource} con Id {sourceId}.";
+
+        var c = detail.Classification;
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"Id: {detail.SourceId} ({detail.SourceEntityType})");
+        sb.AppendLine();
+
+        sb.AppendLine("Movimiento");
+        sb.AppendLine($"- Id: {detail.SourceId}");
+        sb.AppendLine($"- Fecha: {detail.Date:yyyy-MM-dd}");
+        sb.AppendLine($"- Descripción: {detail.Description}");
+        sb.AppendLine($"- Importe: {detail.Currency} {detail.Amount:N2}");
+        sb.AppendLine($"- Cuenta: {detail.FinancialAccountName ?? "(sin asignar)"}");
+        sb.AppendLine();
+
+        sb.AppendLine("Estado");
+        sb.AppendLine($"- {(c is not null ? "Clasificado" : "Pendiente")}");
+        sb.AppendLine($"- Categoría: {(c is not null ? c.CategoryName ?? "(no resuelve)" : "-")}");
+        sb.AppendLine($"- Tipo: {(c is not null ? c.MovementType.ToString() : "-")}");
+        sb.AppendLine($"- Impacto: {(c is not null ? c.FinancialImpact.ToString() : "-")}");
+        sb.AppendLine($"- Contraparte: {c?.CounterpartyName ?? "-"}");
+        sb.AppendLine($"- EffectiveDate: {(c is not null ? c.EffectiveDate.ToString("yyyy-MM-dd") : "-")}");
+        sb.AppendLine($"- Status: {(c is not null ? c.Status.ToString() : "-")}");
+        sb.AppendLine();
+
+        sb.AppendLine("Cómo se obtuvo esa clasificación");
+        foreach (var line in ExplainClassificationOrigin(c))
+            sb.AppendLine($"- {line}");
+        sb.AppendLine();
+
+        sb.AppendLine("Matching");
+        if (c is not null)
+        {
+            sb.AppendLine($"- Cantidad de Items: {c.GroupItems.Count}");
+            sb.AppendLine($"- Roles: {string.Join(", ", c.GroupItems.Select(i => i.Role.ToString()))}");
+            sb.AppendLine($"- {(c.GroupItems.Count > 1 ? "Grupo" : "Individual")}");
+        }
+        else
+        {
+            sb.AppendLine("- (sin clasificar, no aplica)");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("Procesamiento");
+        if (c is not null)
+        {
+            sb.AppendLine($"- ProcessingSource: {c.ProcessingSource}");
+            sb.AppendLine($"- MatchScore: {(c.MatchScore is { } score ? score.ToString("N2") : "-")}");
+            sb.AppendLine($"- AmountDelta: {(c.AmountDelta is { } delta ? delta.ToString("N2") : "-")}");
+            sb.AppendLine($"- CreatedAt: {c.CreatedAt:O}");
+            sb.AppendLine($"- ProcessedAt: {c.ProcessedAt:O}");
+            sb.AppendLine($"- ProcessedBy: {c.ProcessedBy ?? "-"}");
+        }
+        else
+        {
+            sb.AppendLine("- (sin clasificar, no aplica)");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("Observaciones");
+        var observations = BuildClassificationObservations(detail, c);
+        if (observations.Count == 0)
+            sb.AppendLine("- (sin observaciones)");
+        else
+            foreach (var observation in observations)
+                sb.AppendLine($"- {observation}");
+
+        return sb.ToString();
+    }
+
+    // "Cómo se obtuvo esa clasificación": exclusivamente lo que ProcessingSource ya
+    // persiste. Deliberadamente NO se compara contra IClassificationSuggestionService
+    // ni contra Counterparty.Default* para adivinar si influyeron -- ClassifyMovementHandler
+    // no consulta ninguno de los dos al escribir, así que el sistema no guarda esa
+    // relación causal en ningún lado. Afirmarla acá sería inventar el origen, exactamente
+    // lo que esta tool tiene prohibido hacer (esa comparación sí es legítima, pero como
+    // señal de auditoría -- "¿la clasificación actual coincide con lo que el motor sugeriría
+    // hoy?" -- no como afirmación de procedencia; ver FindMisclassifiedMovements).
+    private static List<string> ExplainClassificationOrigin(MovementClassificationDetail? c)
+    {
+        if (c is null)
+            return ["Sin clasificar todavía -- no hay origen que explicar."];
+
+        var lines = new List<string>
+        {
+            c.ProcessingSource switch
+            {
+                ProcessingSource.ManualReview =>
+                    "Clasificación manual: el usuario clasificó este movimiento directamente, " +
+                    "sin coincidencia externa registrada.",
+                ProcessingSource.ManualMatch =>
+                    "Coincidencia armada manualmente por el usuario (mecanismo de matching legado, " +
+                    "retirado en PR-L4 -- sin productor activo hoy; solo puede venir de datos históricos).",
+                ProcessingSource.ConfirmedFromSuggestion =>
+                    "Confirmación de una sugerencia de confianza media del motor de matching legado " +
+                    "(retirado en PR-L4 -- sin productor activo hoy; solo puede venir de datos históricos).",
+                ProcessingSource.ConfirmedFromHighConfidenceSuggestion =>
+                    "Confirmación de una sugerencia de alta confianza del motor de matching legado " +
+                    "(retirado en PR-L4 -- sin productor activo hoy; solo puede venir de datos históricos).",
+                _ => "El origen exacto de esta clasificación no está disponible en el modelo actual.",
+            },
+        };
+
+        // ClassifyMovementHandler no actualiza ProcessingSource al reclasificar (solo lo
+        // setea al crear) -- si hubo una reclasificación posterior, este campo describe el
+        // origen de la clasificación INICIAL, no necesariamente el de los valores actuales.
+        if (c.ProcessedAt > c.CreatedAt)
+            lines.Add(
+                "Este movimiento fue reclasificado después de su clasificación inicial. " +
+                "ProcessingSource describe el origen de esa clasificación inicial -- no se " +
+                "actualiza al reclasificar, así que no necesariamente describe el origen de " +
+                "los valores actuales.");
+
+        return lines;
+    }
+
+    // Mismas 5 observaciones que pide la tool, cada una una comparación directa sobre
+    // campos que MovementDetail/MovementClassificationDetail ya exponen -- ninguna
+    // heurística nueva. Subconjunto deliberado de BuildObservations (ExplainMovement):
+    // esta tool solo necesita las observaciones relacionadas con el ORIGEN/procedencia de
+    // la clasificación, no todas las de ExplainMovement (ej. no repite la de CategoryId
+    // huérfano, que ya cubre GetMovement/ExplainMovement).
+    private static List<string> BuildClassificationObservations(MovementDetail detail, MovementClassificationDetail? c)
+    {
+        var observations = new List<string>();
+
+        if (c is null)
+        {
+            observations.Add("Pendiente de clasificar.");
+            return observations;
+        }
+
+        if (c.EffectiveDate.Date != detail.Date.Date)
+            observations.Add("EffectiveDate distinto de la fecha original (fue ajustado manualmente).");
+
+        if (!string.IsNullOrWhiteSpace(c.Comment))
+            observations.Add("Tiene comentario.");
+
+        if (c.CounterpartyId is null)
+            observations.Add("No tiene contraparte.");
+
+        if (c.GroupItems.Count > 1)
+            observations.Add($"Tiene grupo de matching ({c.GroupItems.Count} movimientos).");
+
+        if (c.ProcessedAt > c.CreatedAt)
+            observations.Add("Fue reclasificado.");
+
+        return observations;
+    }
+
     // Observaciones derivadas exclusivamente de campos que MovementDetail/
     // MovementClassificationDetail ya exponen -- ninguna heurística nueva, ningún
     // umbral inventado. Por eso, deliberadamente, no hay una observación de "score
