@@ -1,30 +1,36 @@
 using System.ComponentModel;
 using System.Text;
 using FinancialSystem.Application.Investigations.Commands;
+using FinancialSystem.Domain.Enums;
 using ModelContextProtocol.Server;
 
 namespace FinancialSystem.McpServer.Tools;
 
 /// <summary>
-/// Primera tool de memoria del Financial MCP — Fase 3 de
+/// Tools de memoria del Financial MCP — Fase 3 de
 /// docs/Architecture/Decisions/ADR-007-McpMemory.md ("tools para crear, actualizar y
-/// consultar investigaciones"), acotada por ahora solo a creación.
+/// consultar investigaciones"), acotada por ahora a creación y a asociar movimientos
+/// existentes (sin hallazgos, sin historial, sin IA).
 ///
-/// PRINCIPIO: no reimplementa el caso de uso — delega en CreateInvestigationHandler,
-/// exactamente el mismo handler que ya usa POST /api/investigations
-/// (InvestigationEndpoints.cs, ver 0014). Una sola implementación de "crear una
-/// investigación", consumida por dos entradas (HTTP y MCP), igual que
-/// ExplainMovement/GetMovement reutilizan IMovementLookupService en vez de duplicar
-/// su lógica.
+/// PRINCIPIO: no reimplementa ningún caso de uso — cada tool delega en el handler de
+/// Application que ya resuelve el caso (CreateInvestigationHandler,
+/// LinkMovementToInvestigationHandler), el mismo que usaría cualquier otra entrada
+/// (HTTP, en el caso de CreateInvestigation vía InvestigationEndpoints.cs — LinkMovement
+/// no tiene endpoint HTTP, ver 0016), igual que ExplainMovement/GetMovement reutilizan
+/// IMovementLookupService en vez de duplicar su lógica.
 /// </summary>
 [McpServerToolType]
 public sealed class InvestigationTools
 {
     private readonly CreateInvestigationHandler _createInvestigationHandler;
+    private readonly LinkMovementToInvestigationHandler _linkMovementToInvestigationHandler;
 
-    public InvestigationTools(CreateInvestigationHandler createInvestigationHandler)
+    public InvestigationTools(
+        CreateInvestigationHandler createInvestigationHandler,
+        LinkMovementToInvestigationHandler linkMovementToInvestigationHandler)
     {
         _createInvestigationHandler = createInvestigationHandler;
+        _linkMovementToInvestigationHandler = linkMovementToInvestigationHandler;
     }
 
     [McpServerTool]
@@ -50,6 +56,44 @@ public sealed class InvestigationTools
         sb.AppendLine($"InvestigationId: {investigation.Id}");
         sb.AppendLine($"Status: {investigation.Status}");
         sb.AppendLine($"CreatedAt (UTC): {investigation.CreatedAt:O}");
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Asocia un movimiento existente (Transaction o BankStatement) a una investigación ya " +
+        "creada — reutiliza exactamente el mismo caso de uso que LinkMovementToInvestigationHandler. " +
+        "Idempotente: si el movimiento ya estaba asociado a esa investigación, no crea una " +
+        "referencia duplicada. No crea hallazgos, comentarios ni historial, y no modifica la " +
+        "investigación.")]
+    public async Task<string> LinkMovement(
+        [Description("Id de la investigación (Investigation.Id).")]
+        Guid investigationId,
+        [Description("Tipo de origen del movimiento: 'Transaction' o 'BankStatement'.")]
+        string sourceEntityType,
+        [Description("Id del movimiento original en su tabla (Transaction.Id o BankStatement.Id).")]
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        if (!Enum.TryParse(sourceEntityType, ignoreCase: true, out SourceEntityType parsedSource)
+            || parsedSource is not (SourceEntityType.Transaction or SourceEntityType.BankStatement))
+        {
+            return $"Error: sourceEntityType inválido ('{sourceEntityType}'). " +
+                "Valores permitidos: Transaction, BankStatement.";
+        }
+
+        var command = new LinkMovementToInvestigationCommand(investigationId, parsedSource, sourceId);
+        var result = await _linkMovementToInvestigationHandler.Handle(command, ct);
+
+        if (!result.IsSuccess)
+            return $"Error: no se encontró ninguna investigación con Id {investigationId}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"InvestigationId: {investigationId}");
+        sb.AppendLine($"SourceEntityType: {parsedSource}");
+        sb.AppendLine($"SourceId: {sourceId}");
+        sb.AppendLine($"Resultado: {result.Outcome}");
 
         return sb.ToString();
     }
