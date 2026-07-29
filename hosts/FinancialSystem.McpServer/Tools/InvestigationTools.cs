@@ -9,28 +9,32 @@ namespace FinancialSystem.McpServer.Tools;
 /// <summary>
 /// Tools de memoria del Financial MCP — Fase 3 de
 /// docs/Architecture/Decisions/ADR-007-McpMemory.md ("tools para crear, actualizar y
-/// consultar investigaciones"), acotada por ahora a creación y a asociar movimientos
-/// existentes (sin hallazgos, sin historial, sin IA).
+/// consultar investigaciones"), acotada por ahora a creación, a asociar movimientos
+/// existentes y a registrar hallazgos (sin historial, sin IA).
 ///
 /// PRINCIPIO: no reimplementa ningún caso de uso — cada tool delega en el handler de
 /// Application que ya resuelve el caso (CreateInvestigationHandler,
-/// LinkMovementToInvestigationHandler), el mismo que usaría cualquier otra entrada
-/// (HTTP, en el caso de CreateInvestigation vía InvestigationEndpoints.cs — LinkMovement
-/// no tiene endpoint HTTP, ver 0016), igual que ExplainMovement/GetMovement reutilizan
-/// IMovementLookupService en vez de duplicar su lógica.
+/// LinkMovementToInvestigationHandler, AddInvestigationFindingHandler), el mismo que
+/// usaría cualquier otra entrada (HTTP, en el caso de CreateInvestigation vía
+/// InvestigationEndpoints.cs — LinkMovement/AddFinding no tienen endpoint HTTP, ver
+/// 0016/0017), igual que ExplainMovement/GetMovement reutilizan IMovementLookupService
+/// en vez de duplicar su lógica.
 /// </summary>
 [McpServerToolType]
 public sealed class InvestigationTools
 {
     private readonly CreateInvestigationHandler _createInvestigationHandler;
     private readonly LinkMovementToInvestigationHandler _linkMovementToInvestigationHandler;
+    private readonly AddInvestigationFindingHandler _addInvestigationFindingHandler;
 
     public InvestigationTools(
         CreateInvestigationHandler createInvestigationHandler,
-        LinkMovementToInvestigationHandler linkMovementToInvestigationHandler)
+        LinkMovementToInvestigationHandler linkMovementToInvestigationHandler,
+        AddInvestigationFindingHandler addInvestigationFindingHandler)
     {
         _createInvestigationHandler = createInvestigationHandler;
         _linkMovementToInvestigationHandler = linkMovementToInvestigationHandler;
+        _addInvestigationFindingHandler = addInvestigationFindingHandler;
     }
 
     [McpServerTool]
@@ -94,6 +98,36 @@ public sealed class InvestigationTools
         sb.AppendLine($"SourceEntityType: {parsedSource}");
         sb.AppendLine($"SourceId: {sourceId}");
         sb.AppendLine($"Resultado: {result.Outcome}");
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Registra un hallazgo (InvestigationFinding) en una investigación ya creada — " +
+        "reutiliza exactamente el mismo caso de uso que AddInvestigationFindingHandler. No " +
+        "modifica el estado de la investigación ni sus referencias. Sin IA, sin resumen: el " +
+        "texto se guarda tal como se pasa.")]
+    public async Task<string> AddFinding(
+        [Description("Id de la investigación (Investigation.Id).")]
+        Guid investigationId,
+        [Description("Texto del hallazgo, en lenguaje natural.")]
+        string text,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "Error: text es obligatorio.";
+
+        var command = new AddInvestigationFindingCommand(investigationId, text);
+        var result = await _addInvestigationFindingHandler.Handle(command, ct);
+
+        if (!result.IsSuccess)
+            return $"Error: no se encontró ninguna investigación con Id {investigationId}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"InvestigationId: {investigationId}");
+        sb.AppendLine($"FindingId: {result.FindingId}");
+        sb.AppendLine($"CreatedAt (UTC): {result.CreatedAt:O}");
 
         return sb.ToString();
     }

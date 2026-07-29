@@ -20,6 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FinancialAccount> FinancialAccounts => Set<FinancialAccount>();
     public DbSet<Investigation> Investigations => Set<Investigation>();
     public DbSet<InvestigationReference> InvestigationReferences => Set<InvestigationReference>();
+    public DbSet<InvestigationFinding> InvestigationFindings => Set<InvestigationFinding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,5 +35,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new FinancialAccountConfiguration());
         modelBuilder.ApplyConfiguration(new InvestigationConfiguration());
         modelBuilder.ApplyConfiguration(new InvestigationReferenceConfiguration());
+        modelBuilder.ApplyConfiguration(new InvestigationFindingConfiguration());
     }
 }

@@ -39,4 +39,6 @@ public class Investigation
     public DateTime UpdatedAt { get; set; }
 
     public ICollection<InvestigationReference> References { get; set; } = new List<InvestigationReference>();
+
+    public ICollection<InvestigationFinding> Findings { get; set; } = new List<InvestigationFinding>();
 }

@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<ClassifyMovementHandler>();
         services.AddScoped<CreateInvestigationHandler>();
         services.AddScoped<LinkMovementToInvestigationHandler>();
+        services.AddScoped<AddInvestigationFindingHandler>();
         return services;
     }
 

@@ -18,6 +18,7 @@ public interface IApplicationDbContext
     DbSet<FinancialAccount> FinancialAccounts { get; }
     DbSet<Investigation> Investigations { get; }
     DbSet<InvestigationReference> InvestigationReferences { get; }
+    DbSet<InvestigationFinding> InvestigationFindings { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
