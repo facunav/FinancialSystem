@@ -46,24 +46,26 @@ public sealed class SystemTools
 
     [McpServerTool]
     [Description(
-        "Devuelve la versión de la aplicación, el protocolo MCP negociado con este cliente, " +
-        "el commit de origen (si el build lo incluye) y la fecha de compilación del servidor. " +
-        "Usar para confirmar qué versión del MCP está corriendo antes de reportar un bug.")]
-    public string Version(McpServer server)
+        "Devuelve la versión de la aplicación, el commit de origen (si el build lo incluye) y " +
+        "la fecha de compilación del servidor. Usar para confirmar qué versión del MCP está " +
+        "corriendo antes de reportar un bug.")]
+    public string Version()
     {
         var assembly = typeof(SystemTools).Assembly;
+
+        // AssemblyVersion clásico (System.Reflection, siempre disponible) -- no depende de
+        // que el build haya corrido dentro de un repositorio git.
+        var appVersion = assembly.GetName().Version?.ToString() ?? "desconocida";
 
         // El SDK de .NET agrega automáticamente "+<commit sha>" al informational version
         // cuando el build corre dentro de un repositorio git (por defecto desde .NET 8 SDK,
         // sin paquete de SourceLink) -- no es un mecanismo nuevo, es el comportamiento
-        // estándar del SDK que ya se usa para compilar este proyecto.
+        // estándar del SDK que ya se usa para compilar este proyecto. Se muestra el valor
+        // completo (InformationalVersion) además del commit ya separado, para no ocultar
+        // de dónde sale ese commit si algún día el formato cambia.
         var informationalVersion = assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        var parts = informationalVersion?.Split('+', 2);
-        var appVersion = parts is { Length: > 0 } && !string.IsNullOrWhiteSpace(parts[0])
-            ? parts[0]
-            : assembly.GetName().Version?.ToString() ?? "desconocida";
-        var commit = parts is { Length: 2 } ? parts[1] : null;
+        var commit = informationalVersion?.Split('+', 2) is { Length: 2 } parts ? parts[1] : null;
 
         // Fecha de última escritura del ensamblado compilado -- metadata de archivo ya
         // disponible, sin agregar ningún mecanismo de sellado de build nuevo.
@@ -76,10 +78,10 @@ public sealed class SystemTools
 
         var sb = new StringBuilder();
         sb.AppendLine("FinancialSystem.McpServer");
-        sb.AppendLine($"  Versión de la app:          {appVersion}");
-        sb.AppendLine($"  Protocolo MCP negociado:    {server.NegotiatedProtocolVersion ?? "desconocido"}");
-        sb.AppendLine($"  Commit:                     {commit ?? "no disponible"}");
-        sb.AppendLine($"  Fecha de compilación (UTC): {(buildDateUtc is { } d ? d.ToString("O") : "no disponible")}");
+        sb.AppendLine($"  Versión de la app (AssemblyVersion): {appVersion}");
+        sb.AppendLine($"  InformationalVersion:                {informationalVersion ?? "no disponible"}");
+        sb.AppendLine($"  Commit:                               {commit ?? "no disponible"}");
+        sb.AppendLine($"  Fecha de compilación (UTC):           {(buildDateUtc is { } d ? d.ToString("O") : "no disponible")}");
         return sb.ToString();
     }
 

@@ -147,9 +147,11 @@ public class ImportHandlerSelectionTests
         IFileParser[] parsers =
         [
             new BbvaVisaStatementParser(
-                new BbvaTransactionLineParser(), extractor, NullLogger<BbvaVisaStatementParser>.Instance),
+                new BbvaTransactionLineParser(NullLogger<BbvaTransactionLineParser>.Instance),
+                extractor, NullLogger<BbvaVisaStatementParser>.Instance),
             new BbvaMastercardStatementParser(
-                new MastercardTransactionLineParser(), extractor, NullLogger<BbvaMastercardStatementParser>.Instance),
+                new MastercardTransactionLineParser(NullLogger<MastercardTransactionLineParser>.Instance),
+                extractor, NullLogger<BbvaMastercardStatementParser>.Instance),
         ];
         return new FileParserFactory(parsers, extractor, NullLogger<FileParserFactory>.Instance);
     }
