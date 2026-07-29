@@ -17,13 +17,15 @@ namespace FinancialSystem.McpServer.Tools;
 ///
 /// PRINCIPIO: no reimplementa ningún caso de uso — cada tool de escritura delega en
 /// el handler de Application que ya resuelve el caso (CreateInvestigationHandler,
-/// LinkMovementToInvestigationHandler, AddInvestigationFindingHandler), el mismo que
-/// usaría cualquier otra entrada (HTTP, en el caso de CreateInvestigation vía
-/// InvestigationEndpoints.cs — LinkMovement/AddFinding no tienen endpoint HTTP, ver
-/// 0016/0017). GetInvestigation es de solo lectura: no existe un servicio de consulta
-/// dedicado para Investigation (igual que Category/Counterparty en
-/// ConfigurationTools.cs), así que consulta IApplicationDbContext directo, mismo
-/// patrón que esa clase ya usa para esas dos entidades.
+/// LinkMovementToInvestigationHandler, AddInvestigationFindingHandler,
+/// UpdateInvestigationStatusHandler), el mismo que usaría cualquier otra entrada
+/// (HTTP, en el caso de CreateInvestigation vía InvestigationEndpoints.cs —
+/// LinkMovement/AddFinding/UpdateInvestigationStatus no tienen endpoint HTTP, ver
+/// 0016/0017/0019). GetInvestigation/SearchInvestigations son de solo lectura: no
+/// existe un servicio de consulta dedicado para Investigation (igual que
+/// Category/Counterparty en ConfigurationTools.cs), así que consultan
+/// IApplicationDbContext directo, mismo patrón que esa clase ya usa para esas dos
+/// entidades.
 /// </summary>
 [McpServerToolType]
 public sealed class InvestigationTools
@@ -245,6 +247,85 @@ public sealed class InvestigationTools
         sb.AppendLine($"InvestigationId: {investigationId}");
         sb.AppendLine($"Status: {parsedStatus}");
         sb.AppendLine($"UpdatedAt (UTC): {result.UpdatedAt:O}");
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Busca investigaciones por status (comparación exacta), tag (contiene, sin " +
+        "distinguir mayúsculas) y/o texto libre (contiene en Question o Conclusion, sin " +
+        "distinguir mayúsculas). Todos los parámetros son opcionales — sin ninguno, " +
+        "devuelve todas las investigaciones. Solo cuenta hallazgos y referencias, no las " +
+        "devuelve ni resuelve movimientos.")]
+    public async Task<string> SearchInvestigations(
+        [Description("Estado exacto a filtrar: 'Open', 'InProgress', 'Resolved' o 'Discarded'. Opcional.")]
+        string? status = null,
+        [Description("Etiqueta a buscar dentro de Tags (contiene, sin distinguir mayúsculas). Opcional.")]
+        string? tag = null,
+        [Description("Texto a buscar en Question o Conclusion (contiene, sin distinguir mayúsculas). Opcional.")]
+        string? text = null,
+        CancellationToken ct = default)
+    {
+        var query = _db.Investigations.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse(status, ignoreCase: true, out InvestigationStatus parsedStatus))
+            {
+                return $"Error: status inválido ('{status}'). " +
+                    "Valores permitidos: Open, InProgress, Resolved, Discarded.";
+            }
+
+            query = query.Where(i => i.Status == parsedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            var normalizedTag = tag.ToLower();
+            query = query.Where(i => i.Tags != null && i.Tags.ToLower().Contains(normalizedTag));
+        }
+
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            var normalizedText = text.ToLower();
+            query = query.Where(i =>
+                i.Question.ToLower().Contains(normalizedText)
+                || (i.Conclusion != null && i.Conclusion.ToLower().Contains(normalizedText)));
+        }
+
+        var investigations = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Select(i => new
+            {
+                i.Id,
+                i.Question,
+                i.Status,
+                i.Tags,
+                i.CreatedAt,
+                i.UpdatedAt,
+                FindingsCount = i.Findings.Count,
+                ReferencesCount = i.References.Count,
+            })
+            .ToListAsync(ct);
+
+        if (investigations.Count == 0)
+            return "No se encontraron investigaciones con esos criterios.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{investigations.Count} investigación(es):");
+        sb.AppendLine();
+        foreach (var i in investigations)
+        {
+            sb.AppendLine($"- InvestigationId: {i.Id}");
+            sb.AppendLine($"  Question: {i.Question}");
+            sb.AppendLine($"  Status: {i.Status}");
+            sb.AppendLine($"  Tags: {i.Tags ?? "-"}");
+            sb.AppendLine($"  CreatedAt (UTC): {i.CreatedAt:O}");
+            sb.AppendLine($"  UpdatedAt (UTC): {i.UpdatedAt:O}");
+            sb.AppendLine($"  FindingsCount: {i.FindingsCount}");
+            sb.AppendLine($"  ReferencesCount: {i.ReferencesCount}");
+        }
 
         return sb.ToString();
     }
