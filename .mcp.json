@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "financial-mcp": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "hosts/FinancialSystem.McpServer/FinancialSystem.McpServer.csproj"
+      ]
+    }
+  }
+}

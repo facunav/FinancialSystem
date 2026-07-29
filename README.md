@@ -161,6 +161,10 @@ Business logic should remain inside Application and Domain layers.
 
 Endpoints should remain thin and delegate behavior to commands, queries, handlers, or services depending on the existing module architecture.
 
+`hosts/FinancialSystem.McpServer` is a working MCP (Model Context Protocol) server —
+see `docs/Architecture/McpServerSetup.md` for how to build it, run it, and connect it
+to an MCP client (Claude Desktop, Claude Code, etc.).
+
 ---
 
 # Current Priorities
