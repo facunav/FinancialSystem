@@ -31,17 +31,20 @@ public sealed class InvestigationTools
     private readonly CreateInvestigationHandler _createInvestigationHandler;
     private readonly LinkMovementToInvestigationHandler _linkMovementToInvestigationHandler;
     private readonly AddInvestigationFindingHandler _addInvestigationFindingHandler;
+    private readonly UpdateInvestigationStatusHandler _updateInvestigationStatusHandler;
     private readonly IApplicationDbContext _db;
 
     public InvestigationTools(
         CreateInvestigationHandler createInvestigationHandler,
         LinkMovementToInvestigationHandler linkMovementToInvestigationHandler,
         AddInvestigationFindingHandler addInvestigationFindingHandler,
+        UpdateInvestigationStatusHandler updateInvestigationStatusHandler,
         IApplicationDbContext db)
     {
         _createInvestigationHandler = createInvestigationHandler;
         _linkMovementToInvestigationHandler = linkMovementToInvestigationHandler;
         _addInvestigationFindingHandler = addInvestigationFindingHandler;
+        _updateInvestigationStatusHandler = updateInvestigationStatusHandler;
         _db = db;
     }
 
@@ -198,6 +201,50 @@ public sealed class InvestigationTools
                 sb.AppendLine($"    CreatedAt (UTC): {finding.CreatedAt:O}");
             }
         }
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Cambia el estado de una investigación (Open/InProgress/Resolved/Discarded) — " +
+        "reutiliza exactamente el mismo caso de uso que UpdateInvestigationStatusHandler. " +
+        "Si status es 'Resolved', conclusion es obligatoria y se guarda; en cualquier otro " +
+        "estado, conclusion no se modifica.")]
+    public async Task<string> UpdateInvestigationStatus(
+        [Description("Id de la investigación (Investigation.Id).")]
+        Guid investigationId,
+        [Description("Nuevo estado: 'Open', 'InProgress', 'Resolved' o 'Discarded'.")]
+        string status,
+        [Description("Conclusión de la investigación. Obligatoria solo si status es 'Resolved'.")]
+        string? conclusion = null,
+        CancellationToken ct = default)
+    {
+        if (!Enum.TryParse(status, ignoreCase: true, out InvestigationStatus parsedStatus))
+        {
+            return $"Error: status inválido ('{status}'). " +
+                "Valores permitidos: Open, InProgress, Resolved, Discarded.";
+        }
+
+        var command = new UpdateInvestigationStatusCommand(investigationId, parsedStatus, conclusion);
+        var result = await _updateInvestigationStatusHandler.Handle(command, ct);
+
+        if (!result.IsSuccess)
+        {
+            return result.FailureReason switch
+            {
+                UpdateInvestigationStatusFailureReason.InvestigationNotFound =>
+                    $"Error: no se encontró ninguna investigación con Id {investigationId}.",
+                UpdateInvestigationStatusFailureReason.ConclusionRequired =>
+                    "Error: conclusion es obligatoria cuando status es 'Resolved'.",
+                _ => "Error desconocido al actualizar el estado de la investigación.",
+            };
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"InvestigationId: {investigationId}");
+        sb.AppendLine($"Status: {parsedStatus}");
+        sb.AppendLine($"UpdatedAt (UTC): {result.UpdatedAt:O}");
 
         return sb.ToString();
     }

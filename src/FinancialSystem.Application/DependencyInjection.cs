@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<CreateInvestigationHandler>();
         services.AddScoped<LinkMovementToInvestigationHandler>();
         services.AddScoped<AddInvestigationFindingHandler>();
+        services.AddScoped<UpdateInvestigationStatusHandler>();
         return services;
     }
 
