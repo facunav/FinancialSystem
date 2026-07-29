@@ -337,6 +337,63 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.ToTable("ImportBatchLines", (string)null);
                 });
 
+            modelBuilder.Entity("FinancialSystem.Domain.Entities.Transaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("CouponNumber")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("timezone('utc', now())");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("FinancialAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RawLine")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceFile")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date");
+
+                    b.HasIndex("ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Transactions_ExternalId");
+
+                    b.HasIndex("FinancialAccountId");
+
+                    b.ToTable("Transactions", (string)null);
+                });
+
             modelBuilder.Entity("FinancialSystem.Domain.Memory.Investigation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -393,63 +450,6 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.HasIndex("SourceEntityType", "SourceId");
 
                     b.ToTable("InvestigationReferences", (string)null);
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Entities.Transaction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("CouponNumber")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("timezone('utc', now())");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("ExternalId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<Guid?>("FinancialAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("RawLine")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SourceFile")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Date");
-
-                    b.HasIndex("ExternalId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_Transactions_ExternalId");
-
-                    b.HasIndex("FinancialAccountId");
-
-                    b.ToTable("Transactions", (string)null);
                 });
 
             modelBuilder.Entity("FinancialSystem.Domain.Review.ClassifiedMovement", b =>
@@ -631,6 +631,17 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.Navigation("FinancialAccount");
                 });
 
+            modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationReference", b =>
+                {
+                    b.HasOne("FinancialSystem.Domain.Memory.Investigation", "Investigation")
+                        .WithMany("References")
+                        .HasForeignKey("InvestigationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Investigation");
+                });
+
             modelBuilder.Entity("FinancialSystem.Domain.Review.ClassifiedMovement", b =>
                 {
                     b.HasOne("FinancialSystem.Domain.Entities.Category", "Category")
@@ -658,17 +669,6 @@ namespace FinancialSystem.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ClassifiedMovement");
-                });
-
-            modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationReference", b =>
-                {
-                    b.HasOne("FinancialSystem.Domain.Memory.Investigation", "Investigation")
-                        .WithMany("References")
-                        .HasForeignKey("InvestigationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Investigation");
                 });
 
             modelBuilder.Entity("FinancialSystem.Domain.Entities.ImportBatch", b =>
