@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Investigations.Commands;
 using FinancialSystem.Application.Review.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +11,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddScoped<ClassifyMovementHandler>();
+        services.AddScoped<CreateInvestigationHandler>();
         return services;
     }
 

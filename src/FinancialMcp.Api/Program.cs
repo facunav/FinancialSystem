@@ -35,5 +35,6 @@ app.MapMetricsEndpoints();
 app.MapMovementReviewEndpoints();
 app.MapMovementsEndpoints();
 app.MapImportBatchEndpoints();
+app.MapInvestigationEndpoints();
 
 app.Run();
