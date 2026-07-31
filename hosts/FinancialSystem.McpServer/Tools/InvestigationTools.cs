@@ -6,6 +6,7 @@ using FinancialSystem.Application.Investigations.Commands;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Memory;
+using FinancialSystem.McpServer;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 
@@ -343,12 +344,13 @@ public sealed class InvestigationTools
 
     [McpServerTool]
     [Description(
-        "Responde una pregunta sobre una investigación usando Ollama, con contexto real: la " +
-        "investigación completa (estado, pregunta original, conclusión, hallazgos) y el " +
-        "detalle completo de cada movimiento referenciado (vía IMovementLookupService, el " +
-        "mismo lookup que usa GetMovement). Una única llamada a ILocalAiService -- no escribe " +
-        "nada en la investigación, no actualiza hallazgos ni conclusión, no encadena llamadas " +
-        "ni decide qué otra tool usar.")]
+        "Responde una pregunta sobre una investigación usando Ollama, con contexto real: el " +
+        "catálogo de tools MCP disponibles (ToolRegistry.ToLlmCatalog), la investigación " +
+        "completa (estado, pregunta original, conclusión, hallazgos) y el detalle completo de " +
+        "cada movimiento referenciado (vía IMovementLookupService, el mismo lookup que usa " +
+        "GetMovement). Una única llamada a ILocalAiService -- no escribe nada en la " +
+        "investigación, no actualiza hallazgos ni conclusión, no encadena llamadas ni decide " +
+        "qué otra tool usar.")]
     public async Task<string> AskInvestigation(
         [Description("Id de la investigación (Investigation.Id).")]
         Guid investigationId,
@@ -368,7 +370,8 @@ public sealed class InvestigationTools
         if (investigation is null)
             return "InvestigationNotFound";
 
-        var context = await BuildInvestigationContextAsync(investigation, ct);
+        var investigationContext = await BuildInvestigationContextAsync(investigation, ct);
+        var context = ToolRegistry.ToLlmCatalog() + "\n" + investigationContext;
         var result = await _localAiService.AskAsync(context, question, ct);
 
         return result.Success

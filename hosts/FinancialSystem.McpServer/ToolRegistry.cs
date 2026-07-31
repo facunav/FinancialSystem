@@ -1,11 +1,15 @@
+using System.Text;
+
 namespace FinancialSystem.McpServer;
 
 /// <summary>
-/// Registro explícito, escrito a mano, de las tools MCP existentes hasta 0023 —
+/// Registro explícito, escrito a mano, de las tools MCP existentes hasta 0024 —
 /// preparación para que un modelo (Ollama u otro) pueda en el futuro saber qué tools
 /// existen y cuándo usarlas. Esto NO es tool calling: nada acá ejecuta una tool, elige
-/// una tool, ni encadena llamadas. Es solo metadata estática, consumida hoy únicamente
-/// por ListAvailableTools (RegistryTools.cs).
+/// una tool, ni encadena llamadas. Es solo metadata estática, consumida por
+/// ListAvailableTools (RegistryTools.cs, formato legible) y por AskProjectKnowledge/
+/// AskInvestigation (ToLlmCatalog, como contexto adicional para ILocalAiService --
+/// nunca para que el modelo ejecute nada).
 ///
 /// SIN REFLEXIÓN, SIN ESCANEO DE ENSAMBLADOS, SIN GENERACIÓN AUTOMÁTICA (a propósito):
 ///   Reflejar [McpServerTool]/[Description] por reflexión evitaría mantener esta lista
@@ -206,4 +210,28 @@ public static class ToolRegistry
             "investigationId, question (pregunta en lenguaje natural)",
             "La respuesta de Ollama, 'InvestigationNotFound', o un error si Ollama no está disponible."),
     };
+
+    /// <summary>
+    /// Formato compacto pensado para pasar como contexto a un LLM (ej. dentro del
+    /// prompt que arma AskProjectKnowledge/AskInvestigation antes de llamar a
+    /// ILocalAiService) -- Name/Description/WhenToUse/Parameters por tool, sin
+    /// Returns/ClassName, sin Markdown, sin ejemplos, sin texto adicional más allá de
+    /// los rótulos de cada campo. No es tool calling: el modelo solo lee este catálogo
+    /// como información, nada en el MCP actúa sobre lo que el modelo responda.
+    /// </summary>
+    public static string ToLlmCatalog()
+    {
+        var sb = new StringBuilder();
+
+        foreach (var tool in Tools)
+        {
+            sb.Append("Name: ").Append(tool.Name).Append('\n');
+            sb.Append("Description: ").Append(tool.ShortDescription).Append('\n');
+            sb.Append("WhenToUse: ").Append(tool.WhenToUse).Append('\n');
+            sb.Append("Parameters: ").Append(tool.Parameters).Append('\n');
+            sb.Append('\n');
+        }
+
+        return sb.ToString();
+    }
 }

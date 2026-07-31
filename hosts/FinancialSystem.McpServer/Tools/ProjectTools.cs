@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using FinancialSystem.Application.Insights;
+using FinancialSystem.McpServer;
 using ModelContextProtocol.Server;
 
 namespace FinancialSystem.McpServer.Tools;
@@ -187,7 +188,8 @@ public sealed class ProjectTools
     [Description(
         "Responde una pregunta sobre el proyecto usando un modelo local de Ollama, con " +
         "docs/RoadMaps/FinancialMcp-vNext.md (la fuente de verdad del roadmap, misma " +
-        "lectura que ya hace GetRoadmap) como contexto. No accede a la base de datos, no " +
+        "lectura que ya hace GetRoadmap) más el catálogo de tools MCP disponibles " +
+        "(ToolRegistry.ToLlmCatalog) como contexto. No accede a la base de datos, no " +
         "escribe memoria, no modifica investigaciones, no llama a ninguna otra tool ni " +
         "decide qué tool usar: arma contexto + pregunta y devuelve la respuesta de Ollama " +
         "tal cual.")]
@@ -199,7 +201,8 @@ public sealed class ProjectTools
         if (string.IsNullOrWhiteSpace(question))
             return "Error: question es obligatorio.";
 
-        var context = await GetRoadmap(ct);
+        var roadmap = await GetRoadmap(ct);
+        var context = ToolRegistry.ToLlmCatalog() + "\n" + roadmap;
         var result = await _localAiService.AskAsync(context, question, ct);
 
         return result.Success
