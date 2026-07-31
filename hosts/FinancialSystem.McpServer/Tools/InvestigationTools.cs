@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Text;
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Investigations.Commands;
+using FinancialSystem.Application.Movements;
 using FinancialSystem.Domain.Enums;
+using FinancialSystem.Domain.Memory;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 
@@ -11,9 +14,8 @@ namespace FinancialSystem.McpServer.Tools;
 /// <summary>
 /// Tools de memoria del Financial MCP — Fase 3 de
 /// docs/Architecture/Decisions/ADR-007-McpMemory.md ("tools para crear, actualizar y
-/// consultar investigaciones"), acotada por ahora a creación, a asociar movimientos
-/// existentes, a registrar hallazgos y a leer una investigación completa (sin
-/// historial, sin IA).
+/// consultar investigaciones"), más AskInvestigation (Fase 4 -- primer uso real de
+/// Ollama sobre datos del proyecto, ver ADR-007 §7).
 ///
 /// PRINCIPIO: no reimplementa ningún caso de uso — cada tool de escritura delega en
 /// el handler de Application que ya resuelve el caso (CreateInvestigationHandler,
@@ -25,7 +27,10 @@ namespace FinancialSystem.McpServer.Tools;
 /// existe un servicio de consulta dedicado para Investigation (igual que
 /// Category/Counterparty en ConfigurationTools.cs), así que consultan
 /// IApplicationDbContext directo, mismo patrón que esa clase ya usa para esas dos
-/// entidades.
+/// entidades. AskInvestigation arma contexto (investigación + hallazgos + referencias
+/// + detalle completo de cada movimiento vía IMovementLookupService, el mismo lookup
+/// que usa GetMovement) y hace una única llamada a ILocalAiService -- nunca escribe
+/// nada, nunca encadena llamadas, nunca decide qué tool usar.
 /// </summary>
 [McpServerToolType]
 public sealed class InvestigationTools
@@ -35,19 +40,25 @@ public sealed class InvestigationTools
     private readonly AddInvestigationFindingHandler _addInvestigationFindingHandler;
     private readonly UpdateInvestigationStatusHandler _updateInvestigationStatusHandler;
     private readonly IApplicationDbContext _db;
+    private readonly IMovementLookupService _movementLookup;
+    private readonly ILocalAiService _localAiService;
 
     public InvestigationTools(
         CreateInvestigationHandler createInvestigationHandler,
         LinkMovementToInvestigationHandler linkMovementToInvestigationHandler,
         AddInvestigationFindingHandler addInvestigationFindingHandler,
         UpdateInvestigationStatusHandler updateInvestigationStatusHandler,
-        IApplicationDbContext db)
+        IApplicationDbContext db,
+        IMovementLookupService movementLookup,
+        ILocalAiService localAiService)
     {
         _createInvestigationHandler = createInvestigationHandler;
         _linkMovementToInvestigationHandler = linkMovementToInvestigationHandler;
         _addInvestigationFindingHandler = addInvestigationFindingHandler;
         _updateInvestigationStatusHandler = updateInvestigationStatusHandler;
         _db = db;
+        _movementLookup = movementLookup;
+        _localAiService = localAiService;
     }
 
     [McpServerTool]
@@ -328,5 +339,144 @@ public sealed class InvestigationTools
         }
 
         return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description(
+        "Responde una pregunta sobre una investigación usando Ollama, con contexto real: la " +
+        "investigación completa (estado, pregunta original, conclusión, hallazgos) y el " +
+        "detalle completo de cada movimiento referenciado (vía IMovementLookupService, el " +
+        "mismo lookup que usa GetMovement). Una única llamada a ILocalAiService -- no escribe " +
+        "nada en la investigación, no actualiza hallazgos ni conclusión, no encadena llamadas " +
+        "ni decide qué otra tool usar.")]
+    public async Task<string> AskInvestigation(
+        [Description("Id de la investigación (Investigation.Id).")]
+        Guid investigationId,
+        [Description("Pregunta a responder sobre esta investigación, en lenguaje natural.")]
+        string question,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+            return "Error: question es obligatorio.";
+
+        var investigation = await _db.Investigations
+            .AsNoTracking()
+            .Include(x => x.References)
+            .Include(x => x.Findings)
+            .FirstOrDefaultAsync(x => x.Id == investigationId, ct);
+
+        if (investigation is null)
+            return "InvestigationNotFound";
+
+        var context = await BuildInvestigationContextAsync(investigation, ct);
+        var result = await _localAiService.AskAsync(context, question, ct);
+
+        return result.Success
+            ? result.Answer
+            : (result.Error ?? "Error desconocido al consultar Ollama.");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task<string> BuildInvestigationContextAsync(Investigation investigation, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("Investigación:");
+        sb.AppendLine($"  Estado: {investigation.Status}");
+        sb.AppendLine($"  Pregunta original: {investigation.Question}");
+        sb.AppendLine($"  Conclusión: {investigation.Conclusion ?? "-"}");
+        sb.AppendLine();
+
+        var findings = investigation.Findings.OrderBy(f => f.CreatedAt).ToList();
+        sb.AppendLine($"Hallazgos ({findings.Count}):");
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("  (ninguno)");
+        }
+        else
+        {
+            foreach (var finding in findings)
+                sb.AppendLine($"  - [{finding.CreatedAt:O}] {finding.Text}");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine($"Referencias ({investigation.References.Count}):");
+        if (investigation.References.Count == 0)
+        {
+            sb.AppendLine("  (ninguna)");
+            return sb.ToString();
+        }
+
+        foreach (var reference in investigation.References)
+        {
+            sb.AppendLine($"  - {reference.SourceEntityType} {reference.SourceId}:");
+
+            var detail = await _movementLookup.GetBySourceAsync(
+                reference.SourceEntityType, reference.SourceId, ct);
+
+            if (detail is null)
+            {
+                sb.AppendLine("      (no se encontró el movimiento -- puede haber sido eliminado)");
+                continue;
+            }
+
+            AppendMovementDetail(sb, detail);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendMovementDetail(StringBuilder sb, MovementDetail detail)
+    {
+        sb.AppendLine($"      Fecha bancaria: {detail.Date:dd/MM/yyyy HH:mm}");
+        sb.AppendLine($"      Descripción: {detail.Description}");
+        sb.AppendLine($"      Importe: {detail.Currency} {detail.Amount:N2}");
+        sb.AppendLine($"      Cuenta financiera: {detail.FinancialAccountName ?? "(sin asignar)"}");
+        sb.AppendLine($"      Archivo de origen: {detail.SourceFile ?? "-"}");
+        sb.AppendLine($"      ExternalId: {detail.ExternalId ?? "-"}");
+        sb.AppendLine($"      Registrado (UTC): {detail.SourceRecordedAtUtc:O}");
+
+        if (detail.SourceEntityType == SourceEntityType.Transaction)
+        {
+            sb.AppendLine($"      Cupón: {detail.CouponNumber ?? "-"}");
+            sb.AppendLine($"      Línea cruda: {detail.RawLine ?? "-"}");
+        }
+        else
+        {
+            sb.AppendLine($"      Banco: {detail.BankName ?? "-"}");
+            sb.AppendLine($"      Cuenta (número): {detail.AccountNumber ?? "-"}");
+            sb.AppendLine($"      Detalle: {detail.BankDetail ?? "-"}");
+            sb.AppendLine($"      Saldo posterior: {(detail.Balance is { } bal ? bal.ToString("N2") : "-")}");
+            sb.AppendLine($"      Hoja / fila: {detail.SheetName ?? "-"} / {(detail.RowNumber?.ToString() ?? "-")}");
+            sb.AppendLine($"      Comercio (débito): {detail.Merchant ?? "-"}");
+            sb.AppendLine($"      Hora comercio (UTC): {(detail.MerchantAtUtc is { } mAt ? mAt.ToString("O") : "-")}");
+        }
+
+        if (detail.Classification is null)
+        {
+            sb.AppendLine("      Clasificación: pendiente (todavía no tiene ClassifiedMovement).");
+            return;
+        }
+
+        var c = detail.Classification;
+        sb.AppendLine("      Clasificación:");
+        sb.AppendLine($"        Período financiero (EffectiveDate): {c.EffectiveDate:dd/MM/yyyy}");
+        sb.AppendLine($"        Categoría: {c.CategoryName ?? "(desconocida)"}");
+        sb.AppendLine($"        Contraparte: {c.CounterpartyName ?? "-"}");
+        sb.AppendLine($"        Tipo: {c.MovementType}");
+        sb.AppendLine($"        Impacto financiero: {c.FinancialImpact}");
+        sb.AppendLine($"        Estado: {c.Status}");
+        sb.AppendLine($"        Comentario: {c.Comment ?? "-"}");
+        sb.AppendLine($"        Origen del procesamiento: {c.ProcessingSource}");
+        sb.AppendLine($"        MatchScore: {(c.MatchScore is { } score ? score.ToString("N2") : "-")}");
+        sb.AppendLine($"        AmountDelta: {(c.AmountDelta is { } delta ? delta.ToString("N2") : "-")}");
+        sb.AppendLine($"        Creado (UTC): {c.CreatedAt:O}");
+        sb.AppendLine($"        Procesado (UTC): {c.ProcessedAt:O}");
+        sb.AppendLine($"        Procesado por: {c.ProcessedBy ?? "-"}");
+
+        sb.AppendLine($"        Grupo de matching ({c.GroupItems.Count} ítem(s); este movimiento es {c.ItemRole}):");
+        foreach (var gi in c.GroupItems)
+            sb.AppendLine($"          - {gi.SourceEntityType} {gi.SourceId} — {gi.Role}");
     }
 }
