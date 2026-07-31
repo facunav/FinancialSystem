@@ -1,12 +1,15 @@
 using System.ComponentModel;
 using System.Text;
+using FinancialSystem.Application.Insights;
 using ModelContextProtocol.Server;
 
 namespace FinancialSystem.McpServer.Tools;
 
 /// <summary>
 /// Herramientas de conocimiento del proyecto — Fase 1.5 de
-/// docs/Decisions/ADR-006-financial-mcp-roadmap-investigacion.md.
+/// docs/Decisions/ADR-006-financial-mcp-roadmap-investigacion.md, más
+/// AskProjectKnowledge (Fase 4 de esa misma ADR / Fase 4 de ADR-007 — integración
+/// inicial con Ollama).
 ///
 /// PRINCIPIO: no hay lógica de negocio ni de dominio financiero acá — son lectura
 /// directa de archivos .md ya existentes en docs/, sin interpretarlos. No se
@@ -21,11 +24,15 @@ namespace FinancialSystem.McpServer.Tools;
 /// mecanismo que ya usa este proyecto para appsettings.json/
 /// appsettings.Development.json, no uno nuevo.
 ///
-/// Ninguna tool de este archivo parsea Markdown ni usa IA: ReadArchitectureDocument
-/// y GetRoadmap devuelven el archivo tal cual está guardado (texto crudo);
-/// SearchDocumentation hace una búsqueda de texto literal línea por línea (case
-/// insensitive), sin ranking ni interpretación — el mismo criterio que ya aplican
-/// ExplainMovement/FindMisclassifiedMovements: solo exponer datos ya existentes.
+/// Ninguna tool de este archivo parsea Markdown ni usa IA para leer documentación:
+/// ReadArchitectureDocument y GetRoadmap devuelven el archivo tal cual está guardado
+/// (texto crudo); SearchDocumentation hace una búsqueda de texto literal línea por
+/// línea (case insensitive), sin ranking ni interpretación — el mismo criterio que ya
+/// aplican ExplainMovement/FindMisclassifiedMovements: solo exponer datos ya
+/// existentes. La única excepción es AskProjectKnowledge, que sí usa IA (Ollama, vía
+/// ILocalAiService) -- pero solo para responder en lenguaje natural sobre contexto ya
+/// leído por esta misma clase (GetRoadmap), nunca para decidir qué leer ni para
+/// encadenar otras tools.
 /// </summary>
 [McpServerToolType]
 public sealed class ProjectTools
@@ -39,6 +46,13 @@ public sealed class ProjectTools
     private static readonly string DocsRoot = Path.Combine(AppContext.BaseDirectory, "docs");
     private static readonly string ArchitectureRoot = Path.Combine(DocsRoot, "Architecture");
     private static readonly string RoadmapPath = Path.Combine(DocsRoot, "RoadMaps", "FinancialMcp-vNext.md");
+
+    private readonly ILocalAiService _localAiService;
+
+    public ProjectTools(ILocalAiService localAiService)
+    {
+        _localAiService = localAiService;
+    }
 
     // ── ListArchitectureDocuments ────────────────────────────────────────────
 
@@ -165,6 +179,32 @@ public sealed class ProjectTools
             return "Error: no se encontró docs/RoadMaps/FinancialMcp-vNext.md en el directorio de salida del build.";
 
         return await File.ReadAllTextAsync(RoadmapPath, ct);
+    }
+
+    // ── AskProjectKnowledge ───────────────────────────────────────────────────
+
+    [McpServerTool]
+    [Description(
+        "Responde una pregunta sobre el proyecto usando un modelo local de Ollama, con " +
+        "docs/RoadMaps/FinancialMcp-vNext.md (la fuente de verdad del roadmap, misma " +
+        "lectura que ya hace GetRoadmap) como contexto. No accede a la base de datos, no " +
+        "escribe memoria, no modifica investigaciones, no llama a ninguna otra tool ni " +
+        "decide qué tool usar: arma contexto + pregunta y devuelve la respuesta de Ollama " +
+        "tal cual.")]
+    public async Task<string> AskProjectKnowledge(
+        [Description("Pregunta sobre el proyecto, en lenguaje natural.")]
+        string question,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+            return "Error: question es obligatorio.";
+
+        var context = await GetRoadmap(ct);
+        var result = await _localAiService.AskAsync(context, question, ct);
+
+        return result.Success
+            ? result.Answer
+            : $"Error: {result.Error ?? "no se pudo obtener respuesta de Ollama."}";
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

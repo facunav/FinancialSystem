@@ -107,6 +107,16 @@ public static class DependencyInjection
                 client.Timeout = TimeSpan.FromSeconds(Math.Max(1, ollama.TimeoutSeconds));
             });
 
+        // ILocalAiService: misma sección "Ollama" y mismo criterio de configuración de
+        // HttpClient que IFinancialInsightsService de arriba -- ningún appsettings nuevo.
+        services.AddHttpClient<ILocalAiService, OllamaLocalAiService>()
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var ollama = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
+                client.BaseAddress = new Uri(ollama.BaseUrl.TrimEnd('/') + "/");
+                client.Timeout = TimeSpan.FromSeconds(Math.Max(1, ollama.TimeoutSeconds));
+            });
+
         services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
         services.PostConfigure<OpenAIOptions>(options =>
         {
