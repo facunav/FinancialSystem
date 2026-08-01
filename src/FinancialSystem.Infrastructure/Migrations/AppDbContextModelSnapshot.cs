@@ -429,6 +429,28 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.ToTable("Investigations", (string)null);
                 });
 
+            modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationFinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("InvestigationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvestigationId");
+
+                    b.ToTable("InvestigationFindings", (string)null);
+                });
+
             modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationReference", b =>
                 {
                     b.Property<Guid>("Id")
@@ -631,6 +653,17 @@ namespace FinancialSystem.Infrastructure.Migrations
                     b.Navigation("FinancialAccount");
                 });
 
+            modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationFinding", b =>
+                {
+                    b.HasOne("FinancialSystem.Domain.Memory.Investigation", "Investigation")
+                        .WithMany("Findings")
+                        .HasForeignKey("InvestigationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Investigation");
+                });
+
             modelBuilder.Entity("FinancialSystem.Domain.Memory.InvestigationReference", b =>
                 {
                     b.HasOne("FinancialSystem.Domain.Memory.Investigation", "Investigation")
@@ -678,6 +711,8 @@ namespace FinancialSystem.Infrastructure.Migrations
 
             modelBuilder.Entity("FinancialSystem.Domain.Memory.Investigation", b =>
                 {
+                    b.Navigation("Findings");
+
                     b.Navigation("References");
                 });
 
