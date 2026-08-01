@@ -161,6 +161,38 @@
         .period-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px }
         button.shortcut { font-size: 12px; padding: 4px 10px }
 
+        /* ── Estado de la auditoría: 4 estados posibles, cada uno con apariencia
+           visual distinta -- "sin datos" NO es lo mismo que "correcta" ── */
+        .state-banner {
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+            .state-banner h3 { font-size: 15px; margin-bottom: 4px }
+            .state-banner p { font-size: 13px; opacity: .9 }
+            .state-banner .status-grid { margin-top: 14px }
+            .state-banner.state-empty { background: var(--surface2); color: var(--dim) }
+            .state-banner.state-ok { background: var(--green-bg); border-color: var(--green); color: #b0eec8 }
+            .state-banner.state-problems { background: var(--amber-bg); border-color: var(--amber); color: #f5d38a }
+            .state-banner.state-error { background: var(--red-bg); border-color: var(--red); color: #f0b0b0 }
+
+        /* ── Problemas encontrados: una categoría por <details>, expandible ── */
+        #auditProblems details {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+            #auditProblems details:last-child { margin-bottom: 0 }
+            #auditProblems summary {
+                padding: 10px 12px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--dim);
+            }
+            #auditProblems details[open] summary { border-bottom: 1px solid var(--border) }
+            #auditProblems .report-block { border: none; border-radius: 0; max-height: 360px }
+
         .toast {
             font: 12px var(--mono);
             padding: 6px 12px;
@@ -214,15 +246,23 @@
             </div>
         </div>
 
-        <!-- 3. Resumen (resultado de la última auditoría ejecutada) -->
+        <!-- 3. Estado de la auditoría (resultado de la última ejecución) -->
         <div class="panel">
-            <div class="panel-head"><h2>Resumen</h2></div>
+            <div class="panel-head"><h2>Estado de la auditoría</h2></div>
             <div class="panel-body">
-                <div class="empty" id="auditSummary">Todavía no se ejecutó la auditoría en esta sesión.</div>
+                <div class="empty" id="auditState">Todavía no se ejecutó la auditoría en esta sesión.</div>
             </div>
         </div>
 
-        <!-- 4. Problemas encontrados -->
+        <!-- 4. Resumen -->
+        <div class="panel">
+            <div class="panel-head"><h2>Resumen</h2></div>
+            <div class="panel-body">
+                <div class="empty" id="auditSummary">Ejecutá la auditoría para ver esta sección.</div>
+            </div>
+        </div>
+
+        <!-- 5. Problemas encontrados -->
         <div class="panel">
             <div class="panel-head"><h2>Problemas encontrados</h2></div>
             <div class="panel-body">
@@ -230,7 +270,7 @@
             </div>
         </div>
 
-        <!-- 5. Acciones -->
+        <!-- 6. Acciones -->
         <div class="panel">
             <div class="panel-head"><h2>Acciones</h2></div>
             <div class="panel-body actions-row">
@@ -314,15 +354,89 @@
             btn.addEventListener('click', () => applyShortcut(btn.dataset.shortcut));
         });
 
-        // ── 3/4. Auditoría: GET /api/audit/report?from=&to= -- reutiliza exactamente
-        // el texto que ya devuelve AuditReportService (la misma lógica que la tool MCP
-        // AuditDatabase) para el período que haya en el selector. El único
-        // procesamiento acá es partir ese mismo texto en el punto donde el propio
-        // reporte ya separa "Resumen" de "Problemas encontrados" -- no se reinterpreta
-        // ni se reformatea ningún contenido. ──
+        // ── 3/4/5. Auditoría: GET /api/audit/report?from=&to= -- devuelve los mismos
+        // números y bloques de texto que ya calcula AuditReportService (la misma
+        // lógica que la tool MCP AuditDatabase) para el período que haya en el
+        // selector, ya estructurados -- sin que el cliente tenga que parsear ningún
+        // texto ni buscar marcadores. ──
+
+        // Los 4 estados posibles, en el orden de la spec: sin datos NO es lo mismo
+        // que "correcta" (0 movimientos analizados no implica 0 problemas).
+        function renderState(data) {
+            const el = document.getElementById('auditState');
+            let cls, title, message;
+
+            if (data.movementsAnalyzed === 0) {
+                cls = 'state-empty';
+                title = 'Sin datos';
+                message = 'No existen movimientos dentro del período seleccionado. Elegí otro período o importá movimientos para este rango.';
+            } else if (data.totalProblems === 0) {
+                cls = 'state-ok';
+                title = 'Correcta';
+                message = `Se analizaron ${data.movementsAnalyzed} movimiento(s). No se detectaron inconsistencias.`;
+            } else {
+                cls = 'state-problems';
+                title = 'Con problemas';
+                message = `Se analizaron ${data.movementsAnalyzed} movimiento(s). Se encontraron ${data.totalProblems} elemento(s) que requieren revisión.`;
+            }
+
+            el.className = `state-banner ${cls}`;
+            el.innerHTML = `
+                <h3>${esc(title)}</h3>
+                <p>${esc(message)}</p>
+                <div class="status-grid">
+                    <div class="status-field"><label>Desde</label><div class="value">${esc(data.from)}</div></div>
+                    <div class="status-field"><label>Hasta</label><div class="value">${esc(data.to)}</div></div>
+                    <div class="status-field"><label>Movimientos analizados</label><div class="value">${data.movementsAnalyzed}</div></div>
+                </div>`;
+        }
+
+        function renderStateError(message) {
+            const el = document.getElementById('auditState');
+            el.className = 'state-banner state-error';
+            el.innerHTML = `<h3>Error técnico</h3><p>La auditoría no pudo ejecutarse: ${esc(message)}</p>`;
+        }
+
+        function renderSummary(data) {
+            const el = document.getElementById('auditSummary');
+            el.className = 'status-grid';
+            el.innerHTML = `
+                <div class="status-field"><label>Movimientos analizados</label><div class="value">${data.movementsAnalyzed}</div></div>
+                <div class="status-field"><label>Pendientes</label><div class="value">${data.pending}</div></div>
+                <div class="status-field"><label>Clasificados</label><div class="value">${data.classified}</div></div>
+                <div class="status-field"><label>Grupos sospechosos</label><div class="value">${data.suspiciousGroups}</div></div>
+                <div class="status-field"><label>Movimientos posiblemente mal clasificados</label><div class="value">${data.misclassified}</div></div>
+                <div class="status-field"><label>Investigaciones abiertas</label><div class="value">${data.openInvestigations}</div></div>
+                <div class="status-field"><label>Investigaciones resueltas</label><div class="value">${data.resolvedInvestigations}</div></div>`;
+        }
+
+        // Mismo orden de prioridad que "Acciones recomendadas": grupos sospechosos,
+        // pendientes, clasificaciones dudosas, investigaciones abiertas.
+        function renderProblems(data) {
+            const el = document.getElementById('auditProblems');
+            el.className = '';
+            el.innerHTML = `
+                <details ${data.suspiciousGroups > 0 ? 'open' : ''}>
+                    <summary>Grupos sospechosos (${data.suspiciousGroups})</summary>
+                    <div class="report-block">${esc(data.suspiciousText)}</div>
+                </details>
+                <details ${data.pending > 0 ? 'open' : ''}>
+                    <summary>Pendientes (${data.pending})</summary>
+                    <div class="report-block">${esc(data.pendingText)}</div>
+                </details>
+                <details ${data.misclassified > 0 ? 'open' : ''}>
+                    <summary>Clasificaciones dudosas (${data.misclassified})</summary>
+                    <div class="report-block">${esc(data.misclassifiedText)}</div>
+                </details>
+                <details ${data.openInvestigations > 0 ? 'open' : ''}>
+                    <summary>Investigaciones abiertas (${data.openInvestigations})</summary>
+                    <div class="report-block">${esc(data.investigationsText)}</div>
+                </details>`;
+        }
 
         async function runAudit() {
             const btn = document.getElementById('btnRunAudit');
+            const stateEl = document.getElementById('auditState');
             const summaryEl = document.getElementById('auditSummary');
             const problemsEl = document.getElementById('auditProblems');
 
@@ -335,29 +449,24 @@
 
             btn.disabled = true;
             btn.textContent = 'Ejecutando…';
+            stateEl.className = 'loading';
+            stateEl.textContent = 'Ejecutando auditoría…';
             summaryEl.className = 'loading';
             summaryEl.textContent = 'Ejecutando auditoría…';
+            problemsEl.className = 'loading';
+            problemsEl.textContent = 'Ejecutando auditoría…';
+
             try {
                 const data = await getJson(`${API}/api/audit/report?from=${fromValue}&to=${toValue}`);
-                const report = data.report ?? '';
-                const marker = '\nProblemas encontrados\n';
-                const splitAt = report.indexOf(marker);
-
-                if (splitAt === -1) {
-                    summaryEl.className = 'report-block';
-                    summaryEl.textContent = report;
-                    problemsEl.className = 'empty';
-                    problemsEl.textContent = 'El reporte no tiene el formato esperado -- ver el resultado completo arriba.';
-                } else {
-                    summaryEl.className = 'report-block';
-                    summaryEl.textContent = report.slice(0, splitAt);
-                    problemsEl.className = 'report-block';
-                    problemsEl.textContent = report.slice(splitAt + 1);
-                }
+                renderState(data);
+                renderSummary(data);
+                renderProblems(data);
             } catch (e) {
+                renderStateError(e.message);
                 summaryEl.className = 'empty';
-                summaryEl.textContent = '';
-                showToast('auditToast', `No se pudo ejecutar la auditoría: ${e.message}`, 'err', 6000);
+                summaryEl.textContent = 'No disponible: la auditoría no pudo ejecutarse.';
+                problemsEl.className = 'empty';
+                problemsEl.textContent = 'No disponible: la auditoría no pudo ejecutarse.';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Ejecutar auditoría';
@@ -366,7 +475,7 @@
 
         document.getElementById('btnRunAudit').addEventListener('click', runAudit);
 
-        // ── 5. Acciones -- solo navegación, sin pantallas nuevas ──
+        // ── 6. Acciones -- solo navegación, sin pantallas nuevas ──
 
         document.getElementById('btnGoMovements').addEventListener('click', () => {
             window.location.href = '/movements.html';

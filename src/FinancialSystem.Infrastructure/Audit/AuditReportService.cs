@@ -238,8 +238,17 @@ public sealed class AuditReportService
     // from/to ya vienen resueltos (AuditDatabaseTools/el endpoint de la Api calculan
     // el período por defecto -- mes en curso -- antes de llamar acá; ninguno de los
     // dos tiene parámetros propios de rango).
+    //
+    // Devuelve FullAuditReport (no un string) desde el rediseño del Centro de
+    // Auditoría (tablero de salud): AuditDatabaseTools.AuditDatabase (la tool MCP)
+    // solo necesita el texto formateado -- FullAuditReport.ReportText es exactamente
+    // ese mismo texto, sin cambios. audit.html necesita además los números
+    // individuales (para distinguir "sin datos" de "correcta" sin adivinar
+    // parseando texto) y los cuatro bloques de "Problemas encontrados" por separado
+    // (para que cada categoría sea expandible) -- estos ya se calculaban acá adentro;
+    // ahora se exponen en vez de descartarse una vez concatenados al texto final.
 
-    public async Task<string> BuildFullAuditReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    public async Task<FullAuditReport> BuildFullAuditReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {
         var movements = await _movementsQuery.GetAsync(from, to, financialAccountId: null, search: null, ct);
         var pending = movements.Where(m => m.Status is null).ToList();
@@ -253,6 +262,23 @@ public sealed class AuditReportService
         var investigations = await _db.Investigations.AsNoTracking().ToListAsync(ct);
         var openInvestigations = investigations.Where(i => i.Status == InvestigationStatus.Open).ToList();
         var resolvedInvestigationsCount = investigations.Count(i => i.Status == InvestigationStatus.Resolved);
+
+        var misclassifiedBlock = misclassifiedCount > 0 ? misclassifiedText.TrimEnd() : "(ninguna)";
+        var suspiciousBlock = suspiciousGroupsCount > 0 ? suspiciousText.TrimEnd() : "(ninguno)";
+
+        var pendingBlock = pending.Count == 0
+            ? "(ninguno)"
+            : string.Join(
+                Environment.NewLine,
+                pending.Select(m => $"- {m.SourceId} | {m.Date:yyyy-MM-dd} | {m.Description} | {m.Currency} {m.Amount:N2}"));
+
+        var investigationsBlock = openInvestigations.Count == 0
+            ? "(ninguna)"
+            : string.Join(
+                Environment.NewLine,
+                openInvestigations.Select(i => $"- {i.Id} | {i.Question}"));
+
+        var totalProblems = misclassifiedCount + suspiciousGroupsCount + pending.Count + openInvestigations.Count;
 
         var sb = new StringBuilder();
 
@@ -270,44 +296,30 @@ public sealed class AuditReportService
         sb.AppendLine();
 
         sb.AppendLine("Clasificaciones dudosas");
-        sb.AppendLine(misclassifiedCount > 0 ? misclassifiedText.TrimEnd() : "(ninguna)");
+        sb.AppendLine(misclassifiedBlock);
         sb.AppendLine();
 
         sb.AppendLine("Grupos sospechosos");
-        sb.AppendLine(suspiciousGroupsCount > 0 ? suspiciousText.TrimEnd() : "(ninguno)");
+        sb.AppendLine(suspiciousBlock);
         sb.AppendLine();
 
         sb.AppendLine("Pendientes");
-        if (pending.Count == 0)
-        {
-            sb.AppendLine("(ninguno)");
-        }
-        else
-        {
-            foreach (var m in pending)
-                sb.AppendLine($"- {m.SourceId} | {m.Date:yyyy-MM-dd} | {m.Description} | {m.Currency} {m.Amount:N2}");
-        }
+        sb.AppendLine(pendingBlock);
         sb.AppendLine();
 
         sb.AppendLine("Investigaciones abiertas");
-        if (openInvestigations.Count == 0)
-        {
-            sb.AppendLine("(ninguna)");
-        }
-        else
-        {
-            foreach (var investigation in openInvestigations)
-                sb.AppendLine($"- {investigation.Id} | {investigation.Question}");
-        }
+        sb.AppendLine(investigationsBlock);
         sb.AppendLine();
 
-        var totalProblems = misclassifiedCount + suspiciousGroupsCount + pending.Count + openInvestigations.Count;
         sb.AppendLine("Conclusión");
         sb.AppendLine(totalProblems == 0
             ? "No se detectaron problemas."
             : $"Se detectaron {totalProblems} posibles problemas que requieren revisión.");
 
-        return sb.ToString();
+        return new FullAuditReport(
+            from, to, movements.Count, pending.Count, classifiedCount, suspiciousGroupsCount,
+            misclassifiedCount, openInvestigations.Count, resolvedInvestigationsCount, totalProblems,
+            misclassifiedBlock, suspiciousBlock, pendingBlock, investigationsBlock, sb.ToString());
     }
 
     // ── Helpers (idénticos a los que tenía AuditTools.cs) ────────────────────────
@@ -467,3 +479,30 @@ public sealed class AuditReportService
         return i == 0 ? 0 : int.Parse(span[..i]);
     }
 }
+
+/// <summary>
+/// Resultado de <see cref="AuditReportService.BuildFullAuditReportAsync"/>. Los
+/// cuatro *Text son los mismos bloques que ya se concatenaban dentro de ReportText
+/// bajo "Problemas encontrados" -- se exponen por separado para que audit.html pueda
+/// mostrar cada categoría en su propia sección expandible, sin tener que volver a
+/// buscar los encabezados de texto ("Grupos sospechosos", etc.) para partirlos.
+/// ReportText es exactamente el texto que ya devolvía este método antes del
+/// rediseño del Centro de Auditoría -- AuditDatabaseTools.AuditDatabase (la tool
+/// MCP) sigue devolviendo eso mismo, sin cambios.
+/// </summary>
+public sealed record FullAuditReport(
+    DateOnly From,
+    DateOnly To,
+    int MovementsAnalyzed,
+    int Pending,
+    int Classified,
+    int SuspiciousGroups,
+    int Misclassified,
+    int OpenInvestigations,
+    int ResolvedInvestigations,
+    int TotalProblems,
+    string MisclassifiedText,
+    string SuspiciousText,
+    string PendingText,
+    string InvestigationsText,
+    string ReportText);

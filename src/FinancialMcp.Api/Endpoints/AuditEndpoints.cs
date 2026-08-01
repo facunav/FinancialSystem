@@ -94,7 +94,12 @@ public static class AuditEndpoints
         if (rangeDays > MaxDateRangeDays)
             return Results.BadRequest($"El rango máximo permitido es de {MaxDateRangeDays} días");
 
-        var report = await auditReportService.BuildFullAuditReportAsync(effectiveFrom, effectiveTo, ct);
-        return Results.Ok(new AuditReportResponse(report));
+        var result = await auditReportService.BuildFullAuditReportAsync(effectiveFrom, effectiveTo, ct);
+
+        return Results.Ok(new AuditReportResponse(
+            result.From, result.To, result.MovementsAnalyzed, result.Pending, result.Classified,
+            result.SuspiciousGroups, result.Misclassified, result.OpenInvestigations,
+            result.ResolvedInvestigations, result.TotalProblems,
+            result.MisclassifiedText, result.SuspiciousText, result.PendingText, result.InvestigationsText));
     }
 }

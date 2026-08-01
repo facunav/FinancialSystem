@@ -17,7 +17,24 @@ public sealed record AuditLastImportDto(string SourceFile, DateTime CompletedAtU
 
 // ── GET /api/audit/report ─────────────────────────────────────────────────────
 //
-// Report es exactamente el texto que devuelve AuditReportService.BuildFullAuditReportAsync
-// -- la misma lógica que ya usa la tool MCP AuditDatabase, sin reinterpretarlo.
+// Refleja FullAuditReport (FinancialSystem.Infrastructure.Audit.AuditReportService)
+// campo a campo -- el mismo cálculo que ya usa la tool MCP AuditDatabase, sin
+// reinterpretarlo. Los cuatro *Text son los mismos bloques de "Problemas
+// encontrados" que antes solo existían concatenados dentro de un único string que
+// el cliente partía buscando un marcador de texto -- ahora vienen ya separados.
 
-public sealed record AuditReportResponse(string Report);
+public sealed record AuditReportResponse(
+    DateOnly From,
+    DateOnly To,
+    int MovementsAnalyzed,
+    int Pending,
+    int Classified,
+    int SuspiciousGroups,
+    int Misclassified,
+    int OpenInvestigations,
+    int ResolvedInvestigations,
+    int TotalProblems,
+    string MisclassifiedText,
+    string SuspiciousText,
+    string PendingText,
+    string InvestigationsText);

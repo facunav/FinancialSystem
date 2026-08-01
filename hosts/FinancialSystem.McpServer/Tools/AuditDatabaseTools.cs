@@ -42,6 +42,7 @@ public sealed class AuditDatabaseTools
         var to = DateOnly.FromDateTime(DateTime.UtcNow);
         var from = new DateOnly(to.Year, to.Month, 1);
 
-        return await _auditReportService.BuildFullAuditReportAsync(from, to, ct);
+        var result = await _auditReportService.BuildFullAuditReportAsync(from, to, ct);
+        return result.ReportText;
     }
 }
