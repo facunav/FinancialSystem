@@ -135,6 +135,32 @@
 
         .actions-row { display: flex; gap: 10px; flex-wrap: wrap }
 
+        /* ── Selector de período ── */
+        .period-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .period-field label {
+            display: block;
+            font-size: 10px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 4px;
+        }
+        .period-field input[type="date"] {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 8px;
+            font: 13px var(--mono);
+        }
+        .period-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px }
+        button.shortcut { font-size: 12px; padding: 4px 10px }
+
         .toast {
             font: 12px var(--mono);
             padding: 6px 12px;
@@ -161,21 +187,42 @@
             </div>
         </div>
 
-        <!-- 2. Auditoría -->
+        <!-- 2. Período -->
         <div class="panel">
             <div class="panel-head">
-                <h2>Auditoría</h2>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <div id="auditToast"></div>
+                <h2>Período</h2>
+                <div id="auditToast"></div>
+            </div>
+            <div class="panel-body">
+                <div class="period-row">
+                    <div class="period-field">
+                        <label for="fromInput">Desde</label>
+                        <input type="date" id="fromInput">
+                    </div>
+                    <div class="period-field">
+                        <label for="toInput">Hasta</label>
+                        <input type="date" id="toInput">
+                    </div>
                     <button id="btnRunAudit">Ejecutar auditoría</button>
                 </div>
+                <div class="period-shortcuts">
+                    <button type="button" class="shortcut" data-shortcut="currentMonth">Mes actual</button>
+                    <button type="button" class="shortcut" data-shortcut="previousMonth">Mes anterior</button>
+                    <button type="button" class="shortcut" data-shortcut="last30">Últimos 30 días</button>
+                    <button type="button" class="shortcut" data-shortcut="last90">Últimos 90 días</button>
+                </div>
             </div>
+        </div>
+
+        <!-- 3. Resumen (resultado de la última auditoría ejecutada) -->
+        <div class="panel">
+            <div class="panel-head"><h2>Resumen</h2></div>
             <div class="panel-body">
                 <div class="empty" id="auditSummary">Todavía no se ejecutó la auditoría en esta sesión.</div>
             </div>
         </div>
 
-        <!-- 3. Problemas encontrados -->
+        <!-- 4. Problemas encontrados -->
         <div class="panel">
             <div class="panel-head"><h2>Problemas encontrados</h2></div>
             <div class="panel-body">
@@ -183,13 +230,12 @@
             </div>
         </div>
 
-        <!-- 4. Acciones -->
+        <!-- 5. Acciones -->
         <div class="panel">
             <div class="panel-head"><h2>Acciones</h2></div>
             <div class="panel-body actions-row">
                 <button id="btnGoMovements">Ver movimientos</button>
                 <button class="soon" id="btnGoInvestigations" disabled title="Todavía no existe una pantalla de investigaciones">Ver investigaciones</button>
-                <button id="btnRefreshAudit">Actualizar auditoría</button>
             </div>
         </div>
 
@@ -232,22 +278,67 @@
             }
         }
 
-        // ── 2/3. Auditoría: GET /api/audit/report -- reutiliza exactamente el texto
-        // que ya devuelve AuditReportService (la misma lógica que la tool MCP
-        // AuditDatabase). El único procesamiento acá es partir ese mismo texto en el
-        // punto donde el propio reporte ya separa "Resumen" de "Problemas
-        // encontrados" -- no se reinterpreta ni se reformatea ningún contenido. ──
+        // ── Selector de período: los accesos rápidos solo completan Desde/Hasta --
+        // el usuario siempre puede editarlos a mano antes de ejecutar. Sin "Todo el
+        // historial" por ahora: sin paginación, auditar todo el histórico puede ser
+        // costoso (ver AuditReportService, corre IClassificationSuggestionService por
+        // cada movimiento clasificado del período). ──
+
+        function setPeriod(from, to) {
+            document.getElementById('fromInput').valueAsDate = from;
+            document.getElementById('toInput').valueAsDate = to;
+        }
+
+        function applyShortcut(name) {
+            const now = new Date();
+            const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
+            if (name === 'currentMonth') {
+                setPeriod(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)), today);
+            } else if (name === 'previousMonth') {
+                const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+                const to = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+                setPeriod(from, to);
+            } else if (name === 'last30') {
+                const from = new Date(today);
+                from.setUTCDate(from.getUTCDate() - 29);
+                setPeriod(from, today);
+            } else if (name === 'last90') {
+                const from = new Date(today);
+                from.setUTCDate(from.getUTCDate() - 89);
+                setPeriod(from, today);
+            }
+        }
+
+        document.querySelectorAll('.shortcut').forEach(btn => {
+            btn.addEventListener('click', () => applyShortcut(btn.dataset.shortcut));
+        });
+
+        // ── 3/4. Auditoría: GET /api/audit/report?from=&to= -- reutiliza exactamente
+        // el texto que ya devuelve AuditReportService (la misma lógica que la tool MCP
+        // AuditDatabase) para el período que haya en el selector. El único
+        // procesamiento acá es partir ese mismo texto en el punto donde el propio
+        // reporte ya separa "Resumen" de "Problemas encontrados" -- no se reinterpreta
+        // ni se reformatea ningún contenido. ──
 
         async function runAudit() {
             const btn = document.getElementById('btnRunAudit');
             const summaryEl = document.getElementById('auditSummary');
             const problemsEl = document.getElementById('auditProblems');
+
+            const fromValue = document.getElementById('fromInput').value;
+            const toValue = document.getElementById('toInput').value;
+            if (!fromValue || !toValue) {
+                showToast('auditToast', 'Elegí Desde y Hasta antes de ejecutar la auditoría.', 'err');
+                return;
+            }
+
             btn.disabled = true;
             btn.textContent = 'Ejecutando…';
             summaryEl.className = 'loading';
             summaryEl.textContent = 'Ejecutando auditoría…';
             try {
-                const data = await getJson(`${API}/api/audit/report`);
+                const data = await getJson(`${API}/api/audit/report?from=${fromValue}&to=${toValue}`);
                 const report = data.report ?? '';
                 const marker = '\nProblemas encontrados\n';
                 const splitAt = report.indexOf(marker);
@@ -274,9 +365,8 @@
         }
 
         document.getElementById('btnRunAudit').addEventListener('click', runAudit);
-        document.getElementById('btnRefreshAudit').addEventListener('click', runAudit);
 
-        // ── 4. Acciones -- solo navegación, sin pantallas nuevas ──
+        // ── 5. Acciones -- solo navegación, sin pantallas nuevas ──
 
         document.getElementById('btnGoMovements').addEventListener('click', () => {
             window.location.href = '/movements.html';
@@ -315,6 +405,10 @@
             return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
         }
 
+        // Precarga el período con "mes actual" para que el usuario vea algo elegido
+        // de entrada, pero NO ejecuta la auditoría -- eso solo pasa al presionar
+        // "Ejecutar auditoría" (la auditoría es siempre bajo demanda).
+        applyShortcut('currentMonth');
         loadStatus();
     </script>
 </body>
