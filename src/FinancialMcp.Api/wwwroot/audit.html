@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auditoría · FinancialMcp</title>
+    <style>
+        /* ── Design tokens (mismos valores que dashboard.html/imports.html) ── */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --amber: #fbbf24;
+            --amber-bg: #2d1f07;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+            .topbar h1 { font-size: 16px; font-weight: 700 }
+            .topbar a {
+                color: var(--dim);
+                text-decoration: none;
+                font-size: 13px;
+            }
+                .topbar a:hover { color: var(--text) }
+
+        .content { padding: 20px 24px; max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+            .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+
+        .panel-body { padding: 16px }
+
+        button {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            padding: 5px 12px;
+            font: 13px var(--sans);
+            cursor: pointer;
+        }
+            button:hover:not(:disabled) { background: #2a3348; border-color: #3a4560 }
+            button:disabled { opacity: .35; cursor: not-allowed }
+            button.soon { opacity: .5; cursor: not-allowed }
+
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-family: var(--mono);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+            .status-badge.status-ok { color: #b0eec8; background: var(--green-bg); border-color: var(--green) }
+            .status-badge.status-err { color: #f0b0b0; background: var(--red-bg); border-color: var(--red) }
+
+        /* ── Sección Estado: grilla simple clave/valor ── */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+        }
+
+        .status-field label {
+            display: block;
+            font-size: 10px;
+            color: var(--faint);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 4px;
+        }
+        .status-field .value { font-family: var(--mono); font-size: 14px }
+
+        /* ── Bloques de texto de la auditoría -- exactamente lo que devuelve
+           AuditReportService, sin reformatear su contenido ── */
+        .report-block {
+            white-space: pre-wrap;
+            font-family: var(--mono);
+            font-size: 12px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            max-height: 480px;
+            overflow-y: auto;
+        }
+
+        .empty, .loading {
+            padding: 16px;
+            text-align: center;
+            color: var(--faint);
+            font-size: 13px;
+        }
+
+        .actions-row { display: flex; gap: 10px; flex-wrap: wrap }
+
+        .toast {
+            font: 12px var(--mono);
+            padding: 6px 12px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+            .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <h1>Centro de Auditoría</h1>
+        <a href="/dashboard.html">← Dashboard</a>
+    </header>
+
+    <div class="content">
+
+        <!-- 1. Estado (solo lectura) -->
+        <div class="panel">
+            <div class="panel-head"><h2>Estado</h2></div>
+            <div class="panel-body" id="statusBody">
+                <div class="loading">Cargando…</div>
+            </div>
+        </div>
+
+        <!-- 2. Auditoría -->
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Auditoría</h2>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <div id="auditToast"></div>
+                    <button id="btnRunAudit">Ejecutar auditoría</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="empty" id="auditSummary">Todavía no se ejecutó la auditoría en esta sesión.</div>
+            </div>
+        </div>
+
+        <!-- 3. Problemas encontrados -->
+        <div class="panel">
+            <div class="panel-head"><h2>Problemas encontrados</h2></div>
+            <div class="panel-body">
+                <div class="empty" id="auditProblems">Ejecutá la auditoría para ver esta sección.</div>
+            </div>
+        </div>
+
+        <!-- 4. Acciones -->
+        <div class="panel">
+            <div class="panel-head"><h2>Acciones</h2></div>
+            <div class="panel-body actions-row">
+                <button id="btnGoMovements">Ver movimientos</button>
+                <button class="soon" id="btnGoInvestigations" disabled title="Todavía no existe una pantalla de investigaciones">Ver investigaciones</button>
+                <button id="btnRefreshAudit">Actualizar auditoría</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const API = '';
+
+        // ── 1. Estado: GET /api/audit/status (solo lectura, no ejecuta la auditoría) ──
+
+        async function loadStatus() {
+            const body = document.getElementById('statusBody');
+            try {
+                const s = await getJson(`${API}/api/audit/status`);
+                body.innerHTML = `
+                    <div class="status-grid">
+                        <div class="status-field">
+                            <label>Base de datos</label>
+                            <div class="value"><span class="status-badge ${s.databaseConnected ? 'status-ok' : 'status-err'}">${s.databaseConnected ? 'Conectada' : 'Sin conexión'}</span></div>
+                        </div>
+                        <div class="status-field">
+                            <label>Última importación</label>
+                            <div class="value">${s.lastImport ? `${esc(shortFileName(s.lastImport.sourceFile))} — ${formatDateTime(s.lastImport.completedAtUtc)}` : 'Sin importaciones'}</div>
+                        </div>
+                        <div class="status-field">
+                            <label>Movimientos (mes en curso)</label>
+                            <div class="value">${s.movementsAnalyzed}</div>
+                        </div>
+                        <div class="status-field">
+                            <label>Pendientes</label>
+                            <div class="value">${s.pending}</div>
+                        </div>
+                        <div class="status-field">
+                            <label>Clasificados</label>
+                            <div class="value">${s.classified}</div>
+                        </div>
+                    </div>`;
+            } catch (e) {
+                body.innerHTML = `<div class="empty">No se pudo cargar el estado: ${esc(e.message)}</div>`;
+            }
+        }
+
+        // ── 2/3. Auditoría: GET /api/audit/report -- reutiliza exactamente el texto
+        // que ya devuelve AuditReportService (la misma lógica que la tool MCP
+        // AuditDatabase). El único procesamiento acá es partir ese mismo texto en el
+        // punto donde el propio reporte ya separa "Resumen" de "Problemas
+        // encontrados" -- no se reinterpreta ni se reformatea ningún contenido. ──
+
+        async function runAudit() {
+            const btn = document.getElementById('btnRunAudit');
+            const summaryEl = document.getElementById('auditSummary');
+            const problemsEl = document.getElementById('auditProblems');
+            btn.disabled = true;
+            btn.textContent = 'Ejecutando…';
+            summaryEl.className = 'loading';
+            summaryEl.textContent = 'Ejecutando auditoría…';
+            try {
+                const data = await getJson(`${API}/api/audit/report`);
+                const report = data.report ?? '';
+                const marker = '\nProblemas encontrados\n';
+                const splitAt = report.indexOf(marker);
+
+                if (splitAt === -1) {
+                    summaryEl.className = 'report-block';
+                    summaryEl.textContent = report;
+                    problemsEl.className = 'empty';
+                    problemsEl.textContent = 'El reporte no tiene el formato esperado -- ver el resultado completo arriba.';
+                } else {
+                    summaryEl.className = 'report-block';
+                    summaryEl.textContent = report.slice(0, splitAt);
+                    problemsEl.className = 'report-block';
+                    problemsEl.textContent = report.slice(splitAt + 1);
+                }
+            } catch (e) {
+                summaryEl.className = 'empty';
+                summaryEl.textContent = '';
+                showToast('auditToast', `No se pudo ejecutar la auditoría: ${e.message}`, 'err', 6000);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Ejecutar auditoría';
+            }
+        }
+
+        document.getElementById('btnRunAudit').addEventListener('click', runAudit);
+        document.getElementById('btnRefreshAudit').addEventListener('click', runAudit);
+
+        // ── 4. Acciones -- solo navegación, sin pantallas nuevas ──
+
+        document.getElementById('btnGoMovements').addEventListener('click', () => {
+            window.location.href = '/movements.html';
+        });
+
+        // ── Utils (mismo patrón que imports.html/dashboard.html) ──
+
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) {
+                const d = await r.json().catch(() => null);
+                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+                throw new Error(msg);
+            }
+            return r.json();
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function showToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
+
+        function shortFileName(path) {
+            if (!path) return '—';
+            const parts = String(path).replaceAll('\\', '/').split('/');
+            return parts[parts.length - 1] || path;
+        }
+
+        function formatDateTime(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return String(iso);
+            return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        loadStatus();
+    </script>
+</body>
+</html>

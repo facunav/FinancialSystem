@@ -11,6 +11,7 @@ using FinancialSystem.Application.Parsing.Mastercard;
 using FinancialSystem.Application.Review;
 using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Infrastructure.Accounts;
+using FinancialSystem.Infrastructure.Audit;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Insights;
@@ -95,6 +96,13 @@ public static class DependencyInjection
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();
         services.AddScoped<IFinancialAccountQueryService, FinancialAccountQueryService>();
+
+        // AuditReportService: orquestación de auditoría compartida entre
+        // FinancialSystem.McpServer (AuditTools/AuditDatabaseTools) y FinancialMcp.Api
+        // (Centro de Auditoría) -- ver AuditReportService.cs para el porqué de la
+        // ubicación. Clase plana, sin interfaz propia (no reemplaza ni envuelve
+        // ninguno de los servicios de arriba, solo los orquesta).
+        services.AddScoped<AuditReportService>();
 
 
         // ── Insights (Ollama + OpenAI) ────────────────────────────────────────
