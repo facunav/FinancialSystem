@@ -22,9 +22,19 @@ namespace FinancialSystem.Api.Endpoints;
 /// AuditReportService.BuildFullAuditReportAsync -- la misma clase, sin
 /// reimplementar ninguna regla, que ya usa AuditDatabaseTools.AuditDatabase() en el
 /// MCP (ver AuditReportService.cs para el porqué de esa ubicación compartida).
+///
+/// /report ya no decide "mes en curso" de forma implícita: from/to son query params
+/// opcionales con el mismo patrón (nullable + fallback a mes en curso + límite de
+/// rango) que ya usa MovementsEndpoints.GetAll -- el Centro de Auditoría (audit.html)
+/// siempre va a mandarlos explícitos desde su selector de período; el fallback solo
+/// cubre a un caller que no los mande (compatibilidad, no una decisión de negocio).
 /// </summary>
 public static class AuditEndpoints
 {
+    // Mismo límite y misma razón que MovementsEndpoints.MaxDateRangeDays: acota el
+    // costo de IReviewEngine/IClassificationSuggestionService sobre el período.
+    private const int MaxDateRangeDays = 90;
+
     public static IEndpointRouteBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/audit").WithTags("Audit");
@@ -67,15 +77,24 @@ public static class AuditEndpoints
             databaseConnected, lastImport, movements.Count, pending, movements.Count - pending));
     }
 
-    // GET /api/audit/report
+    // GET /api/audit/report?from=&to=
     private static async Task<IResult> GetReport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         [FromServices] AuditReportService auditReportService,
         CancellationToken ct)
     {
-        var to = DateOnly.FromDateTime(DateTime.UtcNow);
-        var from = new DateOnly(to.Year, to.Month, 1);
+        var effectiveTo = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var effectiveFrom = from ?? new DateOnly(effectiveTo.Year, effectiveTo.Month, 1);
 
-        var report = await auditReportService.BuildFullAuditReportAsync(from, to, ct);
+        if (effectiveFrom > effectiveTo)
+            return Results.BadRequest("'from' debe ser anterior o igual a 'to'");
+
+        var rangeDays = effectiveTo.DayNumber - effectiveFrom.DayNumber + 1;
+        if (rangeDays > MaxDateRangeDays)
+            return Results.BadRequest($"El rango máximo permitido es de {MaxDateRangeDays} días");
+
+        var report = await auditReportService.BuildFullAuditReportAsync(effectiveFrom, effectiveTo, ct);
         return Results.Ok(new AuditReportResponse(report));
     }
 }
