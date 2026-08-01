@@ -534,7 +534,19 @@
             return `${motivo.winnerCount} de ${motivo.matchCount} movimientos similares tuvieron este valor (${pct}% del historial).`;
         }
 
-        function renderMisclassifiedCard(m) {
+        // Deep link a movements.html: from/to son el período que se estaba auditando
+        // (no el default de movements.html, que es mes en curso) -- sin esto, un
+        // movimiento fuera del mes actual no estaría en state.movements al llegar y
+        // el modal no abriría (ver movements.html, lectura de estos mismos params).
+        function classifyMovementUrl(sourceId, from, to) {
+            return `/movements.html?${new URLSearchParams({ from, to, movementId: sourceId })}`;
+        }
+
+        function reviewMovementsSearchUrl(description, from, to) {
+            return `/movements.html?${new URLSearchParams({ from, to, search: description })}`;
+        }
+
+        function renderMisclassifiedCard(m, from, to) {
             const motivosHtml = m.motivos.map(motivo => `
                 <div class="misc-motivo">
                     <div class="misc-motivo-dim">${esc(motivo.dimension)}</div>
@@ -546,7 +558,7 @@
                 ? `<div class="misc-card-reviewed">✓ Revisado manualmente — ${formatDateTime(m.reviewedAtUtc)}</div>`
                 : `<div class="misc-card-actions">
                        <button type="button" class="misc-keep-btn" data-source-entity-type="${m.sourceEntityType}" data-source-id="${m.sourceId}">✓ Mantener clasificación</button>
-                       <a href="/movements.html">Modificar clasificación</a>
+                       <a href="${esc(classifyMovementUrl(m.sourceId, from, to))}">Modificar clasificación</a>
                    </div>`;
 
             return `
@@ -590,7 +602,7 @@
             return [...groups.values()].sort((a, b) => b.length - a.length);
         }
 
-        function renderMisclassifiedGroupCard(group) {
+        function renderMisclassifiedGroupCard(group, from, to) {
             const first = group[0];
             const keys = group.map(m => ({ sourceEntityType: m.sourceEntityType, sourceId: m.sourceId }));
 
@@ -602,7 +614,7 @@
                 </div>`).join('');
 
             if (group.length === 1) {
-                return renderMisclassifiedCard(first);
+                return renderMisclassifiedCard(first, from, to);
             }
 
             return `
@@ -613,11 +625,11 @@
                     <div class="misc-card-motivos">${motivosHtml}</div>
                     <div class="misc-card-actions">
                         <button type="button" class="misc-keep-group-btn" data-keys='${esc(JSON.stringify(keys))}'>✓ Mantener clasificación para los ${group.length}</button>
-                        <a href="/movements.html">Modificar clasificación</a>
+                        <a href="${esc(reviewMovementsSearchUrl(first.description, from, to))}">Ver movimientos</a>
                     </div>
                     <details class="misc-group-detail">
                         <summary>Ver detalle (${group.length})</summary>
-                        ${group.map(renderMisclassifiedCard).join('')}
+                        ${group.map(m => renderMisclassifiedCard(m, from, to)).join('')}
                     </details>
                 </div>`;
         }
@@ -626,7 +638,7 @@
         // no se esconden, solo quedan en un grupo colapsado aparte, sin agrupar por
         // patrón (ya están resueltas, no necesitan una acción en lote) -- ver
         // MovementAuditDecision: "no oculta el hallazgo".
-        function renderMisclassifiedSection(movements) {
+        function renderMisclassifiedSection(movements, from, to) {
             if (!movements || movements.length === 0) return '<div class="empty">(ninguna)</div>';
 
             const pending = movements.filter(m => !m.reviewed);
@@ -634,13 +646,13 @@
 
             let html = pending.length === 0
                 ? '<div class="empty">No hay clasificaciones dudosas pendientes.</div>'
-                : groupMisclassified(pending).map(renderMisclassifiedGroupCard).join('');
+                : groupMisclassified(pending).map(g => renderMisclassifiedGroupCard(g, from, to)).join('');
 
             if (reviewed.length > 0) {
                 html += `
                     <details class="misc-reviewed-group">
                         <summary>Revisadas (${reviewed.length})</summary>
-                        ${reviewed.map(renderMisclassifiedCard).join('')}
+                        ${reviewed.map(m => renderMisclassifiedCard(m, from, to)).join('')}
                     </details>`;
             }
 
@@ -663,7 +675,7 @@
                 </details>
                 <details ${data.misclassified > 0 ? 'open' : ''}>
                     <summary>Clasificaciones dudosas (${data.misclassified} pendiente(s), ${data.misclassifiedReviewed} revisada(s))</summary>
-                    ${renderMisclassifiedSection(data.misclassifiedMovements)}
+                    ${renderMisclassifiedSection(data.misclassifiedMovements, data.from, data.to)}
                 </details>
                 <details ${data.openInvestigations > 0 ? 'open' : ''}>
                     <summary>Investigaciones abiertas (${data.openInvestigations})</summary>

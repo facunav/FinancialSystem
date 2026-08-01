@@ -1781,7 +1781,36 @@
             setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
         }
 
-        loadMovements();
+        // Deep link opcional desde el Centro de Auditoría (audit.html):
+        // ?from=&to=&movementId= (abrir el modal de clasificación de un movimiento
+        // puntual) o ?from=&to=&search= (dejar el buscador filtrando un grupo, para
+        // inspección manual). from/to reflejan el período que se estaba auditando --
+        // sin ellos, el filtro por defecto de esta pantalla (mes en curso, ver
+        // GET /api/movements) podría no incluir el movimiento pedido. Reutiliza los
+        // mismos campos de filtro y el mismo openClassifyModal/loadMovements que ya
+        // existen -- no hay un mecanismo de selección nuevo.
+        const deepLinkParams = new URLSearchParams(window.location.search);
+        const deepLinkFrom = deepLinkParams.get('from');
+        const deepLinkTo = deepLinkParams.get('to');
+        const deepLinkMovementId = deepLinkParams.get('movementId');
+        const deepLinkSearch = deepLinkParams.get('search');
+
+        if (deepLinkFrom) {
+            state.movementFilters.from = deepLinkFrom;
+            document.getElementById('fFrom').value = deepLinkFrom;
+        }
+        if (deepLinkTo) {
+            state.movementFilters.to = deepLinkTo;
+            document.getElementById('fTo').value = deepLinkTo;
+        }
+        if (deepLinkSearch) {
+            state.movementFilters.search = deepLinkSearch;
+            document.getElementById('searchInput').value = deepLinkSearch;
+        }
+
+        loadMovements().then(() => {
+            if (deepLinkMovementId) openClassifyModal(deepLinkMovementId);
+        });
     </script>
 </body>
 </html>
