@@ -1,3 +1,5 @@
+using FinancialSystem.Domain.Enums;
+
 namespace FinancialSystem.Api.DTOs;
 
 // ── GET /api/audit/status ─────────────────────────────────────────────────────
@@ -39,4 +41,42 @@ public sealed record AuditReportResponse(
     string PendingText,
     string InvestigationsText,
     DateTime GeneratedAtUtc,
-    long DurationMs);
+    long DurationMs,
+    int MisclassifiedDetected,
+    int MisclassifiedReviewed,
+    IReadOnlyList<MisclassifiedMovementDto> MisclassifiedMovements);
+
+// ── Clasificaciones dudosas, en detalle ───────────────────────────────────────
+//
+// Refleja MisclassifiedMovement/MisclassifiedMotivo (AuditReportService) campo a
+// campo. Reviewed/ReviewedAtUtc vienen de MovementAuditDecision -- el movimiento
+// revisado sigue apareciendo acá, no se filtra ("no oculta el hallazgo").
+
+public sealed record MisclassifiedMovementDto(
+    SourceEntityType SourceEntityType,
+    Guid SourceId,
+    DateTime Date,
+    string Description,
+    string CurrentCategory,
+    string CurrentCounterparty,
+    string CurrentMovementType,
+    string CurrentFinancialImpact,
+    IReadOnlyList<MisclassifiedMotivoDto> Motivos,
+    bool Reviewed,
+    DateTime? ReviewedAtUtc);
+
+public sealed record MisclassifiedMotivoDto(
+    string Dimension,
+    string CurrentValue,
+    string SuggestedValue,
+    int? MatchCount,
+    int? WinnerCount);
+
+// ── POST /api/audit/reviews ───────────────────────────────────────────────────
+//
+// Registra que una o más movimientos fueron revisados -- ver MovementAuditDecision. Acepta
+// una lista para no necesitar un endpoint separado para revisión en lote.
+
+public sealed record ReviewMovementsRequest(IReadOnlyList<ReviewMovementRequestItem> Movements);
+
+public sealed record ReviewMovementRequestItem(SourceEntityType SourceEntityType, Guid SourceId);

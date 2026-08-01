@@ -107,12 +107,116 @@ public sealed class AuditReportService
     public async Task<string> BuildMisclassifiedMovementsReportAsync(
         DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct = default)
     {
+        var computed = await ComputeFlaggedMovementsAsync(from, to, financialAccountId, ct);
+
+        if (computed.ClassifiedCount == 0)
+            return $"No hay movimientos clasificados entre {from:dd/MM/yyyy} y " +
+                   $"{to:dd/MM/yyyy} para analizar.";
+
+        if (computed.Flagged.Count == 0)
+            return $"No se encontraron movimientos potencialmente mal clasificados entre " +
+                   $"{from:dd/MM/yyyy} y {to:dd/MM/yyyy}.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            $"{computed.Flagged.Count} movimiento(s) potencialmente mal clasificado(s) entre " +
+            $"{from:dd/MM/yyyy} y {to:dd/MM/yyyy}:");
+        sb.AppendLine();
+
+        var index = 0;
+        foreach (var (m, motivos) in computed.Flagged)
+        {
+            index++;
+            sb.AppendLine($"Movimiento {index}");
+            sb.AppendLine($"- Id: {m.SourceId}");
+            sb.AppendLine($"- Fecha: {m.Date:yyyy-MM-dd}");
+            sb.AppendLine(
+                $"- Cuenta: {(m.FinancialAccountId is { } accId ? computed.AccountNames.GetValueOrDefault(accId, "(desconocida)") : "(sin asignar)")}");
+            sb.AppendLine($"- Descripción: {m.Description}");
+            sb.AppendLine($"- Importe: {m.Amount:N2}");
+            sb.AppendLine($"- Moneda: {m.Currency}");
+            sb.AppendLine($"- Categoría actual: {computed.CategoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)")}");
+            sb.AppendLine(
+                $"- Contraparte actual: {(m.CounterpartyId is { } cpId ? computed.CounterpartyNames.GetValueOrDefault(cpId, "(desconocida)") : "-")}");
+            sb.AppendLine($"- Tipo actual: {m.MovementType?.ToString() ?? "-"}");
+            sb.AppendLine($"- Impacto actual: {m.FinancialImpact?.ToString() ?? "-"}");
+            sb.AppendLine("- Motivos encontrados:");
+
+            var motivoIndex = 0;
+            foreach (var motivo in motivos)
+            {
+                motivoIndex++;
+                sb.AppendLine($"  Motivo {motivoIndex}");
+                sb.AppendLine($"  - Origen: {motivo.Origen}");
+                sb.AppendLine($"  - Dimensión: {motivo.Dimension}");
+                sb.AppendLine($"  - Valor actual: {motivo.ValorActual}");
+                sb.AppendLine($"  - Valor sugerido: {motivo.ValorSugerido}");
+                if (motivo.Confianza is not null)
+                    sb.AppendLine($"  - Confianza: {motivo.Confianza}");
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Versión estructurada de <see cref="BuildMisclassifiedMovementsReportAsync"/>, para
+    /// audit.html (Centro de Auditoría) -- mismo cálculo exacto (<see cref="ComputeFlaggedMovementsAsync"/>,
+    /// compartido con la versión de texto que sigue usando la tool MCP AuditDatabase), sin
+    /// reformatear nada a texto. Agrega el estado de revisión humana (MovementAuditDecision) por
+    /// movimiento -- no filtra a los revisados, los sigue devolviendo (ver MovementAuditDecision:
+    /// "no oculta el hallazgo").
+    /// </summary>
+    public async Task<IReadOnlyList<MisclassifiedMovement>> GetMisclassifiedMovementsAsync(
+        DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct = default)
+    {
+        var computed = await ComputeFlaggedMovementsAsync(from, to, financialAccountId, ct);
+        if (computed.Flagged.Count == 0) return [];
+
+        var sourceIds = computed.Flagged.Select(f => f.Movement.SourceId).ToList();
+        var reviews = await _db.MovementAuditDecisions
+            .AsNoTracking()
+            .Where(r => sourceIds.Contains(r.SourceId))
+            .ToDictionaryAsync(r => r.SourceId, r => r.ReviewedAtUtc, ct);
+
+        return computed.Flagged.Select(f =>
+        {
+            var m = f.Movement;
+            var reviewed = reviews.TryGetValue(m.SourceId, out var reviewedAtUtc);
+
+            return new MisclassifiedMovement(
+                ToSourceEntityType(m.Source),
+                m.SourceId,
+                m.Date,
+                m.Description,
+                computed.CategoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)"),
+                m.CounterpartyId is { } cpId ? computed.CounterpartyNames.GetValueOrDefault(cpId, "(desconocida)") : "-",
+                m.MovementType?.ToString() ?? "-",
+                m.FinancialImpact?.ToString() ?? "-",
+                f.Motivos.Select(motivo => new MisclassifiedMotivo(
+                    motivo.Dimension, motivo.ValorActual, motivo.ValorSugerido, motivo.MatchCount, motivo.WinnerCount)).ToList(),
+                reviewed,
+                reviewed ? reviewedAtUtc : null);
+        }).ToList();
+    }
+
+    private readonly record struct FlaggedMovementsResult(
+        int ClassifiedCount,
+        IReadOnlyList<(MovementView Movement, List<Motivo> Motivos)> Flagged,
+        Dictionary<Guid, string> CategoryNames,
+        Dictionary<Guid, string> CounterpartyNames,
+        Dictionary<Guid, string> AccountNames);
+
+    private async Task<FlaggedMovementsResult> ComputeFlaggedMovementsAsync(
+        DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct)
+    {
         var movements = await _movementsQuery.GetAsync(from, to, financialAccountId, search: null, ct);
         var classified = movements.Where(m => m.Status is not null).ToList();
 
         if (classified.Count == 0)
-            return $"No hay movimientos clasificados entre {from:dd/MM/yyyy} y " +
-                   $"{to:dd/MM/yyyy} para analizar.";
+            return new FlaggedMovementsResult(0, [], [], [], []);
 
         var financialMovements = classified.Select(ToFinancialMovement).ToList();
         var suggestionSets = await _suggestionService.SuggestAsync(financialMovements, ct);
@@ -187,52 +291,7 @@ public sealed class AuditReportService
                 flagged.Add((m, motivos));
         }
 
-        if (flagged.Count == 0)
-            return $"No se encontraron movimientos potencialmente mal clasificados entre " +
-                   $"{from:dd/MM/yyyy} y {to:dd/MM/yyyy}.";
-
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            $"{flagged.Count} movimiento(s) potencialmente mal clasificado(s) entre " +
-            $"{from:dd/MM/yyyy} y {to:dd/MM/yyyy}:");
-        sb.AppendLine();
-
-        var index = 0;
-        foreach (var (m, motivos) in flagged)
-        {
-            index++;
-            sb.AppendLine($"Movimiento {index}");
-            sb.AppendLine($"- Id: {m.SourceId}");
-            sb.AppendLine($"- Fecha: {m.Date:yyyy-MM-dd}");
-            sb.AppendLine(
-                $"- Cuenta: {(m.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId, "(desconocida)") : "(sin asignar)")}");
-            sb.AppendLine($"- Descripción: {m.Description}");
-            sb.AppendLine($"- Importe: {m.Amount:N2}");
-            sb.AppendLine($"- Moneda: {m.Currency}");
-            sb.AppendLine($"- Categoría actual: {categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)")}");
-            sb.AppendLine(
-                $"- Contraparte actual: {(m.CounterpartyId is { } cpId ? counterpartyNames.GetValueOrDefault(cpId, "(desconocida)") : "-")}");
-            sb.AppendLine($"- Tipo actual: {m.MovementType?.ToString() ?? "-"}");
-            sb.AppendLine($"- Impacto actual: {m.FinancialImpact?.ToString() ?? "-"}");
-            sb.AppendLine("- Motivos encontrados:");
-
-            var motivoIndex = 0;
-            foreach (var motivo in motivos)
-            {
-                motivoIndex++;
-                sb.AppendLine($"  Motivo {motivoIndex}");
-                sb.AppendLine($"  - Origen: {motivo.Origen}");
-                sb.AppendLine($"  - Dimensión: {motivo.Dimension}");
-                sb.AppendLine($"  - Valor actual: {motivo.ValorActual}");
-                sb.AppendLine($"  - Valor sugerido: {motivo.ValorSugerido}");
-                if (motivo.Confianza is not null)
-                    sb.AppendLine($"  - Confianza: {motivo.Confianza}");
-            }
-
-            sb.AppendLine();
-        }
-
-        return sb.ToString();
+        return new FlaggedMovementsResult(classified.Count, flagged, categoryNames, counterpartyNames, accountNames);
     }
 
     // ── Reporte completo (ex AuditDatabaseTools.AuditDatabase) ───────────────────
@@ -261,7 +320,16 @@ public sealed class AuditReportService
         var suspiciousText = await BuildSuspiciousMovementsReportAsync(from, to, null, ct);
         var misclassifiedText = await BuildMisclassifiedMovementsReportAsync(from, to, null, ct);
         var suspiciousGroupsCount = ParseLeadingCount(suspiciousText);
-        var misclassifiedCount = ParseLeadingCount(misclassifiedText);
+
+        // Misclassified* separa lo detectado por el sistema de lo que sigue pendiente de
+        // revisión humana (MovementAuditDecision) -- ver GetMisclassifiedMovementsAsync. El
+        // conteo que participa de "Problemas encontrados"/Conclusión/Estado de la
+        // auditoría es el pendiente, no el detectado: un movimiento revisado deja de
+        // sumar como problema activo, pero sigue existiendo (misclassifiedDetectedCount).
+        var misclassifiedMovements = await GetMisclassifiedMovementsAsync(from, to, null, ct);
+        var misclassifiedDetectedCount = misclassifiedMovements.Count;
+        var misclassifiedReviewedCount = misclassifiedMovements.Count(m => m.Reviewed);
+        var misclassifiedCount = misclassifiedDetectedCount - misclassifiedReviewedCount;
 
         var investigations = await _db.Investigations.AsNoTracking().ToListAsync(ct);
         var openInvestigations = investigations.Where(i => i.Status == InvestigationStatus.Open).ToList();
@@ -326,12 +394,20 @@ public sealed class AuditReportService
             from, to, movements.Count, pending.Count, classifiedCount, suspiciousGroupsCount,
             misclassifiedCount, openInvestigations.Count, resolvedInvestigationsCount, totalProblems,
             misclassifiedBlock, suspiciousBlock, pendingBlock, investigationsBlock, sb.ToString(),
-            generatedAtUtc, stopwatch.ElapsedMilliseconds);
+            generatedAtUtc, stopwatch.ElapsedMilliseconds,
+            misclassifiedDetectedCount, misclassifiedReviewedCount, misclassifiedMovements);
     }
 
     // ── Helpers (idénticos a los que tenía AuditTools.cs) ────────────────────────
 
-    private sealed record Motivo(string Origen, string Dimension, string ValorActual, string ValorSugerido, string? Confianza);
+    private sealed record Motivo(
+        string Origen,
+        string Dimension,
+        string ValorActual,
+        string ValorSugerido,
+        string? Confianza,
+        int? MatchCount = null,
+        int? WinnerCount = null);
 
     private const string SuggestionOrigen = "Historial de descripción idéntica (IClassificationSuggestionService)";
 
@@ -357,7 +433,9 @@ public sealed class AuditReportService
                             "Categoría",
                             categoryNames.GetValueOrDefault(m.CategoryId!.Value, "(no resuelve)"),
                             categoryNames.GetValueOrDefault(suggestedCategoryId, "(desconocida)"),
-                            s.Confidence.ToString()));
+                            s.Confidence.ToString(),
+                            s.MatchCount,
+                            s.WinnerCount));
                     break;
 
                 case SuggestionDimension.MovementType:
@@ -368,7 +446,9 @@ public sealed class AuditReportService
                             "Tipo",
                             m.MovementType?.ToString() ?? "-",
                             suggestedType.ToString(),
-                            s.Confidence.ToString()));
+                            s.Confidence.ToString(),
+                            s.MatchCount,
+                            s.WinnerCount));
                     break;
 
                 case SuggestionDimension.FinancialImpact:
@@ -379,7 +459,9 @@ public sealed class AuditReportService
                             "Impacto",
                             m.FinancialImpact?.ToString() ?? "-",
                             suggestedImpact.ToString(),
-                            s.Confidence.ToString()));
+                            s.Confidence.ToString(),
+                            s.MatchCount,
+                            s.WinnerCount));
                     break;
 
                 case SuggestionDimension.Counterparty:
@@ -394,7 +476,9 @@ public sealed class AuditReportService
                             "Contraparte",
                             actualName,
                             counterpartyNames.GetValueOrDefault(suggestedCounterpartyId, "(desconocida)"),
-                            s.Confidence.ToString()));
+                            s.Confidence.ToString(),
+                            s.MatchCount,
+                            s.WinnerCount));
                     }
                     break;
             }
@@ -450,6 +534,17 @@ public sealed class AuditReportService
         MerchantAtUtc = m.MerchantAtUtc,
     };
 
+    // Mismo mapeo que ClassificationSuggestionService.ToSourceEntityType -- se duplica acá
+    // (privado en ambos archivos) en vez de compartirse porque ninguno de los dos expone
+    // hoy un punto de extensión público para esto, y MovementAuditDecision necesita identificar
+    // el movimiento con SourceEntityType+SourceId igual que el resto del proyecto.
+    private static SourceEntityType ToSourceEntityType(MovementSource source) => source switch
+    {
+        MovementSource.BankDebit => SourceEntityType.BankStatement,
+        MovementSource.CreditCard => SourceEntityType.Transaction,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "MovementSource sin mapeo a SourceEntityType conocido."),
+    };
+
     private sealed record CounterpartyDefaults(
         Guid CounterpartyId,
         Guid? DefaultCategoryId,
@@ -500,6 +595,11 @@ public sealed class AuditReportService
 /// MCP) sigue devolviendo eso mismo, sin cambios. GeneratedAtUtc/DurationMs son
 /// puramente informativos para audit.html (cuándo se ejecutó, cuánto tardó) -- no
 /// se persisten en ningún lado, se recalculan en cada ejecución.
+///
+/// Misclassified representa lo pendiente de revisión humana (MovementAuditDecision), no lo
+/// detectado en total -- ver GetMisclassifiedMovementsAsync. MisclassifiedDetected es el
+/// total (pendiente + revisado); MisclassifiedReviewed es el complemento. Ningún
+/// movimiento revisado desaparece: solo deja de contar para TotalProblems/Conclusión.
 /// </summary>
 public sealed record FullAuditReport(
     DateOnly From,
@@ -518,4 +618,39 @@ public sealed record FullAuditReport(
     string InvestigationsText,
     string ReportText,
     DateTime GeneratedAtUtc,
-    long DurationMs);
+    long DurationMs,
+    int MisclassifiedDetected,
+    int MisclassifiedReviewed,
+    IReadOnlyList<MisclassifiedMovement> MisclassifiedMovements);
+
+/// <summary>
+/// Un movimiento marcado como potencialmente mal clasificado, para audit.html -- ver
+/// AuditReportService.GetMisclassifiedMovementsAsync. Reviewed/ReviewedAtUtc reflejan
+/// MovementAuditDecision: el movimiento sigue apareciendo aunque haya sido revisado.
+/// </summary>
+public sealed record MisclassifiedMovement(
+    SourceEntityType SourceEntityType,
+    Guid SourceId,
+    DateTime Date,
+    string Description,
+    string CurrentCategory,
+    string CurrentCounterparty,
+    string CurrentMovementType,
+    string CurrentFinancialImpact,
+    IReadOnlyList<MisclassifiedMotivo> Motivos,
+    bool Reviewed,
+    DateTime? ReviewedAtUtc);
+
+/// <summary>
+/// Un motivo de duda dentro de un <see cref="MisclassifiedMovement"/> -- una dimensión
+/// (Categoría/Tipo/Impacto/Contraparte) donde el valor sugerido difiere del actual.
+/// MatchCount/WinnerCount vienen de ClassificationSuggestion.MatchCount/WinnerCount
+/// (null cuando el motivo salió de un default configurado en la Counterparty, no de un
+/// conteo de historial).
+/// </summary>
+public sealed record MisclassifiedMotivo(
+    string Dimension,
+    string CurrentValue,
+    string SuggestedValue,
+    int? MatchCount,
+    int? WinnerCount);

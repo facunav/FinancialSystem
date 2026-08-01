@@ -28,8 +28,19 @@ namespace FinancialSystem.Application.Suggestions;
 /// con esta contraparte"). No es opcional: una sugerencia sin motivo visible es una caja
 /// negra que el usuario no tiene por qué confiar.
 /// </param>
+/// <param name="MatchCount">
+/// Cantidad total de movimientos históricos considerados para esta dimensión. Null
+/// cuando la sugerencia no viene de un conteo de historial (ej. el valor por defecto
+/// configurado en una Counterparty) — no hay una cantidad de evidencia que reportar ahí.
+/// </param>
+/// <param name="WinnerCount">
+/// De <see cref="MatchCount"/>, cuántos tenían el valor sugerido en <see cref="Value"/>.
+/// Mismo criterio de null que <see cref="MatchCount"/>.
+/// </param>
 public sealed record ClassificationSuggestion(
     SuggestionDimension Dimension,
     object Value,
     SuggestionConfidence Confidence,
-    string Reason);
+    string Reason,
+    int? MatchCount = null,
+    int? WinnerCount = null);

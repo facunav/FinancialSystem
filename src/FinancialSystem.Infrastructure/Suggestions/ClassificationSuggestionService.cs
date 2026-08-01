@@ -408,7 +408,7 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         var confidence = ResolveConfidence(distinctCount, winner.Count, matchCount);
         var reason = BuildReason(distinctCount, winner.Count, matchCount, confidence);
 
-        suggestions.Add(new ClassificationSuggestion(dimension, winner.Key, confidence, reason));
+        suggestions.Add(new ClassificationSuggestion(dimension, winner.Key, confidence, reason, matchCount, winner.Count));
     }
 
     /// <summary>

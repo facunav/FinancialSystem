@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Audit.Commands;
 using FinancialSystem.Application.Investigations.Commands;
 using FinancialSystem.Application.Review.Commands;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<LinkMovementToInvestigationHandler>();
         services.AddScoped<AddInvestigationFindingHandler>();
         services.AddScoped<UpdateInvestigationStatusHandler>();
+        services.AddScoped<ReviewMovementsHandler>();
         return services;
     }
 

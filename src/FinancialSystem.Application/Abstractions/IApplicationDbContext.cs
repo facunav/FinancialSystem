@@ -19,6 +19,7 @@ public interface IApplicationDbContext
     DbSet<Investigation> Investigations { get; }
     DbSet<InvestigationReference> InvestigationReferences { get; }
     DbSet<InvestigationFinding> InvestigationFindings { get; }
+    DbSet<MovementAuditDecision> MovementAuditDecisions { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

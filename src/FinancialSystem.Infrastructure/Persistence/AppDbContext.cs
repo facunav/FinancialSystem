@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Investigation> Investigations => Set<Investigation>();
     public DbSet<InvestigationReference> InvestigationReferences => Set<InvestigationReference>();
     public DbSet<InvestigationFinding> InvestigationFindings => Set<InvestigationFinding>();
+    public DbSet<MovementAuditDecision> MovementAuditDecisions => Set<MovementAuditDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,5 +37,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new InvestigationConfiguration());
         modelBuilder.ApplyConfiguration(new InvestigationReferenceConfiguration());
         modelBuilder.ApplyConfiguration(new InvestigationFindingConfiguration());
+        modelBuilder.ApplyConfiguration(new MovementAuditDecisionConfiguration());
     }
 }

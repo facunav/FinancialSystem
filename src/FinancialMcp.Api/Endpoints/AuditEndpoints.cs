@@ -1,4 +1,5 @@
 using FinancialSystem.Api.DTOs;
+using FinancialSystem.Application.Audit.Commands;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Infrastructure.Audit;
@@ -41,6 +42,7 @@ public static class AuditEndpoints
 
         group.MapGet("/status", GetStatus);
         group.MapGet("/report", GetReport);
+        group.MapPost("/reviews", PostReviews);
 
         return app;
     }
@@ -96,11 +98,36 @@ public static class AuditEndpoints
 
         var result = await auditReportService.BuildFullAuditReportAsync(effectiveFrom, effectiveTo, ct);
 
+        var misclassifiedMovements = result.MisclassifiedMovements
+            .Select(m => new MisclassifiedMovementDto(
+                m.SourceEntityType, m.SourceId, m.Date, m.Description,
+                m.CurrentCategory, m.CurrentCounterparty, m.CurrentMovementType, m.CurrentFinancialImpact,
+                m.Motivos.Select(motivo => new MisclassifiedMotivoDto(
+                    motivo.Dimension, motivo.CurrentValue, motivo.SuggestedValue, motivo.MatchCount, motivo.WinnerCount)).ToList(),
+                m.Reviewed, m.ReviewedAtUtc))
+            .ToList();
+
         return Results.Ok(new AuditReportResponse(
             result.From, result.To, result.MovementsAnalyzed, result.Pending, result.Classified,
             result.SuspiciousGroups, result.Misclassified, result.OpenInvestigations,
             result.ResolvedInvestigations, result.TotalProblems,
             result.MisclassifiedText, result.SuspiciousText, result.PendingText, result.InvestigationsText,
-            result.GeneratedAtUtc, result.DurationMs));
+            result.GeneratedAtUtc, result.DurationMs,
+            result.MisclassifiedDetected, result.MisclassifiedReviewed, misclassifiedMovements));
+    }
+
+    // POST /api/audit/reviews
+    private static async Task<IResult> PostReviews(
+        [FromBody] ReviewMovementsRequest request,
+        [FromServices] ReviewMovementsHandler handler,
+        CancellationToken ct)
+    {
+        var movements = request.Movements
+            .Select(m => new MovementKey(m.SourceEntityType, m.SourceId))
+            .ToList();
+
+        await handler.Handle(new ReviewMovementsCommand(movements), ct);
+
+        return Results.NoContent();
     }
 }
