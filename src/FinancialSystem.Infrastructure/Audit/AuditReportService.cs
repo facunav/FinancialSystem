@@ -345,6 +345,8 @@ public sealed class AuditReportService
 
         foreach (var s in suggestions)
         {
+            if (s.Confidence == SuggestionConfidence.Low) continue;
+
             switch (s.Dimension)
             {
                 case SuggestionDimension.Category:
