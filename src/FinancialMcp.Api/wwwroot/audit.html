@@ -193,6 +193,17 @@
             #auditProblems details[open] summary { border-bottom: 1px solid var(--border) }
             #auditProblems .report-block { border: none; border-radius: 0; max-height: 360px }
 
+        /* ── Acciones recomendadas ── */
+        .actions-list { list-style: none; display: flex; flex-direction: column; gap: 8px }
+            .actions-list li {
+                padding: 8px 12px;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            .actions-list li::before { content: '→ '; color: var(--dim) }
+
         .toast {
             font: 12px var(--mono);
             padding: 6px 12px;
@@ -262,7 +273,15 @@
             </div>
         </div>
 
-        <!-- 5. Problemas encontrados -->
+        <!-- 5. Acciones recomendadas -->
+        <div class="panel">
+            <div class="panel-head"><h2>Acciones recomendadas</h2></div>
+            <div class="panel-body">
+                <div class="empty" id="auditActions">Ejecutá la auditoría para ver esta sección.</div>
+            </div>
+        </div>
+
+        <!-- 6. Problemas encontrados -->
         <div class="panel">
             <div class="panel-head"><h2>Problemas encontrados</h2></div>
             <div class="panel-body">
@@ -270,7 +289,7 @@
             </div>
         </div>
 
-        <!-- 6. Acciones -->
+        <!-- 7. Acciones -->
         <div class="panel">
             <div class="panel-head"><h2>Acciones</h2></div>
             <div class="panel-body actions-row">
@@ -410,6 +429,30 @@
                 <div class="status-field"><label>Investigaciones resueltas</label><div class="value">${data.resolvedInvestigations}</div></div>`;
         }
 
+        // Traduce los mismos números del Resumen a próximos pasos concretos -- sin
+        // ninguna regla nueva, solo una capa de presentación. Orden de prioridad:
+        // grupos sospechosos (distorsionan totales si son duplicados reales) >
+        // pendientes (afectan reportes, no los distorsionan) > clasificaciones
+        // dudosas (es una sugerencia, puede ser falso positivo) > investigaciones
+        // abiertas (trabajo de más largo plazo, no bloquea la lectura del período).
+        function renderActions(data) {
+            const el = document.getElementById('auditActions');
+            const items = [];
+            if (data.suspiciousGroups > 0) items.push(`Revisar ${data.suspiciousGroups} grupo(s) sospechoso(s).`);
+            if (data.pending > 0) items.push(`Clasificar ${data.pending} movimiento(s) pendiente(s).`);
+            if (data.misclassified > 0) items.push(`Revisar ${data.misclassified} clasificación(es) dudosa(s).`);
+            if (data.openInvestigations > 0) items.push(`Resolver ${data.openInvestigations} investigación(es) abierta(s).`);
+
+            if (items.length === 0) {
+                el.className = 'empty';
+                el.textContent = 'No hay acciones pendientes.';
+                return;
+            }
+
+            el.className = '';
+            el.innerHTML = `<ul class="actions-list">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+        }
+
         // Mismo orden de prioridad que "Acciones recomendadas": grupos sospechosos,
         // pendientes, clasificaciones dudosas, investigaciones abiertas.
         function renderProblems(data) {
@@ -438,6 +481,7 @@
             const btn = document.getElementById('btnRunAudit');
             const stateEl = document.getElementById('auditState');
             const summaryEl = document.getElementById('auditSummary');
+            const actionsEl = document.getElementById('auditActions');
             const problemsEl = document.getElementById('auditProblems');
 
             const fromValue = document.getElementById('fromInput').value;
@@ -453,6 +497,8 @@
             stateEl.textContent = 'Ejecutando auditoría…';
             summaryEl.className = 'loading';
             summaryEl.textContent = 'Ejecutando auditoría…';
+            actionsEl.className = 'loading';
+            actionsEl.textContent = 'Ejecutando auditoría…';
             problemsEl.className = 'loading';
             problemsEl.textContent = 'Ejecutando auditoría…';
 
@@ -460,11 +506,14 @@
                 const data = await getJson(`${API}/api/audit/report?from=${fromValue}&to=${toValue}`);
                 renderState(data);
                 renderSummary(data);
+                renderActions(data);
                 renderProblems(data);
             } catch (e) {
                 renderStateError(e.message);
                 summaryEl.className = 'empty';
                 summaryEl.textContent = 'No disponible: la auditoría no pudo ejecutarse.';
+                actionsEl.className = 'empty';
+                actionsEl.textContent = 'No disponible: la auditoría no pudo ejecutarse.';
                 problemsEl.className = 'empty';
                 problemsEl.textContent = 'No disponible: la auditoría no pudo ejecutarse.';
             } finally {
@@ -475,7 +524,7 @@
 
         document.getElementById('btnRunAudit').addEventListener('click', runAudit);
 
-        // ── 6. Acciones -- solo navegación, sin pantallas nuevas ──
+        // ── 7. Acciones -- solo navegación, sin pantallas nuevas ──
 
         document.getElementById('btnGoMovements').addEventListener('click', () => {
             window.location.href = '/movements.html';
