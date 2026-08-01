@@ -80,7 +80,10 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
         {
             Row(CategoryA, BaseDate),
             Row(CategoryA, BaseDate.AddDays(1)),
-            Row(CategoryB, BaseDate.AddDays(2)),
+            Row(CategoryA, BaseDate.AddDays(2)),
+            Row(CategoryA, BaseDate.AddDays(3)),
+            Row(CategoryB, BaseDate.AddDays(4)),
+            Row(CategoryB, BaseDate.AddDays(5)),
         };
 
         var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
@@ -135,9 +138,21 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
     }
 
     [Fact]
+    public void BuildSuggestions_BelowMinSampleSize_YieldsNoSuggestionsAtAll()
+    {
+        var matches = Enumerable.Range(0, 4)
+            .Select(i => Row(CategoryA, BaseDate.AddDays(i), counterpartyId: CounterpartyA))
+            .ToList();
+
+        var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
+
+        Assert.Empty(suggestions);
+    }
+
+    [Fact]
     public void BuildSuggestions_NoCounterpartyInHistory_OmitsCounterpartyDimensionOnly()
     {
-        var matches = Enumerable.Range(0, 3)
+        var matches = Enumerable.Range(0, 5)
             .Select(i => Row(CategoryA, BaseDate.AddDays(i), counterpartyId: null))
             .ToList();
 
@@ -209,7 +224,7 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
         // dentro del subconjunto filtrado -> High, no Medium, y CategoryB, no CategoryA.
         var matches = Enumerable.Range(0, 10)
             .Select(i => Row(CategoryA, BaseDate.AddDays(i), categoryIsDeactivated: true))
-            .Concat(Enumerable.Range(0, 3).Select(i => Row(CategoryB, BaseDate.AddDays(100 + i))))
+            .Concat(Enumerable.Range(0, 5).Select(i => Row(CategoryB, BaseDate.AddDays(100 + i))))
             .ToList();
 
         var suggestions = ClassificationSuggestionService.BuildSuggestions(matches);
@@ -217,6 +232,6 @@ public class ClassificationSuggestionServiceBuildSuggestionsTests
         var category = Assert.Single(suggestions, s => s.Dimension == SuggestionDimension.Category);
         Assert.Equal(CategoryB, category.Value);
         Assert.Equal(SuggestionConfidence.High, category.Confidence);
-        Assert.Contains("3 clasificaciones", category.Reason);
+        Assert.Contains("5 clasificaciones", category.Reason);
     }
 }

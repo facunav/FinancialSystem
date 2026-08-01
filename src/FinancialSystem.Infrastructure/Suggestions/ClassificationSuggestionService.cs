@@ -385,6 +385,8 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     /// demasiado débil para justificar más que confianza Low — hoy nunca se producía Low
     /// porque esta distinción no existía.
     /// </summary>
+    private const int MinSampleSize = 5;
+
     private static void AddDimensionSuggestion(
         List<ClassificationSuggestion> suggestions,
         SuggestionDimension dimension,
@@ -400,6 +402,8 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
         var distinctCount = groupedByValue.Count;
         var winner = groupedByValue[0];
         var matchCount = groupedByValue.Sum(g => g.Count);
+
+        if (matchCount < MinSampleSize) return;
 
         var confidence = ResolveConfidence(distinctCount, winner.Count, matchCount);
         var reason = BuildReason(distinctCount, winner.Count, matchCount, confidence);
