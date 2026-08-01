@@ -407,6 +407,8 @@
                     <div class="status-field"><label>Desde</label><div class="value">${esc(data.from)}</div></div>
                     <div class="status-field"><label>Hasta</label><div class="value">${esc(data.to)}</div></div>
                     <div class="status-field"><label>Movimientos analizados</label><div class="value">${data.movementsAnalyzed}</div></div>
+                    <div class="status-field"><label>Ejecutada</label><div class="value">${formatDateTime(data.generatedAtUtc)}</div></div>
+                    <div class="status-field"><label>Duración</label><div class="value">${data.durationMs} ms</div></div>
                 </div>`;
         }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Movements;
@@ -250,6 +251,9 @@ public sealed class AuditReportService
 
     public async Task<FullAuditReport> BuildFullAuditReportAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {
+        var generatedAtUtc = DateTime.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+
         var movements = await _movementsQuery.GetAsync(from, to, financialAccountId: null, search: null, ct);
         var pending = movements.Where(m => m.Status is null).ToList();
         var classifiedCount = movements.Count - pending.Count;
@@ -316,10 +320,13 @@ public sealed class AuditReportService
             ? "No se detectaron problemas."
             : $"Se detectaron {totalProblems} posibles problemas que requieren revisión.");
 
+        stopwatch.Stop();
+
         return new FullAuditReport(
             from, to, movements.Count, pending.Count, classifiedCount, suspiciousGroupsCount,
             misclassifiedCount, openInvestigations.Count, resolvedInvestigationsCount, totalProblems,
-            misclassifiedBlock, suspiciousBlock, pendingBlock, investigationsBlock, sb.ToString());
+            misclassifiedBlock, suspiciousBlock, pendingBlock, investigationsBlock, sb.ToString(),
+            generatedAtUtc, stopwatch.ElapsedMilliseconds);
     }
 
     // ── Helpers (idénticos a los que tenía AuditTools.cs) ────────────────────────
@@ -488,7 +495,9 @@ public sealed class AuditReportService
 /// buscar los encabezados de texto ("Grupos sospechosos", etc.) para partirlos.
 /// ReportText es exactamente el texto que ya devolvía este método antes del
 /// rediseño del Centro de Auditoría -- AuditDatabaseTools.AuditDatabase (la tool
-/// MCP) sigue devolviendo eso mismo, sin cambios.
+/// MCP) sigue devolviendo eso mismo, sin cambios. GeneratedAtUtc/DurationMs son
+/// puramente informativos para audit.html (cuándo se ejecutó, cuánto tardó) -- no
+/// se persisten en ningún lado, se recalculan en cada ejecución.
 /// </summary>
 public sealed record FullAuditReport(
     DateOnly From,
@@ -505,4 +514,6 @@ public sealed record FullAuditReport(
     string SuspiciousText,
     string PendingText,
     string InvestigationsText,
-    string ReportText);
+    string ReportText,
+    DateTime GeneratedAtUtc,
+    long DurationMs);

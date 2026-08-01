@@ -100,6 +100,7 @@ public static class AuditEndpoints
             result.From, result.To, result.MovementsAnalyzed, result.Pending, result.Classified,
             result.SuspiciousGroups, result.Misclassified, result.OpenInvestigations,
             result.ResolvedInvestigations, result.TotalProblems,
-            result.MisclassifiedText, result.SuspiciousText, result.PendingText, result.InvestigationsText));
+            result.MisclassifiedText, result.SuspiciousText, result.PendingText, result.InvestigationsText,
+            result.GeneratedAtUtc, result.DurationMs));
     }
 }

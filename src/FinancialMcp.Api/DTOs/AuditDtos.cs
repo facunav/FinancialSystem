@@ -37,4 +37,6 @@ public sealed record AuditReportResponse(
     string MisclassifiedText,
     string SuspiciousText,
     string PendingText,
-    string InvestigationsText);
+    string InvestigationsText,
+    DateTime GeneratedAtUtc,
+    long DurationMs);
