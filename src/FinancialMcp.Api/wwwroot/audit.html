@@ -243,6 +243,21 @@
                 color: var(--faint);
             }
 
+        /* ── Grupos de clasificaciones dudosas: mismo patrón visual que .misc-card,
+           agregando el conteo de movimientos similares y el detalle colapsable ── */
+        .misc-group-count {
+            color: var(--faint);
+            font-size: 11px;
+            font-weight: 400;
+        }
+        details.misc-group-detail { margin-top: 10px }
+        details.misc-group-detail summary {
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--dim);
+        }
+        details.misc-group-detail .misc-card { margin-top: 10px; background: var(--surface2) }
+
         /* ── Acciones recomendadas ── */
         .actions-list { list-style: none; display: flex; flex-direction: column; gap: 8px }
             .actions-list li {
@@ -551,9 +566,66 @@
                 </div>`;
         }
 
-        // Pendientes primero (y expandidas); revisadas siguen existiendo -- no se
-        // esconden, solo quedan en un grupo colapsado aparte (ver MovementReview: "no
-        // oculta el hallazgo").
+        // Agrupa pendientes con la misma descripción exacta y la misma sugerencia
+        // (mismo valor sugerido en cada dimensión) -- no la descripción normalizada
+        // que usa ClassificationSuggestionService internamente (Normalize() es
+        // internal a ese proyecto; exponerla para esto sería tocar más de lo
+        // estrictamente necesario para la UI). Dos movimientos con el mismo texto de
+        // descripción exacto siempre caen en el mismo bucket de historial en el
+        // backend, así que MatchCount/WinnerCount son iguales dentro de un grupo --
+        // alcanza con mostrar la evidencia del primer movimiento del grupo. Ordenados
+        // por tamaño de grupo descendente: resolver el grupo más grande primero
+        // reduce más el conteo de pendientes por cada decisión.
+        function groupMisclassified(movements) {
+            const groups = new Map();
+            for (const m of movements) {
+                const suggestionKey = m.motivos
+                    .map(mo => `${mo.dimension}=${mo.suggestedValue}`)
+                    .sort()
+                    .join(';');
+                const key = `${m.description.trim()}||${suggestionKey}`;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(m);
+            }
+            return [...groups.values()].sort((a, b) => b.length - a.length);
+        }
+
+        function renderMisclassifiedGroupCard(group) {
+            const first = group[0];
+            const keys = group.map(m => ({ sourceEntityType: m.sourceEntityType, sourceId: m.sourceId }));
+
+            const motivosHtml = first.motivos.map(motivo => `
+                <div class="misc-motivo">
+                    <div class="misc-motivo-dim">${esc(motivo.dimension)}</div>
+                    <div>${esc(motivo.currentValue)} → <strong>${esc(motivo.suggestedValue)}</strong></div>
+                    <div class="misc-motivo-evidence">${esc(evidenceText(motivo))}</div>
+                </div>`).join('');
+
+            if (group.length === 1) {
+                return renderMisclassifiedCard(first);
+            }
+
+            return `
+                <div class="misc-card">
+                    <div class="misc-card-head">
+                        <span>${esc(first.description)} <span class="misc-group-count">— ${group.length} movimientos similares</span></span>
+                    </div>
+                    <div class="misc-card-motivos">${motivosHtml}</div>
+                    <div class="misc-card-actions">
+                        <button type="button" class="misc-keep-group-btn" data-keys='${esc(JSON.stringify(keys))}'>✓ Mantener clasificación para los ${group.length}</button>
+                        <a href="/movements.html">Modificar clasificación</a>
+                    </div>
+                    <details class="misc-group-detail">
+                        <summary>Ver detalle (${group.length})</summary>
+                        ${group.map(renderMisclassifiedCard).join('')}
+                    </details>
+                </div>`;
+        }
+
+        // Pendientes primero (agrupadas y expandidas); revisadas siguen existiendo --
+        // no se esconden, solo quedan en un grupo colapsado aparte, sin agrupar por
+        // patrón (ya están resueltas, no necesitan una acción en lote) -- ver
+        // MovementAuditDecision: "no oculta el hallazgo".
         function renderMisclassifiedSection(movements) {
             if (!movements || movements.length === 0) return '<div class="empty">(ninguna)</div>';
 
@@ -562,7 +634,7 @@
 
             let html = pending.length === 0
                 ? '<div class="empty">No hay clasificaciones dudosas pendientes.</div>'
-                : pending.map(renderMisclassifiedCard).join('');
+                : groupMisclassified(pending).map(renderMisclassifiedGroupCard).join('');
 
             if (reviewed.length > 0) {
                 html += `
@@ -601,23 +673,25 @@
 
         // Delegado en el contenedor porque las tarjetas se recrean en cada render.
         document.getElementById('auditProblems').addEventListener('click', async (e) => {
-            const btn = e.target.closest('.misc-keep-btn');
+            const singleBtn = e.target.closest('.misc-keep-btn');
+            const groupBtn = e.target.closest('.misc-keep-group-btn');
+            const btn = singleBtn ?? groupBtn;
             if (!btn) return;
 
+            const movements = singleBtn
+                ? [{ sourceEntityType: Number(singleBtn.dataset.sourceEntityType), sourceId: singleBtn.dataset.sourceId }]
+                : JSON.parse(groupBtn.dataset.keys).map(k => ({ sourceEntityType: Number(k.sourceEntityType), sourceId: k.sourceId }));
+
+            const originalLabel = btn.textContent;
             btn.disabled = true;
             btn.textContent = 'Guardando…';
             try {
-                await postJson(`${API}/api/audit/reviews`, {
-                    movements: [{
-                        sourceEntityType: Number(btn.dataset.sourceEntityType),
-                        sourceId: btn.dataset.sourceId,
-                    }],
-                });
+                await postJson(`${API}/api/audit/reviews`, { movements });
                 await runAudit();
             } catch (err) {
                 showToast('auditToast', `No se pudo guardar la revisión: ${err.message}`, 'err', 6000);
                 btn.disabled = false;
-                btn.textContent = '✓ Mantener clasificación';
+                btn.textContent = originalLabel;
             }
         });
 
