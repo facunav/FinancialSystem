@@ -8,6 +8,7 @@ using FinancialSystem.Application.Parsing.Bbva;
 using FinancialSystem.Application.Parsing.Bbva.Mastercard;
 using FinancialSystem.Application.Parsing.Bbva.Visa;
 using FinancialSystem.Application.Parsing.Mastercard;
+using FinancialSystem.Application.Planning;
 using FinancialSystem.Application.Review;
 using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Infrastructure.Accounts;
@@ -18,6 +19,7 @@ using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
 using FinancialSystem.Infrastructure.Persistence;
+using FinancialSystem.Infrastructure.Planning;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,6 +98,7 @@ public static class DependencyInjection
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();
         services.AddScoped<IFinancialAccountQueryService, FinancialAccountQueryService>();
+        services.AddScoped<IPlanningQueryService, PlanningQueryService>();
 
         // AuditReportService: orquestación de auditoría compartida entre
         // FinancialSystem.McpServer (AuditTools/AuditDatabaseTools) y FinancialMcp.Api

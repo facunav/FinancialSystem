@@ -1,6 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Audit.Commands;
 using FinancialSystem.Application.Investigations.Commands;
+using FinancialSystem.Application.Planning.Commands;
 using FinancialSystem.Application.Review.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,6 +18,14 @@ public static class DependencyInjection
         services.AddScoped<AddInvestigationFindingHandler>();
         services.AddScoped<UpdateInvestigationStatusHandler>();
         services.AddScoped<ReviewMovementsHandler>();
+        services.AddScoped<CreatePlanningMonthHandler>();
+        services.AddScoped<CopyPlanningMonthHandler>();
+        services.AddScoped<AddPlanningItemHandler>();
+        services.AddScoped<EditPlanningItemHandler>();
+        services.AddScoped<DeletePlanningItemHandler>();
+        services.AddScoped<MarkPlanningItemAsPaidHandler>();
+        services.AddScoped<UnmarkPlanningItemAsPaidHandler>();
+        services.AddScoped<UpdateExpectedIncomeHandler>();
         return services;
     }
 
