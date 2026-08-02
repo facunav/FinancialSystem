@@ -99,6 +99,7 @@ public static class DependencyInjection
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();
         services.AddScoped<IFinancialAccountQueryService, FinancialAccountQueryService>();
         services.AddScoped<IPlanningQueryService, PlanningQueryService>();
+        services.AddScoped<IPlanningMatchSuggestionService, PlanningMatchSuggestionService>();
 
         // AuditReportService: orquestación de auditoría compartida entre
         // FinancialSystem.McpServer (AuditTools/AuditDatabaseTools) y FinancialMcp.Api

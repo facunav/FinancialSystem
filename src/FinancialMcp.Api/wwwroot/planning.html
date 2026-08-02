@@ -286,6 +286,21 @@
             font-size: 13px;
         }
 
+        /* ── Sugerencias de coincidencia con movimientos ── */
+        .suggestion-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+            .suggestion-row:last-child { border-bottom: none }
+            .suggestion-info { display: flex; flex-direction: column; gap: 2px }
+            .suggestion-info .movement { color: var(--dim); font-size: 12px }
+            .suggestion-info .movement .mono { font-family: var(--mono) }
+
         /* ── Estado vacío de mes ── */
         .empty-month {
             padding: 40px 24px;
@@ -482,6 +497,15 @@
                 </div>
             </div>
 
+            <div class="section-title">Sugerencias de pago</div>
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Coincidencias con movimientos importados</h2>
+                    <button class="sm" id="btnFindSuggestions">Buscar coincidencias</button>
+                </div>
+                <div id="suggestionsBody"></div>
+            </div>
+
             <div class="section-title">Pagos del mes</div>
             <div class="panel">
                 <div class="panel-head">
@@ -658,6 +682,8 @@
                 postJson(`${API}/api/planning-items/${itemId}/pay`),
             unmarkPaid: itemId =>
                 postJson(`${API}/api/planning-items/${itemId}/unpay`),
+            getMatchSuggestions: monthId =>
+                getJson(`${API}/api/planning-months/${monthId}/match-suggestions`),
         };
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -744,6 +770,7 @@
                     document.getElementById(id).textContent = '—';
                 }
                 document.getElementById('itemStatusSummary').textContent = '';
+                Render.suggestionsIdle();
             },
 
             emptyState(latestOption) {
@@ -768,6 +795,7 @@
                 document.getElementById('btnCopyToOther').style.display = '';
                 Render.summary();
                 Render.items();
+                Render.suggestionsIdle(); // el mes cambió -- las sugerencias son por período, se recalculan a pedido
             },
 
             summary() {
@@ -808,6 +836,35 @@
                             <button class="sm danger" data-action="delete" data-id="${i.id}">Eliminar</button>
                         </td>
                     </tr>`).join('');
+            },
+
+            // Estado inicial (sin buscar todavía) vs. sin resultados vs. lista --
+            // ver docs/Epics/Epica-PlanificacionMensual.md, sección 9: es una ayuda
+            // opcional, nunca se calcula sola al cargar el mes.
+            suggestionsIdle() {
+                document.getElementById('suggestionsBody').innerHTML =
+                    '<div class="empty">Presioná "Buscar coincidencias" para comparar los ítems pendientes con los movimientos importados de este mes.</div>';
+            },
+
+            suggestionsLoading() {
+                document.getElementById('suggestionsBody').innerHTML = '<div class="loading">Buscando…</div>';
+            },
+
+            suggestions(list) {
+                const body = document.getElementById('suggestionsBody');
+                if (list.length === 0) {
+                    body.innerHTML = '<div class="empty">No se encontraron coincidencias.</div>';
+                    return;
+                }
+
+                body.innerHTML = list.map(s => `
+                    <div class="suggestion-row">
+                        <div class="suggestion-info">
+                            <span>${esc(s.planningItemTitle)}</span>
+                            <span class="movement">≈ ${esc(s.movementDescription)} · <span class="mono">${fmtMoney(s.movementAmount)}</span> · ${fmtDate(s.movementEffectiveDate)}</span>
+                        </div>
+                        <button class="sm primary" data-action="mark-paid-from-suggestion" data-item-id="${s.planningItemId}">Marcar como pagado</button>
+                    </div>`).join('');
             },
         };
 
@@ -1121,6 +1178,35 @@
                 showError(`No se pudo desmarcar el ítem: ${e.message}`);
             }
         }
+
+        // ── Sugerencias de pago (docs/Epics/Epica-PlanificacionMensual.md, sección 9) ──
+        // Se calculan solo cuando el usuario lo pide -- nunca al cargar el mes -- y la
+        // única acción posible reutiliza markAsPaid(id), el mismo comando manual que ya
+        // usa la tabla de ítems.
+        document.getElementById('btnFindSuggestions').addEventListener('click', async () => {
+            if (!state.planningMonth) return;
+            Render.suggestionsLoading();
+            try {
+                const suggestions = await Api.getMatchSuggestions(state.planningMonth.id);
+                Render.suggestions(suggestions);
+            } catch (e) {
+                document.getElementById('suggestionsBody').innerHTML =
+                    `<div class="empty">No se pudieron buscar coincidencias: ${esc(e.message)}</div>`;
+            }
+        });
+
+        document.getElementById('suggestionsBody').addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-action="mark-paid-from-suggestion"]');
+            if (!btn) return;
+            const itemId = btn.dataset.itemId;
+            btn.disabled = true;
+            await markAsPaid(itemId);
+            // El ítem ya no está pendiente -- ya no debería seguir sugerido. En vez de
+            // recalcular contra el backend de nuevo, se quita de la lista visible tal
+            // como quedó (misma idea que applyItemPatched: reflejar localmente lo que
+            // el comando ya confirmó, sin otro round-trip).
+            document.querySelectorAll(`button[data-item-id="${itemId}"]`).forEach(b => b.closest('.suggestion-row')?.remove());
+        });
 
         // ─────────────────────────────────────────────────────────────────────────
         // INIT

@@ -63,3 +63,21 @@ public sealed record EditPlanningItemRequest(string Title, decimal? ExpectedAmou
 // ── POST /api/planning-items/{id}/pay ────────────────────────────────────────
 
 public sealed record MarkPlanningItemAsPaidResponseDto(DateTime PaidAt);
+
+// ── GET /api/planning-months/{id}/match-suggestions ─────────────────────────
+// Ver docs/Epics/Epica-PlanificacionMensual.md, sección 9. Solo lectura -- la única
+// acción que el usuario puede ejecutar a partir de una sugerencia es el POST
+// /api/planning-items/{id}/pay ya existente, nunca algo automático acá.
+
+public sealed record PlanningItemMatchSuggestionDto(
+    Guid PlanningItemId,
+    string PlanningItemTitle,
+    Guid ClassifiedMovementId,
+    string MovementDescription,
+    decimal MovementAmount,
+    DateTime MovementEffectiveDate)
+{
+    public static PlanningItemMatchSuggestionDto Create(PlanningItemMatchSuggestion s) => new(
+        s.PlanningItemId, s.PlanningItemTitle, s.ClassifiedMovementId,
+        s.MovementDescription, s.MovementAmount, s.MovementEffectiveDate);
+}

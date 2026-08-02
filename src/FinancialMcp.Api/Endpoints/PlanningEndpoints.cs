@@ -6,11 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 namespace FinancialSystem.Api.Endpoints;
 
 /// <summary>
-/// Expone los casos de uso del Patch 0042 (FinancialSystem.Application.Planning.Commands
-/// + IPlanningQueryService) vía Minimal API — ver docs/Epics/Epica-PlanificacionMensual.md.
+/// Expone los casos de uso de FinancialSystem.Application.Planning.Commands +
+/// IPlanningQueryService vía Minimal API — ver docs/Epics/Epica-PlanificacionMensual.md.
 /// Sin lógica de negocio acá: cada acción solo mapea el request a un Command/Query
-/// existente y traduce el resultado a una respuesta HTTP. Sin UI, sin integración con
-/// Movimientos, sin sugerencias (fuera de alcance de este patch).
+/// existente y traduce el resultado a una respuesta HTTP.
+///
+/// Patch 0046: agrega GetMatchSuggestions (IPlanningMatchSuggestionService, sección 9
+/// de la épica) — sigue siendo un GET de solo lectura; la única escritura posible a
+/// partir de una sugerencia sigue siendo POST /pay, sin cambios.
 /// </summary>
 public static class PlanningEndpoints
 {
@@ -24,6 +27,7 @@ public static class PlanningEndpoints
         months.MapPost("/{id:guid}/copy", CopyMonth);
         months.MapGet("/{id:guid}/summary", GetSummary);
         months.MapPut("/{id:guid}/expected-income", UpdateExpectedIncome);
+        months.MapGet("/{id:guid}/match-suggestions", GetMatchSuggestions);
 
         var items = app.MapGroup("/api/planning-items").WithTags("PlanningItems");
 
@@ -133,6 +137,22 @@ public static class PlanningEndpoints
     {
         var result = await handler.Handle(new UpdateExpectedIncomeCommand(id, request.ExpectedIncome), ct);
         return result.IsSuccess ? Results.NoContent() : Results.NotFound();
+    }
+
+    // ── GET /api/planning-months/{id}/match-suggestions ──────────────────────
+    // Ver docs/Epics/Epica-PlanificacionMensual.md, sección 9. Solo lectura: nunca
+    // marca nada como pagado por su cuenta -- eso lo sigue haciendo el usuario desde
+    // POST /api/planning-items/{id}/pay, ya existente.
+
+    private static async Task<IResult> GetMatchSuggestions(
+        Guid id,
+        [FromServices] IPlanningMatchSuggestionService matchSuggestions,
+        CancellationToken ct)
+    {
+        var suggestions = await matchSuggestions.GetSuggestionsAsync(id, ct);
+        return suggestions is null
+            ? Results.NotFound()
+            : Results.Ok(suggestions.Select(PlanningItemMatchSuggestionDto.Create));
     }
 
     // ── POST /api/planning-items ──────────────────────────────────────────────
