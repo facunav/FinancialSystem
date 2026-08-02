@@ -56,6 +56,32 @@ internal sealed class PlanningQueryService : IPlanningQueryService
             month.Id, month.Period, month.ExpectedIncome, totalPlanned, paid, pending, available);
     }
 
+    public async Task<PlanningDashboardSummary?> GetDashboardSummaryAsync(DateTime period, CancellationToken ct = default)
+    {
+        var normalizedPeriod = PlanningPeriod.Normalize(period);
+
+        var month = await _db.PlanningMonths
+            .AsNoTracking()
+            .Include(m => m.Items)
+            .FirstOrDefaultAsync(m => m.Period == normalizedPeriod, ct);
+
+        if (month is null) return null;
+
+        var pendingDueDates = month.Items
+            .Where(i => !i.IsPaid && i.DueDate.HasValue)
+            .Select(i => i.DueDate!.Value)
+            .ToList();
+
+        var paidCount = month.Items.Count(i => i.IsPaid);
+
+        return new PlanningDashboardSummary(
+            month.Id,
+            month.Items.Count,
+            month.Items.Count - paidCount,
+            paidCount,
+            pendingDueDates.Count > 0 ? pendingDueDates.Min() : null);
+    }
+
     private static PlanningMonthDetail ToDetail(Domain.Planning.PlanningMonth month) => new(
         month.Id,
         month.Period,

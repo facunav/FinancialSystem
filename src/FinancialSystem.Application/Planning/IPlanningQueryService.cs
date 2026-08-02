@@ -35,13 +35,25 @@ public sealed record PlanningMonthSummary(
     decimal Pending,
     decimal? Available);
 
+/// <summary>
+/// Resumen mínimo para el Dashboard (Patch 0047) — únicamente conteos, nunca montos
+/// ni comparaciones. TotalItems = PendingCount + PaidCount siempre. NextDueDate es el
+/// DueDate más próximo entre los PlanningItem pendientes que tengan uno cargado; null
+/// si ninguno tiene DueDate o si no hay pendientes.
+/// </summary>
+public sealed record PlanningDashboardSummary(
+    Guid PlanningMonthId,
+    int TotalItems,
+    int PendingCount,
+    int PaidCount,
+    DateTime? NextDueDate);
+
 // ── Interfaz del servicio ─────────────────────────────────────────────────────
 
 /// <summary>
 /// Queries de solo lectura sobre Planificación Mensual (PlanningMonth/PlanningItem).
 /// Nunca persiste nada — las escrituras viven en
-/// FinancialSystem.Application.Planning.Commands. Sin consumidores todavía: ningún
-/// endpoint expone este módulo en este patch (ver docs/Epics/Epica-PlanificacionMensual.md).
+/// FinancialSystem.Application.Planning.Commands.
 /// </summary>
 public interface IPlanningQueryService
 {
@@ -53,4 +65,7 @@ public interface IPlanningQueryService
 
     /// <summary>Resumen calculado del mes (sección 6.5). Null si el PlanningMonth no existe.</summary>
     Task<PlanningMonthSummary?> GetSummaryAsync(Guid planningMonthId, CancellationToken ct = default);
+
+    /// <summary>Resumen de conteos para el Dashboard (sección 8 de la épica). Null si no existe PlanningMonth para ese período.</summary>
+    Task<PlanningDashboardSummary?> GetDashboardSummaryAsync(DateTime period, CancellationToken ct = default);
 }

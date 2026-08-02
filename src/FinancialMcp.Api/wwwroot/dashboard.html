@@ -703,6 +703,23 @@
                 text-align: center
             }
 
+        /* ── Planificación Mensual: resumen real, ver .placeholder-card de arriba ── */
+        .planning-summary-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 140px;
+        }
+            .planning-summary-card .ph-icon { font-size: 24px }
+            .planning-summary-card .ph-title { font-size: 12px; font-weight: 600; color: var(--text) }
+            .planning-summary-card .ph-desc { font-size: 11px; color: var(--faint); text-align: center }
+
         /* ── Responsive ── */
         @media (max-width: 1100px) {
             .kpi-grid {
@@ -782,9 +799,8 @@
                     <span class="icon">⊟</span> Gastos fijos
                     <span class="badge">pronto</span>
                 </a>
-                <a href="#" class="soon">
-                    <span class="icon">◎</span> Presupuestos
-                    <span class="badge">pronto</span>
+                <a href="/planning.html">
+                    <span class="icon">◎</span> Planificación
                 </a>
 
                 <div class="nav-group-label">Patrimonio</div>
@@ -908,10 +924,10 @@
                         <div class="ph-title">Gastos fijos</div>
                         <div class="ph-desc">Seguimiento de pagos recurrentes y vencimientos del mes</div>
                     </div>
-                    <div class="placeholder-card">
+                    <div class="planning-summary-card" id="planningSummaryCard">
                         <div class="ph-icon">◎</div>
-                        <div class="ph-title">Presupuestos</div>
-                        <div class="ph-desc">Control de límites por categoría y alertas de desvío</div>
+                        <div class="ph-title">Planificación Mensual</div>
+                        <div class="ph-desc">Cargando…</div>
                     </div>
                     <div class="placeholder-card">
                         <div class="ph-icon">↗</div>
@@ -968,6 +984,11 @@
         });
 
         loadDashboard();
+
+        // Independiente de loadDashboard(): el mes actual real (no el que esté
+        // navegando currentYear/currentMonth) y su propio manejo de error acotado a
+        // esta tarjeta -- una falla acá nunca debe tirar abajo el resto del Dashboard.
+        loadPlanningSummary();
 
         // ─────────────────────────────────────────────────────────────────────────
         // MAIN LOADER — dispara todas las requests en paralelo
@@ -1319,6 +1340,77 @@
                 item.innerHTML = `<span style="display:inline-block;width:18px;height:2px;background:${s.color};border-radius:1px"></span>${s.label}`;
                 legend.appendChild(item);
             });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PLANIFICACIÓN MENSUAL — resumen del mes actual (solo conteos, sin montos,
+        // sin comparaciones -- ver docs/Epics/Epica-PlanificacionMensual.md, sección 8).
+        // Consume GET /api/planning-months/dashboard-summary, ya existente para esto.
+        // ─────────────────────────────────────────────────────────────────────────
+        async function loadPlanningSummary() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+
+            try {
+                const periodIso = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+                const r = await fetch(`${API}/api/planning-months/dashboard-summary?period=${encodeURIComponent(periodIso)}`);
+
+                if (r.status === 404) {
+                    renderPlanningSummary(null, year, month);
+                    return;
+                }
+                if (!r.ok) throw new Error(`${r.status}`);
+
+                renderPlanningSummary(await r.json(), year, month);
+            } catch {
+                const card = document.getElementById('planningSummaryCard');
+                card.innerHTML = '<div class="ph-icon">◎</div><div class="ph-title">Planificación Mensual</div>' +
+                    '<div class="ph-desc">No se pudo cargar el resumen.</div>';
+            }
+        }
+
+        function renderPlanningSummary(summary, year, month) {
+            const card = document.getElementById('planningSummaryCard');
+            const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+
+            if (!summary) {
+                card.innerHTML = `
+                    <div class="ph-icon">◎</div>
+                    <div class="ph-title">Planificación Mensual</div>
+                    <div class="ph-desc">Todavía no hay una planificación para ${esc(monthLabel)}.</div>
+                    <button class="btn-action primary" id="btnCreatePlanning" style="margin-top:6px">Crear planificación</button>`;
+                document.getElementById('btnCreatePlanning')
+                    .addEventListener('click', () => createCurrentPlanning(year, month));
+                return;
+            }
+
+            const nextDueLabel = summary.nextDueDate
+                ? new Date(summary.nextDueDate).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
+                : 'sin vencimientos pendientes';
+
+            card.innerHTML = `
+                <div class="ph-icon">◎</div>
+                <div class="ph-title">Planificación Mensual</div>
+                <div class="ph-desc">${summary.pendingCount} pendiente(s) · ${summary.paidCount} pagado(s) · ${summary.totalItems} en total</div>
+                <div class="ph-desc">Próximo vencimiento: ${esc(nextDueLabel)}</div>
+                <a class="btn-action primary" href="/planning.html" style="margin-top:6px">Abrir planificación</a>`;
+        }
+
+        // El mismo POST /api/planning-months que ya usa planning.html -- no se
+        // duplica ninguna regla de creación acá, solo se dispara desde el Dashboard
+        // como atajo. Si falla, planning.html sabe mostrar el estado real al abrir.
+        async function createCurrentPlanning(year, month) {
+            const periodIso = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+            try {
+                await fetch(`${API}/api/planning-months`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ period: periodIso }),
+                });
+            } finally {
+                window.location.href = '/planning.html';
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────────

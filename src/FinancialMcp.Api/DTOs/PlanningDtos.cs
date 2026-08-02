@@ -81,3 +81,18 @@ public sealed record PlanningItemMatchSuggestionDto(
         s.PlanningItemId, s.PlanningItemTitle, s.ClassifiedMovementId,
         s.MovementDescription, s.MovementAmount, s.MovementEffectiveDate);
 }
+
+// ── GET /api/planning-months/dashboard-summary?period= ──────────────────────
+// Ver docs/Epics/Epica-PlanificacionMensual.md, sección 8 (Dashboard). Únicamente
+// conteos -- sin montos, sin porcentajes, sin comparaciones.
+
+public sealed record PlanningDashboardSummaryDto(
+    Guid PlanningMonthId,
+    int TotalItems,
+    int PendingCount,
+    int PaidCount,
+    DateTime? NextDueDate)
+{
+    public static PlanningDashboardSummaryDto Create(PlanningDashboardSummary s) => new(
+        s.PlanningMonthId, s.TotalItems, s.PendingCount, s.PaidCount, s.NextDueDate);
+}

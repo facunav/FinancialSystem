@@ -14,6 +14,9 @@ namespace FinancialSystem.Api.Endpoints;
 /// Patch 0046: agrega GetMatchSuggestions (IPlanningMatchSuggestionService, sección 9
 /// de la épica) — sigue siendo un GET de solo lectura; la única escritura posible a
 /// partir de una sugerencia sigue siendo POST /pay, sin cambios.
+///
+/// Patch 0047: agrega GetDashboardSummary — único consumidor: el resumen de
+/// conteos que muestra dashboard.html (sección 8 de la épica). Sin escrituras.
 /// </summary>
 public static class PlanningEndpoints
 {
@@ -28,6 +31,7 @@ public static class PlanningEndpoints
         months.MapGet("/{id:guid}/summary", GetSummary);
         months.MapPut("/{id:guid}/expected-income", UpdateExpectedIncome);
         months.MapGet("/{id:guid}/match-suggestions", GetMatchSuggestions);
+        months.MapGet("/dashboard-summary", GetDashboardSummary);
 
         var items = app.MapGroup("/api/planning-items").WithTags("PlanningItems");
 
@@ -153,6 +157,22 @@ public static class PlanningEndpoints
         return suggestions is null
             ? Results.NotFound()
             : Results.Ok(suggestions.Select(PlanningItemMatchSuggestionDto.Create));
+    }
+
+    // ── GET /api/planning-months/dashboard-summary?period=2026-09-01 ─────────
+    // Ver docs/Epics/Epica-PlanificacionMensual.md, sección 8. Único consumidor:
+    // el resumen mínimo del Dashboard (Patch 0047) -- conteos, nunca montos.
+
+    private static async Task<IResult> GetDashboardSummary(
+        [FromQuery] DateTime? period,
+        [FromServices] IPlanningQueryService query,
+        CancellationToken ct)
+    {
+        if (period is null)
+            return Results.BadRequest("period es requerido");
+
+        var summary = await query.GetDashboardSummaryAsync(period.Value, ct);
+        return summary is null ? Results.NotFound() : Results.Ok(PlanningDashboardSummaryDto.Create(summary));
     }
 
     // ── POST /api/planning-items ──────────────────────────────────────────────
