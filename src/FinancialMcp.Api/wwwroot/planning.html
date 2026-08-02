@@ -56,7 +56,7 @@
             gap: 12px;
         }
 
-        .topbar-left { display: flex; align-items: center; gap: 16px }
+        .topbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap }
             .topbar-left h1 { font-size: 15px; font-weight: 600 }
 
         .period-nav { display: flex; align-items: center; gap: 6px }
@@ -69,7 +69,20 @@
                 font-size: 12px;
                 cursor: pointer;
             }
-                .period-nav button:hover { background: var(--surface3); color: var(--text) }
+                .period-nav button:hover:not(:disabled) { background: var(--surface3); color: var(--text) }
+                .period-nav button:disabled { opacity: .35; cursor: not-allowed }
+
+            .period-nav input[type=month] {
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                color: var(--dim);
+                padding: 3px 8px;
+                font: 12px var(--sans);
+                margin-left: 4px;
+            }
+                .period-nav input[type=month]:focus { outline: 2px solid var(--green); outline-offset: 1px }
+                .period-nav input[type=month]:disabled { opacity: .35; cursor: not-allowed }
 
         .period-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 140px; text-align: center }
 
@@ -203,8 +216,12 @@
             justify-content: space-between;
             padding: 12px 16px;
             border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            gap: 8px;
         }
             .panel-head h2 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .05em }
+            .panel-head-left { display: flex; align-items: center; gap: 10px }
+            .item-status-summary { font-size: 12px; color: var(--faint) }
 
         button {
             background: var(--surface2);
@@ -277,7 +294,7 @@
             .empty-month p { color: var(--dim); margin-bottom: 18px }
             .empty-month .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap }
 
-        /* ── Toast ── */
+        /* ── Toast en modales (validación de formulario) ── */
         .toast {
             font: 12px var(--mono);
             padding: 6px 12px;
@@ -286,6 +303,33 @@
         }
             .toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
             .toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
+        /* ── Toast flotante de página (feedback de operaciones) ── */
+        .page-toast-container {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 320px;
+        }
+
+        .page-toast {
+            font: 12px var(--mono);
+            padding: 8px 14px;
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(0,0,0,.45);
+            animation: page-toast-in 150ms ease-out;
+        }
+            .page-toast.ok { background: var(--green-bg); color: #b0eec8; border: 1px solid var(--green) }
+            .page-toast.err { background: var(--red-bg); color: #f0b0b0; border: 1px solid var(--red) }
+
+        @keyframes page-toast-in {
+            from { opacity: 0; transform: translateY(-6px) }
+            to { opacity: 1; transform: none }
+        }
 
         /* ── Modal (mismo patrón que accounts.html) ── */
         .modal-overlay {
@@ -371,13 +415,16 @@
 </head>
 <body>
 
+    <div class="page-toast-container" id="pageToastContainer"></div>
+
     <header class="topbar">
         <div class="topbar-left">
             <h1>Planificación Mensual</h1>
             <div class="period-nav">
-                <button id="btnPrevMonth">‹</button>
+                <button id="btnPrevMonth" title="Mes anterior">‹</button>
                 <span class="period-label" id="periodLabel">—</span>
-                <button id="btnNextMonth">›</button>
+                <button id="btnNextMonth" title="Mes siguiente">›</button>
+                <input type="month" id="periodJump" title="Ir directamente a un mes">
             </div>
         </div>
         <div class="topbar-right">
@@ -438,7 +485,10 @@
             <div class="section-title">Pagos del mes</div>
             <div class="panel">
                 <div class="panel-head">
-                    <h2>Ítems <span id="itemCountLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                    <div class="panel-head-left">
+                        <h2>Ítems <span id="itemCountLabel" style="text-transform:none;color:var(--faint)"></span></h2>
+                        <span class="item-status-summary" id="itemStatusSummary"></span>
+                    </div>
                     <button class="primary sm" id="btnAddItem">+ Agregar</button>
                 </div>
                 <div style="overflow-x:auto">
@@ -510,6 +560,9 @@
     </div>
 
     <script>
+        // ─────────────────────────────────────────────────────────────────────────
+        // CONFIG / ESTADO
+        // ─────────────────────────────────────────────────────────────────────────
         const API = '';
         const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -521,18 +574,336 @@
             summary: null,          // PlanningMonthSummaryDto | null
             editingItemId: null,
             copySourceId: null,     // Id a copiar en el modal "Copiar a otro mes"
+            loadToken: 0,            // descarta respuestas de loadPeriod() fuera de orden
         };
 
-        // ── Período (misma mecánica que dashboard.html) ──────────────────────────
+        // ─────────────────────────────────────────────────────────────────────────
+        // HTTP — helpers de bajo nivel (fetch + manejo de error), sin saber nada de
+        // Planificación en particular
+        // ─────────────────────────────────────────────────────────────────────────
+        async function getJson(url) {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(await extractErrorMessage(r));
+            return r.json();
+        }
+
+        // Como getJson, pero null en vez de excepción para 404 -- usado para
+        // "puede no existir" (GET por período, GET /latest), a diferencia de un
+        // 404 real de error.
+        async function getJsonOrNull(url) {
+            const r = await fetch(url);
+            if (r.status === 404) return null;
+            if (!r.ok) throw new Error(await extractErrorMessage(r));
+            return r.json();
+        }
+
+        async function postJson(url, body) {
+            const opts = { method: 'POST' };
+            if (body !== undefined) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify(body);
+            }
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function putJson(url, body) {
+            const opts = {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            };
+            return handleWriteResponse(await fetch(url, opts));
+        }
+
+        async function deleteJson(url) {
+            return handleWriteResponse(await fetch(url, { method: 'DELETE' }));
+        }
+
+        async function handleWriteResponse(r) {
+            if (r.status === 204) return null;
+            if (!r.ok) throw new Error(await extractErrorMessage(r));
+            return r.json().catch(() => null);
+        }
+
+        async function extractErrorMessage(r) {
+            const d = await r.json().catch(() => null);
+            return typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // API — una función por endpoint de /api/planning-months y /api/planning-items
+        // consumidos (Patch 0043). Ninguna decide nada: solo arma la URL/body y
+        // devuelve lo que contesta el backend.
+        // ─────────────────────────────────────────────────────────────────────────
+        const Api = {
+            getByPeriod: periodIso =>
+                getJsonOrNull(`${API}/api/planning-months?period=${encodeURIComponent(periodIso)}`),
+            getLatest: () =>
+                getJsonOrNull(`${API}/api/planning-months/latest`),
+            getSummary: monthId =>
+                getJson(`${API}/api/planning-months/${monthId}/summary`),
+            createMonth: periodIso =>
+                postJson(`${API}/api/planning-months`, { period: periodIso }),
+            copyMonth: (sourceId, targetPeriodIso) =>
+                postJson(`${API}/api/planning-months/${sourceId}/copy`, { targetPeriod: targetPeriodIso }),
+            updateExpectedIncome: (monthId, expectedIncome) =>
+                putJson(`${API}/api/planning-months/${monthId}/expected-income`, { expectedIncome }),
+            addItem: (monthId, title, expectedAmount, dueDate) =>
+                postJson(`${API}/api/planning-items`, { planningMonthId: monthId, title, expectedAmount, dueDate }),
+            editItem: (itemId, title, expectedAmount, dueDate) =>
+                putJson(`${API}/api/planning-items/${itemId}`, { title, expectedAmount, dueDate }),
+            deleteItem: itemId =>
+                deleteJson(`${API}/api/planning-items/${itemId}`),
+            markPaid: itemId =>
+                postJson(`${API}/api/planning-items/${itemId}/pay`),
+            unmarkPaid: itemId =>
+                postJson(`${API}/api/planning-items/${itemId}/unpay`),
+        };
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // FORMATTERS
+        // ─────────────────────────────────────────────────────────────────────────
+        const NUM = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         function isoPeriod(year, month1to12) {
             return new Date(Date.UTC(year, month1to12 - 1, 1)).toISOString();
         }
 
-        function updatePeriodLabel() {
-            document.getElementById('periodLabel').textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+        function fmtMoney(val) {
+            if (val === null || val === undefined) return '—';
+            return `$${NUM.format(val)}`;
         }
 
+        function fmtDate(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+        }
+
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        // Ordena por DueDate ascendente; los ítems sin DueDate quedan al final.
+        // Comparación estable por índice explícito -- ante fechas iguales (o
+        // ausentes) se conserva el orden original de la lista, sin mutar
+        // state.planningMonth.items (ese array sigue siendo el que después se
+        // manda a copiar/leer tal cual llegó del backend).
+        function sortedItems(items) {
+            return items
+                .map((item, index) => ({ item, index }))
+                .sort((a, b) => {
+                    const aTime = a.item.dueDate ? new Date(a.item.dueDate).getTime() : Infinity;
+                    const bTime = b.item.dueDate ? new Date(b.item.dueDate).getTime() : Infinity;
+                    return aTime !== bTime ? aTime - bTime : a.index - b.index;
+                })
+                .map(x => x.item);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // FEEDBACK — error persistente de carga (errorBar) vs. toasts efímeros de
+        // operación (pageToast, o el toast local de cada modal)
+        // ─────────────────────────────────────────────────────────────────────────
+        function showError(msg) {
+            const bar = document.getElementById('errorBar');
+            if (!msg) { bar.classList.remove('visible'); return; }
+            document.getElementById('errorMsg').textContent = msg;
+            bar.classList.add('visible');
+        }
+
+        function showPageToast(msg, type, ms = 3000) {
+            const container = document.getElementById('pageToastContainer');
+            const el = document.createElement('div');
+            el.className = `page-toast ${type}`;
+            el.textContent = msg;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), ms);
+        }
+
+        function showFormToast(elId, msg, type, ms = 3500) {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
+            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // RENDER — solo lee state y actualiza el DOM; no llama a la API
+        // ─────────────────────────────────────────────────────────────────────────
+        const Render = {
+            periodLabel() {
+                document.getElementById('periodLabel').textContent = `${MONTH_NAMES[state.month - 1]} ${state.year}`;
+                document.getElementById('periodJump').value =
+                    `${state.year}-${String(state.month).padStart(2, '0')}`;
+            },
+
+            loading() {
+                document.getElementById('emptyMonthPanel').style.display = 'none';
+                document.getElementById('monthView').style.display = 'block';
+                document.getElementById('btnCopyToOther').style.display = 'none';
+                document.getElementById('itemsBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
+                for (const id of ['kpiIncome', 'kpiTotal', 'kpiPaid', 'kpiPending', 'kpiAvailable']) {
+                    document.getElementById(id).textContent = '—';
+                }
+                document.getElementById('itemStatusSummary').textContent = '';
+            },
+
+            emptyState(latestOption) {
+                document.getElementById('monthView').style.display = 'none';
+                document.getElementById('btnCopyToOther').style.display = 'none';
+                document.getElementById('emptyMonthPanel').style.display = 'block';
+                document.getElementById('emptyMonthText').textContent =
+                    `No hay una planificación para ${MONTH_NAMES[state.month - 1]} ${state.year}.`;
+
+                const btnCopyLatest = document.getElementById('btnCopyLatest');
+                if (latestOption) {
+                    btnCopyLatest.textContent = `Copiar ${latestOption.label} a este mes`;
+                    btnCopyLatest.style.display = '';
+                } else {
+                    btnCopyLatest.style.display = 'none';
+                }
+            },
+
+            monthView() {
+                document.getElementById('emptyMonthPanel').style.display = 'none';
+                document.getElementById('monthView').style.display = 'block';
+                document.getElementById('btnCopyToOther').style.display = '';
+                Render.summary();
+                Render.items();
+            },
+
+            summary() {
+                const s = state.summary;
+                document.getElementById('kpiIncome').textContent = fmtMoney(s.expectedIncome);
+                document.getElementById('kpiTotal').textContent = fmtMoney(s.totalPlanned);
+                document.getElementById('kpiPaid').textContent = fmtMoney(s.paid);
+                document.getElementById('kpiPending').textContent = fmtMoney(s.pending);
+                document.getElementById('kpiAvailable').textContent = fmtMoney(s.available);
+            },
+
+            items() {
+                const items = state.planningMonth.items;
+                document.getElementById('itemCountLabel').textContent = items.length > 0 ? `(${items.length})` : '';
+
+                const paidCount = items.filter(i => i.isPaid).length;
+                document.getElementById('itemStatusSummary').textContent = items.length === 0
+                    ? ''
+                    : `${items.length - paidCount} pendiente(s) · ${paidCount} pagado(s)`;
+
+                const tbody = document.getElementById('itemsBody');
+                if (items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty">No hay ítems cargados todavía.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = sortedItems(items).map(i => `
+                    <tr class="${i.isPaid ? 'row-paid' : ''}">
+                        <td class="title-cell">${esc(i.title)}</td>
+                        <td class="mono">${fmtMoney(i.expectedAmount)}</td>
+                        <td class="mono">${fmtDate(i.dueDate)}</td>
+                        <td><span class="status-badge ${i.isPaid ? 'status-paid' : 'status-pending'}">${i.isPaid ? 'Pagado' : 'Pendiente'}</span></td>
+                        <td class="act-cell">
+                            ${i.isPaid
+                                ? `<button class="sm" data-action="unpay" data-id="${i.id}">Desmarcar</button>`
+                                : `<button class="sm" data-action="pay" data-id="${i.id}">Marcar pagado</button>`}
+                            <button class="sm" data-action="edit" data-id="${i.id}">Editar</button>
+                            <button class="sm danger" data-action="delete" data-id="${i.id}">Eliminar</button>
+                        </td>
+                    </tr>`).join('');
+            },
+        };
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // LOADERS — orquestan Api + Render para el ciclo de vida del período
+        // ─────────────────────────────────────────────────────────────────────────
+
+        async function loadPeriod() {
+            const token = ++state.loadToken;
+            setPeriodNavDisabled(true);
+            Render.periodLabel();
+            showError(null);
+            Render.loading();
+
+            try {
+                const periodIso = isoPeriod(state.year, state.month);
+                const month = await Api.getByPeriod(periodIso);
+                if (token !== state.loadToken) return; // el usuario ya navegó a otro período
+
+                state.planningMonth = month;
+
+                if (!month) {
+                    await loadEmptyStateOptions(token);
+                    return;
+                }
+
+                state.summary = await Api.getSummary(month.id);
+                if (token !== state.loadToken) return;
+
+                Render.monthView();
+            } catch (e) {
+                if (token === state.loadToken) showError(`No se pudo cargar la planificación: ${e.message}`);
+            } finally {
+                if (token === state.loadToken) setPeriodNavDisabled(false);
+            }
+        }
+
+        async function loadEmptyStateOptions(token) {
+            let latestOption = null;
+            try {
+                const latest = await Api.getLatest();
+                if (latest) {
+                    const d = new Date(latest.period);
+                    latestOption = { id: latest.id, label: `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}` };
+                }
+            } catch {
+                // Sin "último mes" disponible: solo queda "Empezar vacío".
+            }
+            if (token !== state.loadToken) return;
+
+            Render.emptyState(latestOption);
+            document.getElementById('btnCopyLatest').onclick = latestOption
+                ? () => copyAndNavigate(latestOption.id, state.year, state.month, latestOption.label)
+                : null;
+        }
+
+        async function refreshSummary() {
+            if (!state.planningMonth) return;
+            state.summary = await Api.getSummary(state.planningMonth.id);
+            Render.summary();
+        }
+
+        function setPeriodNavDisabled(disabled) {
+            document.getElementById('btnPrevMonth').disabled = disabled;
+            document.getElementById('btnNextMonth').disabled = disabled;
+            document.getElementById('periodJump').disabled = disabled;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // ACTUALIZACIONES LOCALES — reflejan en state.planningMonth lo que el
+        // backend ya confirmó, para no tener que volver a pedir todo el mes
+        // (GET por período) después de cada alta/edición/baja. El período
+        // seleccionado nunca cambia acá.
+        // ─────────────────────────────────────────────────────────────────────────
+        function applyItemAdded(item) {
+            state.planningMonth.items.push(item);
+            Render.items();
+        }
+
+        function applyItemPatched(id, patch) {
+            const item = state.planningMonth.items.find(i => i.id === id);
+            if (item) Object.assign(item, patch);
+            Render.items();
+        }
+
+        function applyItemDeleted(id) {
+            state.planningMonth.items = state.planningMonth.items.filter(i => i.id !== id);
+            Render.items();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // ACCIONES — event handlers. Llaman a Api, reflejan el resultado con las
+        // funciones de arriba y refrescan el resumen; nunca calculan un total.
+        // ─────────────────────────────────────────────────────────────────────────
+
+        // ── Navegación de período ──
         document.getElementById('btnPrevMonth').addEventListener('click', () => {
             if (--state.month < 1) { state.month = 12; state.year--; }
             loadPeriod();
@@ -541,147 +912,45 @@
             if (++state.month > 12) { state.month = 1; state.year++; }
             loadPeriod();
         });
+        document.getElementById('periodJump').addEventListener('change', e => {
+            const value = e.target.value; // "YYYY-MM"
+            if (!value) return;
+            const [y, m] = value.split('-').map(Number);
+            state.year = y;
+            state.month = m;
+            loadPeriod();
+        });
 
-        // ── Carga principal ───────────────────────────────────────────────────────
-
-        async function loadPeriod() {
-            updatePeriodLabel();
-            showError(null);
-            showLoadingRows();
-
-            try {
-                const period = isoPeriod(state.year, state.month);
-                const month = await getJsonOrNull(`${API}/api/planning-months?period=${encodeURIComponent(period)}`);
-                state.planningMonth = month;
-
-                if (!month) {
-                    await showEmptyState();
-                    return;
-                }
-
-                state.summary = await getJson(`${API}/api/planning-months/${month.id}/summary`);
-                renderMonth();
-            } catch (e) {
-                showError(`No se pudo cargar la planificación: ${e.message}`);
-            }
-        }
-
-        async function showEmptyState() {
-            document.getElementById('monthView').style.display = 'none';
-            document.getElementById('btnCopyToOther').style.display = 'none';
-            const panel = document.getElementById('emptyMonthPanel');
-            panel.style.display = 'block';
-            document.getElementById('emptyMonthText').textContent =
-                `No hay una planificación para ${MONTH_NAMES[state.month - 1]} ${state.year}.`;
-
-            const btnCopyLatest = document.getElementById('btnCopyLatest');
-            btnCopyLatest.style.display = 'none';
-            try {
-                const latest = await getJsonOrNull(`${API}/api/planning-months/latest`);
-                if (latest) {
-                    const d = new Date(latest.period);
-                    const label = `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-                    btnCopyLatest.textContent = `Copiar ${label} a este mes`;
-                    btnCopyLatest.style.display = '';
-                    btnCopyLatest.onclick = async () => {
-                        try {
-                            await performCopy(latest.id, state.year, state.month);
-                        } catch (e) {
-                            showError(`No se pudo copiar la planificación: ${e.message}`);
-                        }
-                    };
-                }
-            } catch {
-                // Sin "último mes" disponible: solo queda "Empezar vacío".
-            }
-        }
-
-        function renderMonth() {
-            document.getElementById('emptyMonthPanel').style.display = 'none';
-            document.getElementById('monthView').style.display = 'block';
-            document.getElementById('btnCopyToOther').style.display = '';
-
-            const s = state.summary;
-            document.getElementById('kpiIncome').textContent = fmtMoney(s.expectedIncome);
-            document.getElementById('kpiTotal').textContent = fmtMoney(s.totalPlanned);
-            document.getElementById('kpiPaid').textContent = fmtMoney(s.paid);
-            document.getElementById('kpiPending').textContent = fmtMoney(s.pending);
-            document.getElementById('kpiAvailable').textContent = fmtMoney(s.available);
-
-            renderItems();
-        }
-
-        function renderItems() {
-            const items = state.planningMonth.items;
-            document.getElementById('itemCountLabel').textContent = items.length > 0 ? `(${items.length})` : '';
-
-            const tbody = document.getElementById('itemsBody');
-            if (items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty">No hay ítems cargados todavía.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = items.map(i => `
-                <tr class="${i.isPaid ? 'row-paid' : ''}">
-                    <td class="title-cell">${esc(i.title)}</td>
-                    <td class="mono">${fmtMoney(i.expectedAmount)}</td>
-                    <td class="mono">${fmtDate(i.dueDate)}</td>
-                    <td><span class="status-badge ${i.isPaid ? 'status-paid' : 'status-pending'}">${i.isPaid ? 'Pagado' : 'Pendiente'}</span></td>
-                    <td class="act-cell">
-                        ${i.isPaid
-                            ? `<button class="sm" data-action="unpay" data-id="${i.id}">Desmarcar</button>`
-                            : `<button class="sm" data-action="pay" data-id="${i.id}">Marcar pagado</button>`}
-                        <button class="sm" data-action="edit" data-id="${i.id}">Editar</button>
-                        <button class="sm danger" data-action="delete" data-id="${i.id}">Eliminar</button>
-                    </td>
-                </tr>`).join('');
-        }
-
-        function showLoadingRows() {
-            document.getElementById('emptyMonthPanel').style.display = 'none';
-            document.getElementById('monthView').style.display = 'block';
-            document.getElementById('btnCopyToOther').style.display = 'none';
-            document.getElementById('itemsBody').innerHTML = '<tr><td colspan="5" class="loading">Cargando…</td></tr>';
-            document.getElementById('kpiIncome').textContent = '—';
-            document.getElementById('kpiTotal').textContent = '—';
-            document.getElementById('kpiPaid').textContent = '—';
-            document.getElementById('kpiPending').textContent = '—';
-            document.getElementById('kpiAvailable').textContent = '—';
-        }
-
-        async function refreshSummary() {
-            if (!state.planningMonth) return;
-            state.summary = await getJson(`${API}/api/planning-months/${state.planningMonth.id}/summary`);
-            document.getElementById('kpiIncome').textContent = fmtMoney(state.summary.expectedIncome);
-            document.getElementById('kpiTotal').textContent = fmtMoney(state.summary.totalPlanned);
-            document.getElementById('kpiPaid').textContent = fmtMoney(state.summary.paid);
-            document.getElementById('kpiPending').textContent = fmtMoney(state.summary.pending);
-            document.getElementById('kpiAvailable').textContent = fmtMoney(state.summary.available);
-        }
-
-        // ── Crear mes vacío ──────────────────────────────────────────────────────
-
+        // ── Crear mes vacío ──
         document.getElementById('btnStartEmpty').addEventListener('click', async () => {
+            const btn = document.getElementById('btnStartEmpty');
+            btn.disabled = true;
             try {
-                await postJson(`${API}/api/planning-months`, { period: isoPeriod(state.year, state.month) });
+                await Api.createMonth(isoPeriod(state.year, state.month));
                 await loadPeriod();
+                showPageToast('Mes creado', 'ok');
             } catch (e) {
                 showError(`No se pudo crear el mes: ${e.message}`);
+            } finally {
+                btn.disabled = false;
             }
         });
 
-        // ── Copiar mes ───────────────────────────────────────────────────────────
-        // Navegar al período destino tras copiar ya es la confirmación visible
-        // (los ítems copiados aparecen en la lista) -- no hace falta un toast
-        // aparte para esto.
-
-        async function performCopy(sourceId, targetYear, targetMonth) {
-            await postJson(`${API}/api/planning-months/${sourceId}/copy`, {
-                targetPeriod: isoPeriod(targetYear, targetMonth),
-            });
-            state.year = targetYear;
-            state.month = targetMonth;
-            await loadPeriod();
+        // ── Copiar mes ──
+        // Copia y navega al período destino; el destino nunca es el período
+        // actualmente cargado en ninguno de los dos flujos, así que este sí es un
+        // cambio real de período (a diferencia de agregar/editar/eliminar ítems).
+        async function copyAndNavigate(sourceId, targetYear, targetMonth, sourceLabel) {
+            if (!confirm(`¿Copiar la planificación de ${sourceLabel} a ${MONTH_NAMES[targetMonth - 1]} ${targetYear}?`)) return;
+            try {
+                const result = await Api.copyMonth(sourceId, isoPeriod(targetYear, targetMonth));
+                state.year = targetYear;
+                state.month = targetMonth;
+                await loadPeriod();
+                showPageToast(`Planificación copiada: ${result.itemsCopied} ítem(s)`, 'ok');
+            } catch (e) {
+                showError(`No se pudo copiar la planificación: ${e.message}`);
+            }
         }
 
         document.getElementById('btnCopyToOther').addEventListener('click', () => {
@@ -701,7 +970,7 @@
         document.getElementById('btnCopyFormSave').addEventListener('click', async () => {
             const value = document.getElementById('fTargetPeriod').value; // "YYYY-MM"
             if (!value) {
-                showToast('copyFormToast', 'Elegí un mes destino', 'err');
+                showFormToast('copyFormToast', 'Elegí un mes destino', 'err');
                 return;
             }
             const [y, m] = value.split('-').map(Number);
@@ -709,17 +978,20 @@
             const btn = document.getElementById('btnCopyFormSave');
             btn.disabled = true;
             try {
-                await performCopy(state.copySourceId, y, m);
+                const result = await Api.copyMonth(state.copySourceId, isoPeriod(y, m));
                 closeCopyModal();
+                state.year = y;
+                state.month = m;
+                await loadPeriod();
+                showPageToast(`Planificación copiada: ${result.itemsCopied} ítem(s)`, 'ok');
             } catch (e) {
-                showToast('copyFormToast', e.message, 'err');
+                showFormToast('copyFormToast', e.message, 'err');
             } finally {
                 btn.disabled = false;
             }
         });
 
-        // ── ExpectedIncome ───────────────────────────────────────────────────────
-
+        // ── ExpectedIncome ──
         document.getElementById('btnEditIncome').addEventListener('click', () => {
             document.getElementById('incomeInput').value = state.summary.expectedIncome ?? '';
             document.getElementById('kpiIncomeEdit').style.display = 'flex';
@@ -737,9 +1009,11 @@
             const btn = document.getElementById('btnSaveIncome');
             btn.disabled = true;
             try {
-                await putJson(`${API}/api/planning-months/${state.planningMonth.id}/expected-income`, { expectedIncome });
+                await Api.updateExpectedIncome(state.planningMonth.id, expectedIncome);
+                state.planningMonth.expectedIncome = expectedIncome;
                 document.getElementById('kpiIncomeEdit').style.display = 'none';
                 await refreshSummary();
+                showPageToast('Ingreso esperado actualizado', 'ok');
             } catch (e) {
                 showError(`No se pudo actualizar el ingreso esperado: ${e.message}`);
             } finally {
@@ -747,8 +1021,7 @@
             }
         });
 
-        // ── Ítems: alta/edición ──────────────────────────────────────────────────
-
+        // ── Ítems: alta/edición ──
         document.getElementById('btnAddItem').addEventListener('click', () => openItemModal(null));
 
         document.getElementById('itemsBody').addEventListener('click', e => {
@@ -782,7 +1055,7 @@
         document.getElementById('btnItemFormSave').addEventListener('click', async () => {
             const title = document.getElementById('fTitle').value.trim();
             if (!title) {
-                showToast('itemFormToast', 'La descripción es requerida', 'err');
+                showFormToast('itemFormToast', 'La descripción es requerida', 'err');
                 return;
             }
 
@@ -795,31 +1068,33 @@
             btn.disabled = true;
             try {
                 if (state.editingItemId) {
-                    await putJson(`${API}/api/planning-items/${state.editingItemId}`, { title, expectedAmount, dueDate });
+                    await Api.editItem(state.editingItemId, title, expectedAmount, dueDate);
+                    applyItemPatched(state.editingItemId, { title, expectedAmount, dueDate });
                 } else {
-                    await postJson(`${API}/api/planning-items`, {
-                        planningMonthId: state.planningMonth.id, title, expectedAmount, dueDate,
-                    });
+                    const created = await Api.addItem(state.planningMonth.id, title, expectedAmount, dueDate);
+                    applyItemAdded({ id: created.id, title, expectedAmount, dueDate, isPaid: false, paidAt: null });
                 }
                 closeItemModal();
-                await reloadItemsAndSummary();
+                await refreshSummary();
+                showPageToast('Ítem guardado', 'ok');
             } catch (e) {
-                showToast('itemFormToast', e.message, 'err');
+                showFormToast('itemFormToast', e.message, 'err');
             } finally {
                 btn.disabled = false;
             }
         });
 
-        // ── Ítems: eliminar / marcar / desmarcar ────────────────────────────────
-
+        // ── Ítems: eliminar / marcar / desmarcar ──
         async function deleteItem(id) {
             const item = state.planningMonth.items.find(i => i.id === id);
             if (!item) return;
             if (!confirm(`¿Eliminar "${item.title}"? Esta acción no se puede deshacer.`)) return;
 
             try {
-                await deleteJson(`${API}/api/planning-items/${id}`);
-                await reloadItemsAndSummary();
+                await Api.deleteItem(id);
+                applyItemDeleted(id);
+                await refreshSummary();
+                showPageToast('Ítem eliminado', 'ok');
             } catch (e) {
                 showError(`No se pudo eliminar el ítem: ${e.message}`);
             }
@@ -827,8 +1102,10 @@
 
         async function markAsPaid(id) {
             try {
-                await postJson(`${API}/api/planning-items/${id}/pay`);
-                await reloadItemsAndSummary();
+                const result = await Api.markPaid(id);
+                applyItemPatched(id, { isPaid: true, paidAt: result.paidAt });
+                await refreshSummary();
+                showPageToast('Ítem marcado como pagado', 'ok');
             } catch (e) {
                 showError(`No se pudo marcar el ítem como pagado: ${e.message}`);
             }
@@ -836,111 +1113,18 @@
 
         async function unmarkAsPaid(id) {
             try {
-                await postJson(`${API}/api/planning-items/${id}/unpay`);
-                await reloadItemsAndSummary();
+                await Api.unmarkPaid(id);
+                applyItemPatched(id, { isPaid: false, paidAt: null });
+                await refreshSummary();
+                showPageToast('Ítem desmarcado', 'ok');
             } catch (e) {
                 showError(`No se pudo desmarcar el ítem: ${e.message}`);
             }
         }
 
-        // planning-items no expone "obtener por Id" en el Patch 0043 -- recargar
-        // el PlanningMonth completo (misma fuente que ya usa loadPeriod) es lo que
-        // mantiene la lista consistente con el backend, sin duplicar en el cliente
-        // ninguna regla de qué cambió.
-        async function reloadItemsAndSummary() {
-            const period = isoPeriod(state.year, state.month);
-            state.planningMonth = await getJson(`${API}/api/planning-months?period=${encodeURIComponent(period)}`);
-            renderItems();
-            await refreshSummary();
-        }
-
-        // ── Utils ────────────────────────────────────────────────────────────────
-
-        const NUM = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-        function fmtMoney(val) {
-            if (val === null || val === undefined) return '—';
-            return `$${NUM.format(val)}`;
-        }
-
-        function fmtDate(iso) {
-            if (!iso) return '—';
-            const d = new Date(iso);
-            return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
-        }
-
-        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-        function showError(msg) {
-            const bar = document.getElementById('errorBar');
-            if (!msg) { bar.classList.remove('visible'); return; }
-            document.getElementById('errorMsg').textContent = msg;
-            bar.classList.add('visible');
-        }
-
-        function showToast(elId, msg, type, ms = 3500) {
-            const el = document.getElementById(elId);
-            if (!el) return;
-            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
-            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
-        }
-
-        async function getJson(url) {
-            const r = await fetch(url);
-            if (!r.ok) {
-                const d = await r.json().catch(() => null);
-                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-                throw new Error(msg);
-            }
-            return r.json();
-        }
-
-        // Como getJson, pero null en vez de excepción para 404 -- usado para
-        // "puede no existir" (GET por período, GET /latest), a diferencia de un
-        // 404 real de error.
-        async function getJsonOrNull(url) {
-            const r = await fetch(url);
-            if (r.status === 404) return null;
-            if (!r.ok) {
-                const d = await r.json().catch(() => null);
-                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-                throw new Error(msg);
-            }
-            return r.json();
-        }
-
-        async function postJson(url, body) {
-            const opts = { method: 'POST' };
-            if (body !== undefined) {
-                opts.headers = { 'Content-Type': 'application/json' };
-                opts.body = JSON.stringify(body);
-            }
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function putJson(url, body) {
-            const opts = {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            };
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function deleteJson(url) {
-            return handleWriteResponse(await fetch(url, { method: 'DELETE' }));
-        }
-
-        async function handleWriteResponse(r) {
-            if (r.status === 204) return null;
-            const d = await r.json().catch(() => null);
-            if (!r.ok) {
-                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-                throw new Error(msg);
-            }
-            return d;
-        }
-
+        // ─────────────────────────────────────────────────────────────────────────
+        // INIT
+        // ─────────────────────────────────────────────────────────────────────────
         loadPeriod();
     </script>
 </body>
