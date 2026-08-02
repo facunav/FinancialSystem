@@ -1,5 +1,6 @@
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Memory;
+using FinancialSystem.Domain.Planning;
 using FinancialSystem.Domain.Review;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,8 @@ public interface IApplicationDbContext
     DbSet<InvestigationReference> InvestigationReferences { get; }
     DbSet<InvestigationFinding> InvestigationFindings { get; }
     DbSet<MovementAuditDecision> MovementAuditDecisions { get; }
+    DbSet<PlanningMonth> PlanningMonths { get; }
+    DbSet<PlanningItem> PlanningItems { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

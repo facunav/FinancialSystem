@@ -1,6 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Memory;
+using FinancialSystem.Domain.Planning;
 using FinancialSystem.Domain.Review;
 using FinancialSystem.Infrastructure.Persistence.Configuration;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InvestigationReference> InvestigationReferences => Set<InvestigationReference>();
     public DbSet<InvestigationFinding> InvestigationFindings => Set<InvestigationFinding>();
     public DbSet<MovementAuditDecision> MovementAuditDecisions => Set<MovementAuditDecision>();
+    public DbSet<PlanningMonth> PlanningMonths => Set<PlanningMonth>();
+    public DbSet<PlanningItem> PlanningItems => Set<PlanningItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,5 +41,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new InvestigationReferenceConfiguration());
         modelBuilder.ApplyConfiguration(new InvestigationFindingConfiguration());
         modelBuilder.ApplyConfiguration(new MovementAuditDecisionConfiguration());
+        modelBuilder.ApplyConfiguration(new PlanningMonthConfiguration());
+        modelBuilder.ApplyConfiguration(new PlanningItemConfiguration());
     }
 }
