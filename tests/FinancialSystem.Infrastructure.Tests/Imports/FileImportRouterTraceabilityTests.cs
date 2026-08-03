@@ -161,6 +161,7 @@ public class FileImportRouterTraceabilityTests
                 [handler],
                 new AlwaysValidValidator(),
                 new NoOpConsistencyVerifier(),
+                new NoOpPipelineDiagnostics(),
                 scopeFactory,
                 clock,
                 NullLogger<FileImportRouter>.Instance);
@@ -253,6 +254,7 @@ public class FileImportRouterTraceabilityTests
             [handler],
             validator,
             new NoOpConsistencyVerifier(),
+            new NoOpPipelineDiagnostics(),
             BuildServices(dbName).GetRequiredService<IServiceScopeFactory>(),
             new FakeDateTimeProvider(),
             NullLogger<FileImportRouter>.Instance);
@@ -321,5 +323,20 @@ public class FileImportRouterTraceabilityTests
                 return value;
             }
         }
+    }
+
+    /// <summary>Verificador de integridad (Patch 0056) neutralizado -- estos tests no cubren esa etapa.</summary>
+    private sealed class NoOpConsistencyVerifier : IImportConsistencyVerifier
+    {
+        public Task<ImportConsistencyReport> VerifyAsync(ImportConsistencyContext context, CancellationToken ct = default) =>
+            Task.FromResult(ImportConsistencyReport.Consistent);
+    }
+
+    /// <summary>Diagnóstico del pipeline (Patch 0057) neutralizado -- estos tests no cubren esa etapa.</summary>
+    private sealed class NoOpPipelineDiagnostics : IImportPipelineDiagnostics
+    {
+        public void RecordRun(ImportPipelineRunMetrics metrics) { }
+
+        public void RecordFailure(string sourceFile, Guid? importBatchId, ImportPipelineStage stage, Exception exception) { }
     }
 }

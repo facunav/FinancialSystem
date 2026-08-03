@@ -16,6 +16,7 @@ using FinancialSystem.Infrastructure.Audit;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
 using FinancialSystem.Infrastructure.Imports.Consistency;
+using FinancialSystem.Infrastructure.Imports.Diagnostics;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
@@ -105,6 +106,9 @@ public static class DependencyInjection
         services.AddSingleton<IImportConsistencyCheck, MovementProvenanceCheck>();
         services.AddSingleton<IImportConsistencyCheck, ImportHistoryConsistencyCheck>();
         services.AddSingleton<IImportConsistencyVerifier, ImportConsistencyVerifier>();
+
+        // ── Observabilidad y diagnóstico del pipeline (Patch 0057) ──────────────────
+        services.AddSingleton<IImportPipelineDiagnostics, ImportPipelineDiagnostics>();
 
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();

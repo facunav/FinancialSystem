@@ -225,6 +225,7 @@ public class ImporterContractTests
             [handler],
             new AlwaysValidValidator(),
             new NoOpConsistencyVerifier(),
+            new NoOpPipelineDiagnostics(),
             scopeFactory,
             new FakeDateTimeProvider(),
             NullLogger<FileImportRouter>.Instance);
@@ -252,6 +253,14 @@ public class ImporterContractTests
     {
         public Task<ImportConsistencyReport> VerifyAsync(ImportConsistencyContext context, CancellationToken ct = default) =>
             Task.FromResult(ImportConsistencyReport.Consistent);
+    }
+
+    /// <summary>Diagnóstico del pipeline (Patch 0057) neutralizado -- estos tests no cubren esa etapa.</summary>
+    private sealed class NoOpPipelineDiagnostics : IImportPipelineDiagnostics
+    {
+        public void RecordRun(ImportPipelineRunMetrics metrics) { }
+
+        public void RecordFailure(string sourceFile, Guid? importBatchId, ImportPipelineStage stage, Exception exception) { }
     }
 
     /// <summary>

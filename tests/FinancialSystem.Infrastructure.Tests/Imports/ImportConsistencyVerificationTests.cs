@@ -288,6 +288,7 @@ public class ImportConsistencyVerificationTests
             [handler],
             new AlwaysValidValidator(),
             verifier,
+            new NoOpPipelineDiagnostics(),
             scopeFactory,
             new FakeDateTimeProvider(),
             NullLogger<FileImportRouter>.Instance);
@@ -301,6 +302,14 @@ public class ImportConsistencyVerificationTests
     private sealed class FakeDateTimeProvider : IDateTimeProvider
     {
         public DateTime UtcNow => DateTime.UtcNow;
+    }
+
+    /// <summary>Diagnóstico del pipeline (Patch 0057) neutralizado -- estos tests no cubren esa etapa.</summary>
+    private sealed class NoOpPipelineDiagnostics : IImportPipelineDiagnostics
+    {
+        public void RecordRun(ImportPipelineRunMetrics metrics) { }
+
+        public void RecordFailure(string sourceFile, Guid? importBatchId, ImportPipelineStage stage, Exception exception) { }
     }
 
     /// <summary>

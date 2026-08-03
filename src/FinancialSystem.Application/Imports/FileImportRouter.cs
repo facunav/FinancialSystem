@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
@@ -77,6 +78,16 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///   ConsistencyIssues con el detalle -- InsertedCount/Outcome/etc. de esa corrida no se
 ///   tocan. No corre para Validation/Idempotency/Router (Inserted siempre 0 ahí, nada que
 ///   verificar).
+///
+/// OBSERVABILIDAD Y DIAGNÓSTICO (Patch 0057):
+///   Al final de cada RouteAsync (sin importar el desenlace) se llama exactamente una vez
+///   a IImportPipelineDiagnostics.RecordRun con la duración total, la duración de cada
+///   etapa propia del router (Validation/ParserSelection/Extraction/Persistence/
+///   FinalVerification -- medidas con Stopwatch, no con IDateTimeProvider, para no
+///   interferir con StartedAtUtc/CompletedAtUtc) y los indicadores de calidad derivados de
+///   ImportRunResult. Si una excepción escapa de alguna etapa, RecordFailure se llama una
+///   única vez con la etapa donde ocurrió -- currentStage se actualiza justo antes de
+///   entrar a cada etapa, así que el catch de nivel superior siempre sabe cuál era.
 /// </summary>
 public class FileImportRouter : IFileImportRouter
 {
@@ -87,6 +98,7 @@ public class FileImportRouter : IFileImportRouter
     private readonly IReadOnlyList<IFileImportHandler> _handlers;
     private readonly IImportFileValidator _validator;
     private readonly IImportConsistencyVerifier _consistencyVerifier;
+    private readonly IImportPipelineDiagnostics _diagnostics;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<FileImportRouter> _logger;
@@ -95,6 +107,7 @@ public class FileImportRouter : IFileImportRouter
         IEnumerable<IFileImportHandler> handlers,
         IImportFileValidator validator,
         IImportConsistencyVerifier consistencyVerifier,
+        IImportPipelineDiagnostics diagnostics,
         IServiceScopeFactory scopeFactory,
         IDateTimeProvider dateTimeProvider,
         ILogger<FileImportRouter> logger)
@@ -102,6 +115,7 @@ public class FileImportRouter : IFileImportRouter
         _handlers = handlers.ToList().AsReadOnly();
         _validator = validator;
         _consistencyVerifier = consistencyVerifier;
+        _diagnostics = diagnostics;
         _scopeFactory = scopeFactory;
         _dateTimeProvider = dateTimeProvider;
         _logger = logger;
@@ -117,6 +131,24 @@ public class FileImportRouter : IFileImportRouter
         var fileName = Path.GetFileName(filePath);
         var startedAtUtc = _dateTimeProvider.UtcNow;
 
+        // Patch 0057: duración total y por etapa medidas con Stopwatch -- deliberadamente
+        // independientes de IDateTimeProvider (que sigue siendo la fuente de StartedAtUtc/
+        // CompletedAtUtc, Patch 0054) para que esta instrumentación no interfiera con esos
+        // campos ni con ningún test que use un reloj fijo para ellos. Stages no alcanzadas
+        // en una corrida (ej. Extraction en un rechazo por validación) quedan en Zero.
+        var totalSw = Stopwatch.StartNew();
+        var stageDurations = new Dictionary<ImportPipelineStage, TimeSpan>
+        {
+            [ImportPipelineStage.Validation] = TimeSpan.Zero,
+            [ImportPipelineStage.ParserSelection] = TimeSpan.Zero,
+            [ImportPipelineStage.Extraction] = TimeSpan.Zero,
+            [ImportPipelineStage.Persistence] = TimeSpan.Zero,
+            [ImportPipelineStage.FinalVerification] = TimeSpan.Zero,
+        };
+        // Etapa activa al momento de una excepción no controlada -- permite que el catch
+        // de nivel superior reporte dónde ocurrió sin adivinar (sección 3 del patch).
+        var currentStage = ImportPipelineStage.Validation;
+
         // Patch 0054: se calcula una sola vez, antes de cualquier otro paso -- el archivo
         // puede dejar de existir apenas termina RouteAsync (ver ImportBatchEndpoints, que
         // borra el temporal de una subida manual en su finally), así que este es el único
@@ -125,21 +157,30 @@ public class FileImportRouter : IFileImportRouter
 
         try
         {
+            currentStage = ImportPipelineStage.Validation;
+            var validationSw = Stopwatch.StartNew();
             var validation = _validator.Validate(filePath);
+            stageDurations[ImportPipelineStage.Validation] = validationSw.Elapsed;
+
             if (!validation.IsValid)
             {
                 _logger.LogWarning(
                     "Router: '{File}' rechazado por validación previa: {Reason}",
                     fileName, validation.RejectionReason);
 
+                var rejected = ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido.");
                 await PersistImportBatchAsync(
                     filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
-                    fileSizeBytes,
-                    ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido."),
-                    ct);
+                    fileSizeBytes, rejected, ct);
+                RecordRunMetrics(filePath, null, totalSw, stageDurations, rejected);
                 return;
             }
 
+            // Patch 0057: el cálculo de hash y la búsqueda de idempotencia no tienen una
+            // etapa propia entre las 5 pedidas por el patch -- se cuentan dentro de
+            // ParserSelection, ya que son parte de "decidir cómo se va a procesar el
+            // archivo" antes de la extracción real.
+            currentStage = ImportPipelineStage.ParserSelection;
             var contentHash = TryComputeContentHash(filePath);
 
             if (!string.IsNullOrEmpty(contentHash))
@@ -152,27 +193,32 @@ public class FileImportRouter : IFileImportRouter
                         "({PreviousDate}) -- se saltea, no se vuelve a procesar.",
                         fileName, Path.GetFileName(existing.SourceFile), existing.CompletedAtUtc);
 
+                    var alreadyImported = ImportRunResult.AlreadyImported(
+                        $"Este archivo ya fue importado el {existing.CompletedAtUtc:u} " +
+                        $"(como '{Path.GetFileName(existing.SourceFile)}') — no se reprocesa.");
                     await PersistImportBatchAsync(
                         filePath, contentHash, IdempotencyHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
-                        fileSizeBytes,
-                        ImportRunResult.AlreadyImported(
-                            $"Este archivo ya fue importado el {existing.CompletedAtUtc:u} " +
-                            $"(como '{Path.GetFileName(existing.SourceFile)}') — no se reprocesa."),
-                        ct);
+                        fileSizeBytes, alreadyImported, ct);
+                    RecordRunMetrics(filePath, null, totalSw, stageDurations, alreadyImported);
                     return;
                 }
             }
 
+            var selectionSw = Stopwatch.StartNew();
             foreach (var handler in _handlers)
             {
                 if (!handler.CanHandle(filePath))
                     continue;
+
+                stageDurations[ImportPipelineStage.ParserSelection] = selectionSw.Elapsed;
 
                 _logger.LogInformation(
                     "Router: '{File}' → [{Handler}]",
                     fileName,
                     handler.HandlerName);
 
+                currentStage = ImportPipelineStage.Extraction;
+                var extractionSw = Stopwatch.StartNew();
                 ImportRunResult result;
                 try
                 {
@@ -187,24 +233,35 @@ public class FileImportRouter : IFileImportRouter
                     _logger.LogError(ex,
                         "Router: el handler [{Handler}] lanzó una excepción no controlada procesando '{File}'",
                         handler.HandlerName, fileName);
+                    _diagnostics.RecordFailure(filePath, null, ImportPipelineStage.Extraction, ex);
                     result = ImportRunResult.Failure($"Excepción no controlada: {ex.Message}");
                 }
+                stageDurations[ImportPipelineStage.Extraction] = extractionSw.Elapsed;
 
                 // Patch 0053: una corrida Failed nunca persiste el ContentHash real -- si
                 // lo hiciera, un intento fallido bloquearía para siempre un reintento
                 // futuro del mismo contenido (ver idempotencia, Patch 0052).
                 var persistedHash = result.Outcome == ImportOutcome.Failed ? string.Empty : contentHash;
+                currentStage = ImportPipelineStage.Persistence;
+                var persistenceSw = Stopwatch.StartNew();
                 var completedAtUtc = _dateTimeProvider.UtcNow;
                 var batchId = await PersistImportBatchAsync(
                     filePath, persistedHash, handler.HandlerName, startedAtUtc, completedAtUtc, fileSizeBytes, result, ct);
+                stageDurations[ImportPipelineStage.Persistence] = persistenceSw.Elapsed;
 
                 // Patch 0056: solo tiene sentido verificar una corrida que efectivamente
                 // ejecutó un handler -- Validation/Idempotency/Router nunca insertan nada,
                 // no hay nada que contrastar contra la información extraída del archivo.
+                currentStage = ImportPipelineStage.FinalVerification;
+                var verificationSw = Stopwatch.StartNew();
                 await VerifyConsistencyAsync(
                     batchId, filePath, handler.HandlerName, startedAtUtc, completedAtUtc, result, ct);
+                stageDurations[ImportPipelineStage.FinalVerification] = verificationSw.Elapsed;
+
+                RecordRunMetrics(filePath, batchId, totalSw, stageDurations, result);
                 return;
             }
+            stageDurations[ImportPipelineStage.ParserSelection] = selectionSw.Elapsed;
 
             _logger.LogWarning(
                 "Router: ningún handler aceptó '{File}'. " +
@@ -212,11 +269,12 @@ public class FileImportRouter : IFileImportRouter
                 fileName,
                 string.Join(", ", _handlers.Select(h => h.HandlerName)));
 
+            var noHandlerResult = ImportRunResult.RejectedByValidation(
+                "Ningún handler reconoce este archivo (extensión o contenido no soportado).");
             await PersistImportBatchAsync(
                 filePath, contentHash, ValidationHandlerName, startedAtUtc, _dateTimeProvider.UtcNow, fileSizeBytes,
-                ImportRunResult.RejectedByValidation(
-                    "Ningún handler reconoce este archivo (extensión o contenido no soportado)."),
-                ct);
+                noHandlerResult, ct);
+            RecordRunMetrics(filePath, null, totalSw, stageDurations, noHandlerResult);
         }
         catch (Exception ex)
         {
@@ -229,12 +287,46 @@ public class FileImportRouter : IFileImportRouter
             _logger.LogError(ex,
                 "Router: fallo no controlado orquestando la importación de '{File}'",
                 fileName);
+            _diagnostics.RecordFailure(filePath, null, currentStage, ex);
 
+            var failure = ImportRunResult.Failure($"Excepción no controlada: {ex.Message}");
             await PersistImportBatchAsync(
                 filePath, contentHash: string.Empty, RouterHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
-                fileSizeBytes,
-                ImportRunResult.Failure($"Excepción no controlada: {ex.Message}"),
-                ct);
+                fileSizeBytes, failure, ct);
+            RecordRunMetrics(filePath, null, totalSw, stageDurations, failure);
+        }
+    }
+
+    /// <summary>
+    /// Único punto (Patch 0057, sección 4 del patch) donde se arma y se emite
+    /// ImportPipelineRunMetrics -- se llama exactamente una vez por cada RouteAsync, sin
+    /// importar el desenlace. Un fallo acá (ej. el logger no puede escribir) se loguea
+    /// pero nunca se relanza: la observabilidad no debe poder romper una importación que
+    /// ya terminó de procesarse.
+    /// </summary>
+    private void RecordRunMetrics(
+        string filePath,
+        Guid? batchId,
+        Stopwatch totalSw,
+        Dictionary<ImportPipelineStage, TimeSpan> stageDurations,
+        ImportRunResult result)
+    {
+        try
+        {
+            var metrics = new ImportPipelineRunMetrics(
+                filePath,
+                batchId,
+                totalSw.Elapsed,
+                stageDurations.Select(kv => new ImportPipelineStageTiming(kv.Key, kv.Value)).ToList(),
+                ImportPipelineQualityIndicators.FromResult(result));
+
+            _diagnostics.RecordRun(metrics);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Router: no se pudieron registrar las métricas de diagnóstico para '{File}'",
+                Path.GetFileName(filePath));
         }
     }
 
