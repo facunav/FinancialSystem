@@ -24,6 +24,12 @@ namespace FinancialSystem.Application.Imports;
 /// contenido, ver FileImportRouter) — no es un error ni una validación rechazada, es una
 /// corrida que se saltea a propósito para no duplicar movimientos. Failed queda en 0
 /// porque, a diferencia de RejectedByValidation, no hay ningún problema con el archivo.
+///
+/// Failed (Patch 0053 — Consistencia transaccional): antes, Failure(reason) dejaba
+/// Outcome en el default Processed — una excepción no controlada durante el
+/// procesamiento quedaba indistinguible de una corrida realmente completada. Ahora
+/// Failure() marca Outcome=Failed explícitamente, para que "completada / rechazada /
+/// fallida" sean estados siempre distinguibles, nunca ambiguos.
 /// </summary>
 public sealed record ImportRunResult(
     int Inserted,
@@ -33,8 +39,14 @@ public sealed record ImportRunResult(
     IReadOnlyList<string> Diagnostics,
     ImportOutcome Outcome = ImportOutcome.Processed)
 {
+    /// <summary>
+    /// Una excepción no controlada abortó el procesamiento (Patch 0053) — a diferencia de
+    /// RejectedByValidation, acá sí se intentó procesar el archivo. FileImportRouter no
+    /// persiste el ContentHash real de una corrida Failed (ver PersistImportBatchAsync),
+    /// para que un intento fallido nunca bloquee un reintento futuro del mismo contenido.
+    /// </summary>
     public static ImportRunResult Failure(string reason) =>
-        new(0, 0, 1, 0, [reason]);
+        new(0, 0, 1, 0, [reason], ImportOutcome.Failed);
 
     /// <summary>
     /// El archivo fue rechazado por la validación previa (Patch 0051) — ningún
@@ -53,13 +65,14 @@ public sealed record ImportRunResult(
 
 /// <summary>
 /// Ver el comentario de Outcome en <see cref="ImportRunResult"/>. Distingue, sin exponer
-/// entidades ni romper el contrato existente, si un ImportRunResult representa un
-/// archivo procesado (con o sin movimientos), un rechazo de la validación previa, o una
-/// reimportación del mismo contenido que se saltea deliberadamente.
+/// entidades ni romper el contrato existente, entre archivo procesado, rechazo de la
+/// validación previa, reimportación salteada y falla no controlada — completada /
+/// rechazada / fallida quedan siempre diferenciadas, nunca ambiguas (Patch 0053).
 /// </summary>
 public enum ImportOutcome
 {
     Processed,
     RejectedByValidation,
-    AlreadyImported
+    AlreadyImported,
+    Failed
 }
