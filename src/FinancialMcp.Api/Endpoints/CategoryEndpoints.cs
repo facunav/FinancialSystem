@@ -11,7 +11,10 @@ public static class CategoryEndpoints
     public static IEndpointRouteBuilder MapCategoryEndpoints(
         this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/categories").WithTags("Categories");
+        // Patch 0060 (PATCH-011): protegido con la misma infraestructura del Patch 0058,
+        // incluidas las lecturas -- ver el comentario equivalente en
+        // FinancialAccountEndpoints para la justificación de la decisión.
+        var group = app.MapGroup("/api/categories").WithTags("Categories").RequireAuthorization();
 
         group.MapGet("/", GetAll);
         group.MapPost("/", Create);

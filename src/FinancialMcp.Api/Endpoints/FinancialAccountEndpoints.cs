@@ -12,7 +12,13 @@ public static class FinancialAccountEndpoints
     public static IEndpointRouteBuilder MapFinancialAccountEndpoints(
         this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/accounts").WithTags("Accounts");
+        // Patch 0060 (PATCH-011): protegido con la misma infraestructura del Patch 0058.
+        // Decisión explícita (sección 2 del patch): también se protegen las lecturas, no
+        // solo la escritura -- mismo criterio ya aplicado a Importaciones/Movimientos en
+        // el Patch 0059 (single-user: leer nombres de cuenta/número de cuenta es tan
+        // sensible como poder modificarlos, no hay un usuario "público" legítimo para
+        // esta API).
+        var group = app.MapGroup("/api/accounts").WithTags("Accounts").RequireAuthorization();
 
         group.MapGet("/", GetAll);
         group.MapGet("/{id:guid}", GetById);

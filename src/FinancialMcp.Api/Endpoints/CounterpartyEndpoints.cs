@@ -12,7 +12,10 @@ public static class CounterpartyEndpoints
     public static IEndpointRouteBuilder MapCounterpartyEndpoints(
         this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/counterparties").WithTags("Counterparties");
+        // Patch 0060 (PATCH-011): protegido con la misma infraestructura del Patch 0058,
+        // incluidas las lecturas -- ver el comentario equivalente en
+        // FinancialAccountEndpoints para la justificación de la decisión.
+        var group = app.MapGroup("/api/counterparties").WithTags("Counterparties").RequireAuthorization();
 
         group.MapGet("/", GetAll);
         group.MapGet("/{id:guid}", GetById);
