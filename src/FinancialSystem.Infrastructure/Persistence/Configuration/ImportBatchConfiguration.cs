@@ -55,6 +55,12 @@ internal sealed class ImportBatchConfiguration : IEntityTypeConfiguration<Import
         builder.Ignore(e => e.OmittedCount);
         builder.Ignore(e => e.ErrorCount);
 
+        // Verificación de integridad posterior (Patch 0056).
+        builder.Property(e => e.ConsistencyVerified);
+
+        builder.Property(e => e.ConsistencyIssues)
+            .HasMaxLength(2000);
+
         // ── Índices de consulta frecuente ─────────────────────────
         builder.HasIndex(e => e.StartedAtUtc)
             .HasDatabaseName("IX_ImportBatches_StartedAtUtc");

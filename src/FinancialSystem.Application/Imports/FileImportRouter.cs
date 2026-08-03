@@ -67,6 +67,16 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///   ProcessedWithWarnings, según Failed/Skipped &gt; 0) se centraliza acá, en un único
 ///   lugar, para que ningún handler tenga que decidirlo por su cuenta de forma
 ///   inconsistente con los demás.
+///
+/// VERIFICACIÓN DE INTEGRIDAD POSTERIOR (Patch 0056):
+///   Después de persistir el ImportBatch de una corrida que sí ejecutó un handler,
+///   IImportConsistencyVerifier vuelve a leer lo persistido (cantidades, movimientos
+///   realmente creados, el propio registro de historial) y confirma que coincide con lo
+///   que la corrida reportó. Si encuentra alguna inconsistencia, no se oculta ni se
+///   reintenta nada: el mismo ImportBatch queda marcado con ConsistencyVerified=false y
+///   ConsistencyIssues con el detalle -- InsertedCount/Outcome/etc. de esa corrida no se
+///   tocan. No corre para Validation/Idempotency/Router (Inserted siempre 0 ahí, nada que
+///   verificar).
 /// </summary>
 public class FileImportRouter : IFileImportRouter
 {
@@ -76,6 +86,7 @@ public class FileImportRouter : IFileImportRouter
 
     private readonly IReadOnlyList<IFileImportHandler> _handlers;
     private readonly IImportFileValidator _validator;
+    private readonly IImportConsistencyVerifier _consistencyVerifier;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<FileImportRouter> _logger;
@@ -83,12 +94,14 @@ public class FileImportRouter : IFileImportRouter
     public FileImportRouter(
         IEnumerable<IFileImportHandler> handlers,
         IImportFileValidator validator,
+        IImportConsistencyVerifier consistencyVerifier,
         IServiceScopeFactory scopeFactory,
         IDateTimeProvider dateTimeProvider,
         ILogger<FileImportRouter> logger)
     {
         _handlers = handlers.ToList().AsReadOnly();
         _validator = validator;
+        _consistencyVerifier = consistencyVerifier;
         _scopeFactory = scopeFactory;
         _dateTimeProvider = dateTimeProvider;
         _logger = logger;
@@ -120,7 +133,8 @@ public class FileImportRouter : IFileImportRouter
                     fileName, validation.RejectionReason);
 
                 await PersistImportBatchAsync(
-                    filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc, fileSizeBytes,
+                    filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
+                    fileSizeBytes,
                     ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido."),
                     ct);
                 return;
@@ -139,7 +153,8 @@ public class FileImportRouter : IFileImportRouter
                         fileName, Path.GetFileName(existing.SourceFile), existing.CompletedAtUtc);
 
                     await PersistImportBatchAsync(
-                        filePath, contentHash, IdempotencyHandlerName, startedAtUtc, fileSizeBytes,
+                        filePath, contentHash, IdempotencyHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
+                        fileSizeBytes,
                         ImportRunResult.AlreadyImported(
                             $"Este archivo ya fue importado el {existing.CompletedAtUtc:u} " +
                             $"(como '{Path.GetFileName(existing.SourceFile)}') — no se reprocesa."),
@@ -179,8 +194,15 @@ public class FileImportRouter : IFileImportRouter
                 // lo hiciera, un intento fallido bloquearía para siempre un reintento
                 // futuro del mismo contenido (ver idempotencia, Patch 0052).
                 var persistedHash = result.Outcome == ImportOutcome.Failed ? string.Empty : contentHash;
-                await PersistImportBatchAsync(
-                    filePath, persistedHash, handler.HandlerName, startedAtUtc, fileSizeBytes, result, ct);
+                var completedAtUtc = _dateTimeProvider.UtcNow;
+                var batchId = await PersistImportBatchAsync(
+                    filePath, persistedHash, handler.HandlerName, startedAtUtc, completedAtUtc, fileSizeBytes, result, ct);
+
+                // Patch 0056: solo tiene sentido verificar una corrida que efectivamente
+                // ejecutó un handler -- Validation/Idempotency/Router nunca insertan nada,
+                // no hay nada que contrastar contra la información extraída del archivo.
+                await VerifyConsistencyAsync(
+                    batchId, filePath, handler.HandlerName, startedAtUtc, completedAtUtc, result, ct);
                 return;
             }
 
@@ -191,7 +213,7 @@ public class FileImportRouter : IFileImportRouter
                 string.Join(", ", _handlers.Select(h => h.HandlerName)));
 
             await PersistImportBatchAsync(
-                filePath, contentHash, ValidationHandlerName, startedAtUtc, fileSizeBytes,
+                filePath, contentHash, ValidationHandlerName, startedAtUtc, _dateTimeProvider.UtcNow, fileSizeBytes,
                 ImportRunResult.RejectedByValidation(
                     "Ningún handler reconoce este archivo (extensión o contenido no soportado)."),
                 ct);
@@ -209,9 +231,72 @@ public class FileImportRouter : IFileImportRouter
                 fileName);
 
             await PersistImportBatchAsync(
-                filePath, contentHash: string.Empty, RouterHandlerName, startedAtUtc, fileSizeBytes,
+                filePath, contentHash: string.Empty, RouterHandlerName, startedAtUtc, _dateTimeProvider.UtcNow,
+                fileSizeBytes,
                 ImportRunResult.Failure($"Excepción no controlada: {ex.Message}"),
                 ct);
+        }
+    }
+
+    /// <summary>
+    /// Ejecuta IImportConsistencyVerifier sobre la corrida recién persistida y, si
+    /// encuentra alguna inconsistencia, la registra en el mismo ImportBatch (Patch 0056,
+    /// sección 4 del patch: "no ocultar el problema"). No modifica InsertedCount/Outcome/
+    /// etc. de la corrida -- ConsistencyVerified/ConsistencyIssues son una marca adicional,
+    /// no una reclasificación.
+    /// </summary>
+    private async Task VerifyConsistencyAsync(
+        Guid batchId,
+        string filePath,
+        string handlerName,
+        DateTime startedAtUtc,
+        DateTime completedAtUtc,
+        ImportRunResult result,
+        CancellationToken ct)
+    {
+        var context = new ImportConsistencyContext(
+            batchId, filePath, handlerName, startedAtUtc, completedAtUtc,
+            result.Inserted, result.Duplicates, result.Failed, result.Skipped, result.ParserUsed);
+
+        ImportConsistencyReport report;
+        try
+        {
+            report = await _consistencyVerifier.VerifyAsync(context, ct);
+        }
+        catch (Exception ex)
+        {
+            // Mismo criterio que el resto del router: un fallo al verificar tampoco debe
+            // propagarse sin dejar rastro.
+            _logger.LogError(ex,
+                "Router: la verificación de integridad posterior falló para el batch {BatchId} ('{File}')",
+                batchId, Path.GetFileName(filePath));
+            report = ImportConsistencyReport.Inconsistent([$"La verificación de integridad no pudo ejecutarse: {ex.Message}"]);
+        }
+
+        if (!report.IsConsistent)
+        {
+            _logger.LogError(
+                "Router: se detectaron inconsistencias post-importación en el batch {BatchId} ('{File}'): {Issues}",
+                batchId, Path.GetFileName(filePath), string.Join(" | ", report.Issues));
+        }
+
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+            var batch = await db.ImportBatches.SingleOrDefaultAsync(b => b.Id == batchId, ct);
+            if (batch is null)
+                return;
+
+            batch.ConsistencyVerified = report.IsConsistent;
+            batch.ConsistencyIssues = report.IsConsistent ? null : string.Join(" | ", report.Issues);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Router: no se pudo registrar el resultado de la verificación de integridad para el batch {BatchId}",
+                batchId);
         }
     }
 
@@ -274,11 +359,12 @@ public class FileImportRouter : IFileImportRouter
     /// ya quedaron guardados y no tiene sentido tratar la corrida completa como fallida
     /// por un problema al escribir el registro de auditoría.
     /// </summary>
-    private async Task PersistImportBatchAsync(
+    private async Task<Guid> PersistImportBatchAsync(
         string filePath,
         string contentHash,
         string handlerName,
         DateTime startedAtUtc,
+        DateTime completedAtUtc,
         long? fileSizeBytes,
         ImportRunResult result,
         CancellationToken ct)
@@ -289,7 +375,7 @@ public class FileImportRouter : IFileImportRouter
             ContentHash = contentHash,
             HandlerName = handlerName,
             StartedAtUtc = startedAtUtc,
-            CompletedAtUtc = _dateTimeProvider.UtcNow,
+            CompletedAtUtc = completedAtUtc,
             FileSizeBytes = fileSizeBytes,
             ParserUsed = result.ParserUsed,
             Outcome = MapOutcome(result.Outcome),
@@ -323,6 +409,8 @@ public class FileImportRouter : IFileImportRouter
                 "Router: no se pudo persistir el ImportBatch de '{File}' (handler {Handler})",
                 Path.GetFileName(filePath), handlerName);
         }
+
+        return batch.Id;
     }
 
     private string TryComputeContentHash(string filePath)

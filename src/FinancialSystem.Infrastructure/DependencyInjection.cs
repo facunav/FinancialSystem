@@ -15,6 +15,7 @@ using FinancialSystem.Infrastructure.Accounts;
 using FinancialSystem.Infrastructure.Audit;
 using FinancialSystem.Infrastructure.Imports;
 using FinancialSystem.Infrastructure.Imports.BankStatements;
+using FinancialSystem.Infrastructure.Imports.Consistency;
 using FinancialSystem.Infrastructure.Insights;
 using FinancialSystem.Infrastructure.Metrics;
 using FinancialSystem.Infrastructure.Movements;
@@ -95,6 +96,16 @@ public static class DependencyInjection
         services.AddScoped<IClassificationSuggestionService, Suggestions.ClassificationSuggestionService>();
 
         services.AddSingleton<IImportFileValidator, ImportFileValidator>();
+
+        // ── Verificación de integridad posterior a la importación (Patch 0056) ─────
+        // Agregar una verificación nueva es agregar una implementación de
+        // IImportConsistencyCheck acá -- FileImportRouter e ImportConsistencyVerifier no
+        // cambian.
+        services.AddSingleton<IImportConsistencyCheck, QuantityConsistencyCheck>();
+        services.AddSingleton<IImportConsistencyCheck, MovementProvenanceCheck>();
+        services.AddSingleton<IImportConsistencyCheck, ImportHistoryConsistencyCheck>();
+        services.AddSingleton<IImportConsistencyVerifier, ImportConsistencyVerifier>();
+
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();

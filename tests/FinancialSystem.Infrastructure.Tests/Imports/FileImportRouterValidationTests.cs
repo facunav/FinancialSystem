@@ -96,6 +96,7 @@ public class FileImportRouterValidationTests
         return new FileImportRouter(
             handlers,
             validator,
+            new NoOpConsistencyVerifier(),
             scopeFactory,
             new FakeDateTimeProvider(),
             NullLogger<FileImportRouter>.Instance);
@@ -128,5 +129,12 @@ public class FileImportRouterValidationTests
     private sealed class FakeDateTimeProvider : IDateTimeProvider
     {
         public DateTime UtcNow => new(2026, 7, 18, 0, 0, 0, DateTimeKind.Utc);
+    }
+
+    /// <summary>Verificador de integridad (Patch 0056) neutralizado -- estos tests no cubren esa etapa.</summary>
+    private sealed class NoOpConsistencyVerifier : IImportConsistencyVerifier
+    {
+        public Task<ImportConsistencyReport> VerifyAsync(ImportConsistencyContext context, CancellationToken ct = default) =>
+            Task.FromResult(ImportConsistencyReport.Consistent);
     }
 }

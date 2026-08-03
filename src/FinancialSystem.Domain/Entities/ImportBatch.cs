@@ -90,6 +90,25 @@ public class ImportBatch
     /// <summary>Errores registrados en esta corrida. Alias de FailedCount.</summary>
     public int ErrorCount => FailedCount;
 
+    /// <summary>
+    /// Resultado de la verificación de integridad posterior a la importación (Patch 0056):
+    /// null cuando la corrida no llegó a ejecutar ningún handler (Validation/Idempotency)
+    /// o es previa a este patch -- no hay nada que verificar o no se verificó. true
+    /// cuando IImportConsistencyVerifier corrió y no encontró inconsistencias. false
+    /// cuando encontró al menos una -- ver ConsistencyIssues para el detalle. Un false NO
+    /// revierte ni modifica InsertedCount/Outcome/etc.: es una marca adicional, no una
+    /// reclasificación de la corrida (ver FileImportRouter.VerifyConsistencyAsync).
+    /// </summary>
+    public bool? ConsistencyVerified { get; set; }
+
+    /// <summary>
+    /// Detalle de las inconsistencias encontradas (Patch 0056), unidas en un solo texto.
+    /// Null cuando ConsistencyVerified es null o true. Nunca incluye contenido del
+    /// archivo ni datos sensibles -- solo nombres de conteos/campos y sus valores
+    /// numéricos (mismo criterio que Patch 0053 para el resto de los diagnósticos).
+    /// </summary>
+    public string? ConsistencyIssues { get; set; }
+
     /// <summary>Detalle de líneas descartadas o fallidas durante esta corrida.</summary>
     public ICollection<ImportBatchLine> Lines { get; set; } = [];
 }

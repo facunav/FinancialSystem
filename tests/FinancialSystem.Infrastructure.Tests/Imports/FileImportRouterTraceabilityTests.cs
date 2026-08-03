@@ -160,6 +160,7 @@ public class FileImportRouterTraceabilityTests
             var router = new FileImportRouter(
                 [handler],
                 new AlwaysValidValidator(),
+                new NoOpConsistencyVerifier(),
                 scopeFactory,
                 clock,
                 NullLogger<FileImportRouter>.Instance);
@@ -251,6 +252,7 @@ public class FileImportRouterTraceabilityTests
         new(
             [handler],
             validator,
+            new NoOpConsistencyVerifier(),
             BuildServices(dbName).GetRequiredService<IServiceScopeFactory>(),
             new FakeDateTimeProvider(),
             NullLogger<FileImportRouter>.Instance);
