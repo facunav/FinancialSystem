@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -30,9 +31,22 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///   archivo rechazado acá, o uno que ningún handler reconoce, también genera un
 ///   ImportBatch (HandlerName "Validation") — antes, "ningún handler aceptó" no dejaba
 ///   ningún registro visible en el historial de importaciones.
+///
+/// IDEMPOTENCIA POR CONTENIDO (Patch 0052):
+///   ImportBatch.ContentHash (SHA256 del archivo) ya se calculaba y persistía en cada
+///   corrida desde PR I4, pero nunca se consultaba antes de procesar. Ahora, si el hash
+///   ya coincide con el de un ImportBatch anterior que sí llegó a ejecutar un handler
+///   real (no una fila de "Validation"/"Idempotency"), el archivo se saltea por completo
+///   — ningún handler/parser lo toca, no se inserta nada — y queda registrado con
+///   HandlerName "Idempotency". La detección es por contenido, no por nombre: el mismo
+///   archivo con otro nombre se reconoce igual; el mismo nombre con contenido distinto
+///   se procesa como corrida nueva.
 /// </summary>
 public class FileImportRouter : IFileImportRouter
 {
+    private const string ValidationHandlerName = "Validation";
+    private const string IdempotencyHandlerName = "Idempotency";
+
     private readonly IReadOnlyList<IFileImportHandler> _handlers;
     private readonly IImportFileValidator _validator;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -71,10 +85,32 @@ public class FileImportRouter : IFileImportRouter
                 fileName, validation.RejectionReason);
 
             await PersistImportBatchAsync(
-                filePath, "Validation", startedAtUtc,
+                filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc,
                 ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido."),
                 ct);
             return;
+        }
+
+        var contentHash = TryComputeContentHash(filePath);
+
+        if (!string.IsNullOrEmpty(contentHash))
+        {
+            var existing = await FindExistingSuccessfulBatchAsync(contentHash, ct);
+            if (existing is not null)
+            {
+                _logger.LogInformation(
+                    "Router: '{File}' ya fue importado con el mismo contenido que '{PreviousFile}' " +
+                    "({PreviousDate}) -- se saltea, no se vuelve a procesar.",
+                    fileName, Path.GetFileName(existing.SourceFile), existing.CompletedAtUtc);
+
+                await PersistImportBatchAsync(
+                    filePath, contentHash, IdempotencyHandlerName, startedAtUtc,
+                    ImportRunResult.AlreadyImported(
+                        $"Este archivo ya fue importado el {existing.CompletedAtUtc:u} " +
+                        $"(como '{Path.GetFileName(existing.SourceFile)}') — no se reprocesa."),
+                    ct);
+                return;
+            }
         }
 
         foreach (var handler in _handlers)
@@ -100,7 +136,7 @@ public class FileImportRouter : IFileImportRouter
                 result = ImportRunResult.Failure($"Excepción no controlada: {ex.Message}");
             }
 
-            await PersistImportBatchAsync(filePath, handler.HandlerName, startedAtUtc, result, ct);
+            await PersistImportBatchAsync(filePath, contentHash, handler.HandlerName, startedAtUtc, result, ct);
             return;
         }
 
@@ -111,10 +147,32 @@ public class FileImportRouter : IFileImportRouter
             string.Join(", ", _handlers.Select(h => h.HandlerName)));
 
         await PersistImportBatchAsync(
-            filePath, "Validation", startedAtUtc,
+            filePath, contentHash, ValidationHandlerName, startedAtUtc,
             ImportRunResult.RejectedByValidation(
                 "Ningún handler reconoce este archivo (extensión o contenido no soportado)."),
             ct);
+    }
+
+    /// <summary>Datos mínimos de un ImportBatch previo, para el mensaje de "ya importado".</summary>
+    private sealed record ExistingBatchInfo(string SourceFile, DateTime CompletedAtUtc);
+
+    /// <summary>
+    /// Busca el ImportBatch más reciente con el mismo ContentHash que representa una
+    /// corrida real (excluye filas "Validation"/"Idempotency", que no procesaron nada y
+    /// no deben servir de base para una futura detección de duplicado).
+    /// </summary>
+    private async Task<ExistingBatchInfo?> FindExistingSuccessfulBatchAsync(string contentHash, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+
+        return await db.ImportBatches
+            .Where(b => b.ContentHash == contentHash
+                     && b.HandlerName != ValidationHandlerName
+                     && b.HandlerName != IdempotencyHandlerName)
+            .OrderByDescending(b => b.CompletedAtUtc)
+            .Select(b => new ExistingBatchInfo(b.SourceFile, b.CompletedAtUtc))
+            .FirstOrDefaultAsync(ct);
     }
 
     /// <summary>
@@ -128,6 +186,7 @@ public class FileImportRouter : IFileImportRouter
     /// </summary>
     private async Task PersistImportBatchAsync(
         string filePath,
+        string contentHash,
         string handlerName,
         DateTime startedAtUtc,
         ImportRunResult result,
@@ -136,7 +195,7 @@ public class FileImportRouter : IFileImportRouter
         var batch = new ImportBatch
         {
             SourceFile = filePath,
-            ContentHash = TryComputeContentHash(filePath),
+            ContentHash = contentHash,
             HandlerName = handlerName,
             StartedAtUtc = startedAtUtc,
             CompletedAtUtc = _dateTimeProvider.UtcNow,

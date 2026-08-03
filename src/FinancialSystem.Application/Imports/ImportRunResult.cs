@@ -19,6 +19,11 @@ namespace FinancialSystem.Application.Imports;
 /// ningún parser/handler llegara a ejecutarse (RejectedByValidation). Parámetro opcional
 /// con default Processed para no romper los call sites existentes, que siguen
 /// construyendo este record igual que antes.
+///
+/// AlreadyImported (Patch 0052): el archivo ya se había importado con éxito antes (mismo
+/// contenido, ver FileImportRouter) — no es un error ni una validación rechazada, es una
+/// corrida que se saltea a propósito para no duplicar movimientos. Failed queda en 0
+/// porque, a diferencia de RejectedByValidation, no hay ningún problema con el archivo.
 /// </summary>
 public sealed record ImportRunResult(
     int Inserted,
@@ -37,15 +42,24 @@ public sealed record ImportRunResult(
     /// </summary>
     public static ImportRunResult RejectedByValidation(string reason) =>
         new(0, 0, 1, 0, [reason], ImportOutcome.RejectedByValidation);
+
+    /// <summary>
+    /// El archivo ya había sido importado antes con el mismo contenido (Patch 0052) — se
+    /// saltea deliberadamente, sin insertar nada y sin lanzar ninguna excepción.
+    /// </summary>
+    public static ImportRunResult AlreadyImported(string reason) =>
+        new(0, 0, 0, 0, [reason], ImportOutcome.AlreadyImported);
 }
 
 /// <summary>
 /// Ver el comentario de Outcome en <see cref="ImportRunResult"/>. Distingue, sin exponer
 /// entidades ni romper el contrato existente, si un ImportRunResult representa un
-/// archivo procesado (con o sin movimientos) o un rechazo de la validación previa.
+/// archivo procesado (con o sin movimientos), un rechazo de la validación previa, o una
+/// reimportación del mismo contenido que se saltea deliberadamente.
 /// </summary>
 public enum ImportOutcome
 {
     Processed,
-    RejectedByValidation
+    RejectedByValidation,
+    AlreadyImported
 }
