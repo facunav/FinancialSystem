@@ -94,6 +94,7 @@ public static class DependencyInjection
         // es Scoped — Singleton acá sería una captive dependency. Sin consumidores todavía.
         services.AddScoped<IClassificationSuggestionService, Suggestions.ClassificationSuggestionService>();
 
+        services.AddSingleton<IImportFileValidator, ImportFileValidator>();
         services.AddSingleton<IFileImportRouter, FileImportRouter>();
         services.AddSingleton<IImportFileSink, ImportFileProcessingSink>();
         services.AddScoped<IImportHistoryQueryService, ImportHistoryQueryService>();

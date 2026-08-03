@@ -23,21 +23,31 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///   handler/importador. Un handler nuevo (IFileImportHandler) obtiene registro de
 ///   ImportBatch automáticamente con solo devolver un ImportRunResult, sin conocer
 ///   ImportBatch en absoluto.
+///
+/// VALIDACIÓN PREVIA (Patch 0051):
+///   Antes de ofrecer el archivo a cualquier handler, IImportFileValidator confirma que
+///   tiene forma válida para ser procesado (existe, no está vacío, se puede leer). Un
+///   archivo rechazado acá, o uno que ningún handler reconoce, también genera un
+///   ImportBatch (HandlerName "Validation") — antes, "ningún handler aceptó" no dejaba
+///   ningún registro visible en el historial de importaciones.
 /// </summary>
 public class FileImportRouter : IFileImportRouter
 {
     private readonly IReadOnlyList<IFileImportHandler> _handlers;
+    private readonly IImportFileValidator _validator;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<FileImportRouter> _logger;
 
     public FileImportRouter(
         IEnumerable<IFileImportHandler> handlers,
+        IImportFileValidator validator,
         IServiceScopeFactory scopeFactory,
         IDateTimeProvider dateTimeProvider,
         ILogger<FileImportRouter> logger)
     {
         _handlers = handlers.ToList().AsReadOnly();
+        _validator = validator;
         _scopeFactory = scopeFactory;
         _dateTimeProvider = dateTimeProvider;
         _logger = logger;
@@ -51,6 +61,21 @@ public class FileImportRouter : IFileImportRouter
     public async Task RouteAsync(string filePath, CancellationToken ct = default)
     {
         var fileName = Path.GetFileName(filePath);
+        var startedAtUtc = _dateTimeProvider.UtcNow;
+
+        var validation = _validator.Validate(filePath);
+        if (!validation.IsValid)
+        {
+            _logger.LogWarning(
+                "Router: '{File}' rechazado por validación previa: {Reason}",
+                fileName, validation.RejectionReason);
+
+            await PersistImportBatchAsync(
+                filePath, "Validation", startedAtUtc,
+                ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido."),
+                ct);
+            return;
+        }
 
         foreach (var handler in _handlers)
         {
@@ -62,7 +87,6 @@ public class FileImportRouter : IFileImportRouter
                 fileName,
                 handler.HandlerName);
 
-            var startedAtUtc = _dateTimeProvider.UtcNow;
             ImportRunResult result;
             try
             {
@@ -85,6 +109,12 @@ public class FileImportRouter : IFileImportRouter
             "Handlers disponibles: [{Handlers}]",
             fileName,
             string.Join(", ", _handlers.Select(h => h.HandlerName)));
+
+        await PersistImportBatchAsync(
+            filePath, "Validation", startedAtUtc,
+            ImportRunResult.RejectedByValidation(
+                "Ningún handler reconoce este archivo (extensión o contenido no soportado)."),
+            ct);
     }
 
     /// <summary>

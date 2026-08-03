@@ -33,7 +33,9 @@ internal sealed class ImportFileProcessingSink(
                 "No se elige ninguno automáticamente.",
                 filePath,
                 string.Join(", ", resolution.ConflictingParserIds));
-            return ImportRunResult.Failure(
+            // RejectedByValidation (Patch 0051): ningún parser llegó a ejecutarse -- es
+            // un rechazo previo al procesamiento, no un error de un parser en marcha.
+            return ImportRunResult.RejectedByValidation(
                 $"Múltiples parsers coinciden con este archivo ({string.Join(", ", resolution.ConflictingParserIds)}). " +
                 "Importación abortada para evitar procesarlo con el parser incorrecto — revisar manualmente.");
         }
@@ -44,7 +46,9 @@ internal sealed class ImportFileProcessingSink(
                 "No parser registered for {FilePath} (extension {Extension})",
                 filePath,
                 Path.GetExtension(filePath));
-            return ImportRunResult.Failure(
+            // RejectedByValidation (Patch 0051): mismo criterio que el caso Ambiguous --
+            // ningún parser reconoció el archivo, nunca se intentó procesarlo.
+            return ImportRunResult.RejectedByValidation(
                 $"No hay parser registrado para la extensión '{Path.GetExtension(filePath)}'.");
         }
 
