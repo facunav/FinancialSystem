@@ -30,6 +30,14 @@ namespace FinancialSystem.Application.Imports;
 /// procesamiento quedaba indistinguible de una corrida realmente completada. Ahora
 /// Failure() marca Outcome=Failed explícitamente, para que "completada / rechazada /
 /// fallida" sean estados siempre distinguibles, nunca ambiguos.
+///
+/// ParserUsed / ProcessedWithWarnings (Patch 0054 — Trazabilidad): ParserUsed identifica
+/// el parser específico que interpretó el archivo (ej. "BBVA_VISA_AR", "CsvFileParser")
+/// -- distinto de HandlerName, que solo dice qué IFileImportHandler corrió (el catch-all
+/// "Transaction" puede resolver a varios parsers). Null cuando no aplica (rechazos,
+/// fallas antes de resolver un parser). FileImportRouter reclasifica centralizadamente
+/// Processed a ProcessedWithWarnings cuando Failed/Skipped &gt; 0, para distinguir
+/// "Exitosa" de "Exitosa con advertencias" sin que cada handler lo decida por su cuenta.
 /// </summary>
 public sealed record ImportRunResult(
     int Inserted,
@@ -37,7 +45,8 @@ public sealed record ImportRunResult(
     int Failed,
     int Skipped,
     IReadOnlyList<string> Diagnostics,
-    ImportOutcome Outcome = ImportOutcome.Processed)
+    ImportOutcome Outcome = ImportOutcome.Processed,
+    string? ParserUsed = null)
 {
     /// <summary>
     /// Una excepción no controlada abortó el procesamiento (Patch 0053) — a diferencia de
@@ -65,13 +74,23 @@ public sealed record ImportRunResult(
 
 /// <summary>
 /// Ver el comentario de Outcome en <see cref="ImportRunResult"/>. Distingue, sin exponer
-/// entidades ni romper el contrato existente, entre archivo procesado, rechazo de la
-/// validación previa, reimportación salteada y falla no controlada — completada /
-/// rechazada / fallida quedan siempre diferenciadas, nunca ambiguas (Patch 0053).
+/// entidades ni romper el contrato existente, entre archivo procesado (con o sin
+/// advertencias), rechazo de la validación previa, reimportación salteada y falla no
+/// controlada — Exitosa / Exitosa con advertencias / Rechazada / Fallida (Patch 0054)
+/// quedan siempre diferenciadas, nunca ambiguas.
 /// </summary>
 public enum ImportOutcome
 {
+    /// <summary>Exitosa: procesada sin ningún dato omitido ni fallido a nivel de fila.</summary>
     Processed,
+
+    /// <summary>
+    /// Exitosa con advertencias (Patch 0054): procesada, pero con al menos una fila
+    /// omitida o fallida (Failed/Skipped &gt; 0). FileImportRouter la asigna
+    /// centralizadamente -- ningún handler la construye directamente.
+    /// </summary>
+    ProcessedWithWarnings,
+
     RejectedByValidation,
     AlreadyImported,
     Failed

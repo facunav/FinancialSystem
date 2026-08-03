@@ -32,10 +32,28 @@ internal sealed class ImportBatchConfiguration : IEntityTypeConfiguration<Import
             .IsRequired()
             .HasColumnType("timestamp with time zone");
 
+        // Duration se deriva de StartedAtUtc/CompletedAtUtc (Patch 0054) -- no es una
+        // columna propia, para no duplicar información ya persistida.
+        builder.Ignore(e => e.Duration);
+
+        builder.Property(e => e.FileSizeBytes);
+
+        builder.Property(e => e.ParserUsed)
+            .HasMaxLength(100);
+
+        builder.Property(e => e.Outcome);
+
         builder.Property(e => e.InsertedCount).IsRequired();
         builder.Property(e => e.DuplicateCount).IsRequired();
         builder.Property(e => e.FailedCount).IsRequired();
         builder.Property(e => e.SkippedCount).IsRequired();
+
+        // Métricas centralizadas (Patch 0054): computadas a partir de los contadores de
+        // arriba, no son columnas propias -- ver comentarios en ImportBatch.
+        builder.Ignore(e => e.DetectedCount);
+        builder.Ignore(e => e.PersistedCount);
+        builder.Ignore(e => e.OmittedCount);
+        builder.Ignore(e => e.ErrorCount);
 
         // ── Índices de consulta frecuente ─────────────────────────
         builder.HasIndex(e => e.StartedAtUtc)

@@ -58,12 +58,16 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
 
             _logger.LogInformation("[BbvaBankStatement] {Result}", result.ToString());
 
+            // ParserUsed (Patch 0054): este handler solo tiene un parser posible -- a
+            // diferencia del catch-all "Transaction", no hay ambigüedad que resolver, pero
+            // se registra igual para que "cada importación" tenga el dato.
             return new ImportRunResult(
                 result.Inserted,
                 result.Duplicates,
                 result.ParseErrors,
                 result.SkippedRows,
-                result.Diagnostics);
+                result.Diagnostics,
+                ParserUsed: nameof(BbvaBankStatementParser));
         }
 
         private static bool MatchesGlob(string fileName, string pattern)

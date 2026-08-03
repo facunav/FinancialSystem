@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Domain.Entities;
+using FinancialSystem.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -53,6 +54,19 @@ namespace FinancialSystem.Infrastructure.Imports;
 ///   La persistencia del handler y la del ImportBatch siguen siendo dos SaveChangesAsync
 ///   separados (cada handler administra su propio scope, ver DI: son Singleton) — lo que
 ///   cambia es que ningún camino de excepción queda sin clasificar ni sin registrar.
+///
+/// TRAZABILIDAD (Patch 0054):
+///   ImportBatch gana FileSizeBytes (tamaño del archivo en bytes, calculado acá una sola
+///   vez, antes de que el archivo pueda desaparecer -- ver ImportBatchEndpoints, que
+///   borra el temporal apenas termina RouteAsync) y ParserUsed (identificador del parser
+///   específico que procesó el archivo, reportado por el handler vía ImportRunResult;
+///   distinto de HandlerName -- ver el comentario de ParserUsed en ImportRunResult).
+///   Duración e identificador único no son columnas nuevas: se derivan de Id/StartedAtUtc/
+///   CompletedAtUtc, que ya existían, para no duplicar información (ver
+///   ImportBatch.Duration). La clasificación final de Outcome (Processed vs.
+///   ProcessedWithWarnings, según Failed/Skipped &gt; 0) se centraliza acá, en un único
+///   lugar, para que ningún handler tenga que decidirlo por su cuenta de forma
+///   inconsistente con los demás.
 /// </summary>
 public class FileImportRouter : IFileImportRouter
 {
@@ -90,6 +104,12 @@ public class FileImportRouter : IFileImportRouter
         var fileName = Path.GetFileName(filePath);
         var startedAtUtc = _dateTimeProvider.UtcNow;
 
+        // Patch 0054: se calcula una sola vez, antes de cualquier otro paso -- el archivo
+        // puede dejar de existir apenas termina RouteAsync (ver ImportBatchEndpoints, que
+        // borra el temporal de una subida manual en su finally), así que este es el único
+        // momento confiable para registrar el tamaño.
+        var fileSizeBytes = TryGetFileSizeBytes(filePath);
+
         try
         {
             var validation = _validator.Validate(filePath);
@@ -100,7 +120,7 @@ public class FileImportRouter : IFileImportRouter
                     fileName, validation.RejectionReason);
 
                 await PersistImportBatchAsync(
-                    filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc,
+                    filePath, contentHash: string.Empty, ValidationHandlerName, startedAtUtc, fileSizeBytes,
                     ImportRunResult.RejectedByValidation(validation.RejectionReason ?? "Archivo inválido."),
                     ct);
                 return;
@@ -119,7 +139,7 @@ public class FileImportRouter : IFileImportRouter
                         fileName, Path.GetFileName(existing.SourceFile), existing.CompletedAtUtc);
 
                     await PersistImportBatchAsync(
-                        filePath, contentHash, IdempotencyHandlerName, startedAtUtc,
+                        filePath, contentHash, IdempotencyHandlerName, startedAtUtc, fileSizeBytes,
                         ImportRunResult.AlreadyImported(
                             $"Este archivo ya fue importado el {existing.CompletedAtUtc:u} " +
                             $"(como '{Path.GetFileName(existing.SourceFile)}') — no se reprocesa."),
@@ -142,6 +162,10 @@ public class FileImportRouter : IFileImportRouter
                 try
                 {
                     result = await handler.HandleAsync(filePath, ct);
+                    // Centralizado acá (Patch 0054, sección 4 del patch): "Exitosa" vs.
+                    // "Exitosa con advertencias" se decide en un único lugar para los tres
+                    // handlers, en vez de que cada uno lo calcule por su cuenta.
+                    result = ClassifyOutcome(result);
                 }
                 catch (Exception ex)
                 {
@@ -155,7 +179,8 @@ public class FileImportRouter : IFileImportRouter
                 // lo hiciera, un intento fallido bloquearía para siempre un reintento
                 // futuro del mismo contenido (ver idempotencia, Patch 0052).
                 var persistedHash = result.Outcome == ImportOutcome.Failed ? string.Empty : contentHash;
-                await PersistImportBatchAsync(filePath, persistedHash, handler.HandlerName, startedAtUtc, result, ct);
+                await PersistImportBatchAsync(
+                    filePath, persistedHash, handler.HandlerName, startedAtUtc, fileSizeBytes, result, ct);
                 return;
             }
 
@@ -166,7 +191,7 @@ public class FileImportRouter : IFileImportRouter
                 string.Join(", ", _handlers.Select(h => h.HandlerName)));
 
             await PersistImportBatchAsync(
-                filePath, contentHash, ValidationHandlerName, startedAtUtc,
+                filePath, contentHash, ValidationHandlerName, startedAtUtc, fileSizeBytes,
                 ImportRunResult.RejectedByValidation(
                     "Ningún handler reconoce este archivo (extensión o contenido no soportado)."),
                 ct);
@@ -184,11 +209,38 @@ public class FileImportRouter : IFileImportRouter
                 fileName);
 
             await PersistImportBatchAsync(
-                filePath, contentHash: string.Empty, RouterHandlerName, startedAtUtc,
+                filePath, contentHash: string.Empty, RouterHandlerName, startedAtUtc, fileSizeBytes,
                 ImportRunResult.Failure($"Excepción no controlada: {ex.Message}"),
                 ct);
         }
     }
+
+    /// <summary>
+    /// Único lugar (Patch 0054) donde se decide si una corrida Processed pasa a
+    /// ProcessedWithWarnings -- cualquier fila omitida o fallida, sin importar qué
+    /// handler la reportó, cuenta como advertencia. No toca ningún otro Outcome
+    /// (RejectedByValidation/AlreadyImported/Failed ya son inequívocos por sí mismos).
+    /// </summary>
+    private static ImportRunResult ClassifyOutcome(ImportRunResult result) =>
+        result.Outcome == ImportOutcome.Processed && (result.Failed > 0 || result.Skipped > 0)
+            ? result with { Outcome = ImportOutcome.ProcessedWithWarnings }
+            : result;
+
+    /// <summary>
+    /// Traduce el Outcome transitorio de ImportRunResult (capa Application) al
+    /// ImportBatchOutcome persistido en la entidad de dominio (Patch 0054) -- único lugar
+    /// donde ocurre esta traducción, para que el significado de cada estado final no
+    /// pueda divergir entre quien lo calcula (acá) y quien lo persiste (PersistImportBatchAsync).
+    /// </summary>
+    private static ImportBatchOutcome MapOutcome(ImportOutcome outcome) => outcome switch
+    {
+        ImportOutcome.Processed => ImportBatchOutcome.Processed,
+        ImportOutcome.ProcessedWithWarnings => ImportBatchOutcome.ProcessedWithWarnings,
+        ImportOutcome.RejectedByValidation => ImportBatchOutcome.RejectedByValidation,
+        ImportOutcome.AlreadyImported => ImportBatchOutcome.AlreadyImported,
+        ImportOutcome.Failed => ImportBatchOutcome.Failed,
+        _ => ImportBatchOutcome.Failed
+    };
 
     /// <summary>Datos mínimos de un ImportBatch previo, para el mensaje de "ya importado".</summary>
     private sealed record ExistingBatchInfo(string SourceFile, DateTime CompletedAtUtc);
@@ -227,6 +279,7 @@ public class FileImportRouter : IFileImportRouter
         string contentHash,
         string handlerName,
         DateTime startedAtUtc,
+        long? fileSizeBytes,
         ImportRunResult result,
         CancellationToken ct)
     {
@@ -237,6 +290,9 @@ public class FileImportRouter : IFileImportRouter
             HandlerName = handlerName,
             StartedAtUtc = startedAtUtc,
             CompletedAtUtc = _dateTimeProvider.UtcNow,
+            FileSizeBytes = fileSizeBytes,
+            ParserUsed = result.ParserUsed,
+            Outcome = MapOutcome(result.Outcome),
             InsertedCount = result.Inserted,
             DuplicateCount = result.Duplicates,
             FailedCount = result.Failed,
@@ -281,6 +337,25 @@ public class FileImportRouter : IFileImportRouter
         {
             _logger.LogWarning(ex, "Router: no se pudo calcular ContentHash para '{File}'", filePath);
             return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Tamaño del archivo en bytes (Patch 0054). Null si el archivo no existe o no se
+    /// puede acceder -- mismo criterio permisivo que TryComputeContentHash, para que un
+    /// problema al leer metadata del archivo no aborte la corrida.
+    /// </summary>
+    private long? TryGetFileSizeBytes(string filePath)
+    {
+        try
+        {
+            var info = new FileInfo(filePath);
+            return info.Exists ? info.Length : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Router: no se pudo obtener el tamaño de '{File}'", filePath);
+            return null;
         }
     }
 }

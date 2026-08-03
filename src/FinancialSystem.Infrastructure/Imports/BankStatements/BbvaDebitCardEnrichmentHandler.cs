@@ -86,7 +86,8 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
                     Duplicates: 0,
                     Failed: parseResult.Diagnostics.Count,
                     Skipped: parseResult.SkippedRows,
-                    Diagnostics: parseResult.Diagnostics);
+                    Diagnostics: parseResult.Diagnostics,
+                    ParserUsed: nameof(BbvaDebitCardParser));
             }
 
             var (enriched, ambiguous, noMatch) = await EnrichAsync(parseResult.Operations, ct);
@@ -100,7 +101,8 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
                 Duplicates: 0,
                 Failed: parseResult.Diagnostics.Count,
                 Skipped: parseResult.SkippedRows + ambiguous + noMatch,
-                Diagnostics: parseResult.Diagnostics);
+                Diagnostics: parseResult.Diagnostics,
+                ParserUsed: nameof(BbvaDebitCardParser));
         }
 
         private async Task<(int Enriched, int Ambiguous, int NoMatch)> EnrichAsync(

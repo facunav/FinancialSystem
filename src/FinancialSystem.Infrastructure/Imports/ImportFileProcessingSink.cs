@@ -55,6 +55,12 @@ internal sealed class ImportFileProcessingSink(
         // Invariante de FileParserResolution: Status == Resolved implica Parser no-null.
         var parser = resolution.Parser!;
 
+        // Patch 0054 (trazabilidad): identificador específico del parser que procesó el
+        // archivo -- para PDF, el ParserId de IStatementParser (ej. "BBVA_VISA_AR",
+        // "MASTERCARD_AR") es más estable y significativo que el nombre de la clase; para
+        // CSV/Excel no hay esa distinción, así que el nombre de tipo alcanza.
+        var parserUsed = DescribeParser(parser);
+
         logger.LogInformation(
             "Selected parser {ParserType} for {FilePath}",
             parser.GetType().Name,
@@ -68,7 +74,7 @@ internal sealed class ImportFileProcessingSink(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to parse import file {FilePath}", filePath);
-            return ImportRunResult.Failure($"Excepción parseando el archivo: {ex.Message}");
+            return ImportRunResult.Failure($"Excepción parseando el archivo: {ex.Message}") with { ParserUsed = parserUsed };
         }
 
         logger.LogInformation(
@@ -97,7 +103,8 @@ internal sealed class ImportFileProcessingSink(
         {
             logger.LogWarning("No transactions extracted from {FilePath}", filePath);
             return new ImportRunResult(
-                0, 0, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics);
+                0, 0, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics,
+                ParserUsed: parserUsed);
         }
 
         var normalized = normalizer.NormalizeAll(parseResult.Transactions);
@@ -208,8 +215,18 @@ internal sealed class ImportFileProcessingSink(
             totalSw.ElapsedMilliseconds);
 
         return new ImportRunResult(
-            inserted, duplicates, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics);
+            inserted, duplicates, parseResult.Diagnostics.Count, parseResult.SkippedRows, parseResult.Diagnostics,
+            ParserUsed: parserUsed);
     }
+
+    /// <summary>
+    /// Identificador de trazabilidad del parser (Patch 0054). Para parsers de extracto en
+    /// PDF usa <see cref="IStatementParser.ParserId"/> (ej. "BBVA_VISA_AR"), que ya
+    /// distingue el banco/tarjeta real; para CSV/Excel, sin esa distinción, alcanza el
+    /// nombre de la clase concreta.
+    /// </summary>
+    private static string DescribeParser(IFileParser parser) =>
+        parser is IStatementParser statementParser ? statementParser.ParserId : parser.GetType().Name;
 
     /// <summary>
     /// Resuelve FinancialAccountId cuando el número de cuenta extraído del encabezado
