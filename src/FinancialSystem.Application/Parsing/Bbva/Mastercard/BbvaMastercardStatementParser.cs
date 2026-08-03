@@ -20,12 +20,14 @@ namespace FinancialSystem.Application.Parsing.Bbva.Mastercard;
 ///   Inicio: "DETALLE DE CONSUMOS" | "CONSUMOS" | "OPERACIONES DEL PERÍODO"
 ///   Fin:    "TOTAL" | "PRÓXIMO VENCIMIENTO" | "SALDO ANTERIOR" | "CUOTAS PENDIENTES"
 ///
-/// NOTA IMPORTANTE sobre fingerprints:
-///   Si el extracto tiene "BBVA" Y "MASTERCARD" (ej: BBVA Mastercard),
-///   el orden de registro en DI determina qué parser gana.
-///   Por diseño, BBVA Visa se registra primero porque es más específico.
-///   Si necesitás parsear BBVA Mastercard, crear un parser dedicado
-///   BbvaMastercardStatementParser con fingerprints más específicos.
+/// NOTA IMPORTANTE sobre fingerprints (actualizada en Patch 0050):
+///   Si el extracto tiene "BBVA" Y "MASTERCARD" (ej: BBVA Mastercard), este parser y
+///   BbvaVisaStatementParser reconocen ambos el mismo documento. Desde el Patch 0050 esto
+///   ya NO se resuelve por orden de registro en DI: FileParserFactory lo detecta como
+///   ambigüedad real y aborta la importación de ese archivo en vez de elegir uno (ver
+///   FileParserFactory.ResolvePdfParser). Si necesitás soportar BBVA Mastercard, la
+///   solución es un fingerprint específico para ese caso (ej: exigir "BBVA" y "MASTERCARD"
+///   juntos en un parser dedicado), no depender del orden de registro.
 /// </summary>
 public sealed class BbvaMastercardStatementParser : PdfStatementParserBase
 {

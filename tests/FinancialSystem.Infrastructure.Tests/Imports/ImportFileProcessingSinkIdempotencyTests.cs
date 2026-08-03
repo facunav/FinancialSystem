@@ -144,11 +144,8 @@ public class ImportFileProcessingSinkIdempotencyTests
 
     private sealed class FakeFileParserFactory(IFileParser parser) : IFileParserFactory
     {
-        public bool TryGetParser(string filePath, out IFileParser? resolvedParser)
-        {
-            resolvedParser = parser;
-            return true;
-        }
+        public FileParserResolution ResolveParser(string filePath) =>
+            FileParserResolution.Resolved(parser);
     }
 
     private sealed class FakeFileParser(IReadOnlyList<ExtractedTransaction> transactions) : IFileParser

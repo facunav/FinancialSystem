@@ -137,13 +137,19 @@ public class ImportHandlerSelectionTests
         Assert.False(debitCardHandler.CanHandle(fileName));
     }
 
-    // ── Escenarios 4 y 5: routing de PDF por contenido (FileParserFactory) ─────
+    // ── Routing de PDF por contenido (FileParserFactory) ───────────────────────
+    // Patch 0050 (Integridad de Importación): TryGetParser(string, out IFileParser?) ->
+    // bool se reemplazó por ResolveParser(string) -> FileParserResolution, que distingue
+    // Resolved / NotFound / Ambiguous. La ambigüedad (más de un parser reconoce el mismo
+    // documento) ya NO se resuelve en silencio por orden de registro en DI.
 
-    private static FileParserFactory CreateFactoryWithPdfParsers(IReadOnlyList<string> pdfLines)
+    private static FileParserFactory CreateFactoryWithPdfParsers(
+        IReadOnlyList<string> pdfLines, IPdfTextExtractor? extractorOverride = null)
     {
-        var extractor = new FakePdfTextExtractor(pdfLines);
+        var extractor = extractorOverride ?? new FakePdfTextExtractor(pdfLines);
         // Mismo orden de registro que DependencyInjection.AddInfrastructure: Visa antes
-        // que Mastercard — el orden es parte de lo que este archivo verifica.
+        // que Mastercard. El orden ya no decide qué parser gana en caso de empate (eso
+        // ahora es Ambiguous) — queda solo como referencia de la configuración real.
         IFileParser[] parsers =
         [
             new BbvaVisaStatementParser(
@@ -156,6 +162,8 @@ public class ImportHandlerSelectionTests
         return new FileParserFactory(parsers, extractor, NullLogger<FileParserFactory>.Instance);
     }
 
+    // ── Selección correcta ──────────────────────────────────────────────────
+
     [Fact]
     public void VisaPdfContent_ResolvesToBbvaVisaParser()
     {
@@ -167,17 +175,17 @@ public class ImportHandlerSelectionTests
         };
         var factory = CreateFactoryWithPdfParsers(lines);
 
-        var found = factory.TryGetParser("resumen_visa.pdf", out var parser);
+        var resolution = factory.ResolveParser("resumen_visa.pdf");
 
-        Assert.True(found);
-        Assert.IsType<BbvaVisaStatementParser>(parser);
+        Assert.Equal(FileParserResolutionStatus.Resolved, resolution.Status);
+        Assert.IsType<BbvaVisaStatementParser>(resolution.Parser);
     }
 
     [Fact]
     public void MastercardOnlyPdfContent_ResolvesToBbvaMastercardParser()
     {
         // Sin la palabra "BBVA" en el contenido: caso inequívoco, sin superposición con
-        // el fingerprint de Visa (ver test de la ambigüedad conocida, abajo).
+        // el fingerprint de Visa (ver el test de ambigüedad, abajo).
         var lines = new[]
         {
             "Resumen de tu tarjeta MASTERCARD",
@@ -185,22 +193,20 @@ public class ImportHandlerSelectionTests
         };
         var factory = CreateFactoryWithPdfParsers(lines);
 
-        var found = factory.TryGetParser("resumen_mastercard.pdf", out var parser);
+        var resolution = factory.ResolveParser("resumen_mastercard.pdf");
 
-        Assert.True(found);
-        Assert.IsType<BbvaMastercardStatementParser>(parser);
+        Assert.Equal(FileParserResolutionStatus.Resolved, resolution.Status);
+        Assert.IsType<BbvaMastercardStatementParser>(resolution.Parser);
     }
 
+    // ── Múltiples coincidencias ─────────────────────────────────────────────
+
     [Fact]
-    public void KnownLimitation_PdfContainingBothBbvaAndMastercardText_CurrentlyResolvesToVisaParser()
+    public void PdfContainingBothBbvaAndMastercardFingerprints_IsDetectedAsAmbiguous()
     {
-        // Documenta (no corrige) la ambigüedad ya reconocida explícitamente en el propio
-        // comentario de BbvaMastercardStatementParser: "Si el extracto tiene 'BBVA' Y
-        // 'MASTERCARD'... el orden de registro en DI determina qué parser gana. Por
-        // diseño, BBVA Visa se registra primero". Este test no valida que esto sea lo
-        // deseado — fija el comportamiento actual para que cambiarlo sea una decisión
-        // consciente (nuevo fingerprint, reordenar DI), no un efecto secundario
-        // silencioso de otro cambio.
+        // Antes del Patch 0050 esto resolvía en silencio a BbvaVisaStatementParser por
+        // orden de registro en DI (ver el historial de BbvaMastercardStatementParser).
+        // Ahora se detecta como conflicto real: no se elige ninguno.
         var lines = new[]
         {
             "Banco BBVA Argentina",
@@ -209,14 +215,91 @@ public class ImportHandlerSelectionTests
         };
         var factory = CreateFactoryWithPdfParsers(lines);
 
-        factory.TryGetParser("resumen_bbva_mastercard.pdf", out var parser);
+        var resolution = factory.ResolveParser("resumen_bbva_mastercard.pdf");
 
-        Assert.IsType<BbvaVisaStatementParser>(parser);
+        Assert.Equal(FileParserResolutionStatus.Ambiguous, resolution.Status);
+        Assert.Null(resolution.Parser);
+        Assert.Contains("BBVA_VISA_AR", resolution.ConflictingParserIds);
+        Assert.Contains("MASTERCARD_AR", resolution.ConflictingParserIds);
+    }
+
+    [Fact]
+    public void MultipleParsersRegisteredForTheSameExtension_IsDetectedAsAmbiguous()
+    {
+        // Caso genérico (no-PDF): si en el futuro dos IFileParser declaran la misma
+        // extensión, la factory debe fallar de forma segura igual que con contenido PDF.
+        // No ocurre hoy en producción (CSV y XLSX tienen un único parser cada uno) — este
+        // test cubre el mecanismo, no un caso real actual.
+        var extractor = new FakePdfTextExtractor([]);
+        IFileParser[] parsers =
+        [
+            new FakeExtensionParser(".ofx"),
+            new FakeExtensionParser(".ofx"),
+        ];
+        var factory = new FileParserFactory(parsers, extractor, NullLogger<FileParserFactory>.Instance);
+
+        var resolution = factory.ResolveParser("banco.ofx");
+
+        Assert.Equal(FileParserResolutionStatus.Ambiguous, resolution.Status);
+        Assert.Null(resolution.Parser);
+        Assert.Equal(2, resolution.ConflictingParserIds.Count);
+    }
+
+    // ── Parser inexistente ───────────────────────────────────────────────────
+
+    [Fact]
+    public void PdfContentMatchingNoParser_ReturnsNotFound()
+    {
+        var lines = new[] { "Un documento cualquiera sin ningún fingerprint conocido." };
+        var factory = CreateFactoryWithPdfParsers(lines);
+
+        var resolution = factory.ResolveParser("desconocido.pdf");
+
+        Assert.Equal(FileParserResolutionStatus.NotFound, resolution.Status);
+        Assert.Null(resolution.Parser);
+    }
+
+    [Fact]
+    public void UnsupportedExtension_ReturnsNotFound()
+    {
+        var factory = CreateFactoryWithPdfParsers(["cualquier contenido"]);
+
+        var resolution = factory.ResolveParser("archivo.docx");
+
+        Assert.Equal(FileParserResolutionStatus.NotFound, resolution.Status);
+        Assert.Null(resolution.Parser);
+    }
+
+    // ── Archivos inválidos ───────────────────────────────────────────────────
+
+    [Fact]
+    public void CorruptOrUnreadablePdf_ReturnsNotFoundInsteadOfThrowing()
+    {
+        var factory = CreateFactoryWithPdfParsers([], new ThrowingPdfTextExtractor());
+
+        var resolution = factory.ResolveParser("corrupto.pdf");
+
+        Assert.Equal(FileParserResolutionStatus.NotFound, resolution.Status);
+        Assert.Null(resolution.Parser);
     }
 
     private sealed class FakePdfTextExtractor(IReadOnlyList<string> lines) : IPdfTextExtractor
     {
         public Task<IReadOnlyList<string>> ExtractLinesAsync(string filePath, CancellationToken ct = default)
             => Task.FromResult(lines);
+    }
+
+    private sealed class ThrowingPdfTextExtractor : IPdfTextExtractor
+    {
+        public Task<IReadOnlyList<string>> ExtractLinesAsync(string filePath, CancellationToken ct = default)
+            => throw new IOException("PDF corrupto simulado.");
+    }
+
+    private sealed class FakeExtensionParser(string extension) : IFileParser
+    {
+        public IReadOnlyCollection<string> SupportedExtensions => [extension];
+
+        public Task<FileParseResult> ParseAsync(string filePath, CancellationToken cancellationToken = default)
+            => Task.FromResult(new FileParseResult([], 0, [], TimeSpan.Zero));
     }
 }

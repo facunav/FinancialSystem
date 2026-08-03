@@ -7,7 +7,7 @@ namespace FinancialSystem.Infrastructure.Imports.Parsers;
 /// Factory que resuelve el parser correcto para un archivo dado.
 ///
 /// PROBLEMA QUE RESUELVE:
-///   Cuando hay múltiples parsers para el mismo tipo de archivo (ej: BBVA y
+///   Cuando hay múltiples parsers para el mismo tipo de archivo (ej: BBVA Visa y BBVA
 ///   Mastercard son ambos .pdf), la selección por extensión es insuficiente.
 ///   Necesitamos selección por CONTENIDO.
 ///
@@ -15,6 +15,15 @@ namespace FinancialSystem.Infrastructure.Imports.Parsers;
 ///   1. Por extensión: para CSV y Excel (un solo parser por extensión).
 ///   2. Por contenido: para PDF (múltiples parsers, cada uno implementa
 ///      IStatementParser.CanHandle() para auto-identificarse).
+///
+/// AMBIGÜEDAD (Patch 0050 — Integridad de Importación):
+///   Si más de un parser reconoce el mismo archivo (por extensión o por contenido), NO se
+///   elige ninguno por prioridad implícita de registro en DI. Se devuelve
+///   FileParserResolutionStatus.Ambiguous con los parsers en conflicto — el caller
+///   (ImportFileProcessingSink) debe abortar la importación de ese archivo. Antes de este
+///   patch, un PDF que matcheara los fingerprints de BBVA Visa y BBVA Mastercard a la vez
+///   se procesaba en silencio con el primero registrado, con riesgo real de datos
+///   incorrectos o movimientos perdidos.
 ///
 /// EXTENSIÓN:
 ///   Registrar cualquier IFileParser en el DI. Si implementa también
@@ -46,33 +55,46 @@ internal sealed class FileParserFactory : IFileParserFactory
             string.Join(", ", _pdfParsers.Select(p => p.ParserId)));
     }
 
-    public bool TryGetParser(string filePath, out IFileParser? parser)
+    public FileParserResolution ResolveParser(string filePath)
     {
         var extension = Path.GetExtension(filePath);
 
         // Para PDF: routing por contenido (hay múltiples parsers posibles)
         if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            return ResolvePdfParser(filePath);
+
+        // Para otros formatos: routing por extensión. Hoy hay un único parser por
+        // extensión en producción (CSV, XLSX), pero se evalúan TODOS los que declaren esa
+        // extensión, no solo el primero — mismo criterio de seguridad que el routing PDF.
+        var matches = _allParsers
+            .Where(p => p.SupportedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0)
         {
-            parser = ResolvePdfParser(filePath);
-            return parser is not null;
+            _logger.LogWarning("No hay parser registrado para la extensión '{Extension}'", extension);
+            return FileParserResolution.NotFound;
         }
 
-        // Para otros formatos: routing por extensión (un parser por extensión)
-        parser = _allParsers.FirstOrDefault(p =>
-            p.SupportedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase));
+        if (matches.Count > 1)
+        {
+            var conflictingIds = matches.Select(p => p.GetType().Name).ToList();
+            _logger.LogError(
+                "Múltiples parsers coinciden con la extensión '{Extension}' de {FilePath}: {Parsers}. " +
+                "No se elige ninguno automáticamente.",
+                extension, filePath, string.Join(", ", conflictingIds));
+            return FileParserResolution.Ambiguous(conflictingIds);
+        }
 
-        if (parser is null)
-            _logger.LogWarning("No hay parser registrado para la extensión '{Extension}'", extension);
-
-        return parser is not null;
+        return FileParserResolution.Resolved(matches[0]);
     }
 
-    private IFileParser? ResolvePdfParser(string filePath)
+    private FileParserResolution ResolvePdfParser(string filePath)
     {
         if (_pdfParsers.Count == 0)
         {
             _logger.LogWarning("No hay parsers PDF registrados");
-            return null;
+            return FileParserResolution.NotFound;
         }
 
         IReadOnlyList<string> lines;
@@ -85,29 +107,42 @@ internal sealed class FileParserFactory : IFileParserFactory
         catch (Exception ex)
         {
             _logger.LogError(ex, "No se pudo leer el PDF {FilePath} para routing", filePath);
-            return null;
+            return FileParserResolution.NotFound;
         }
 
-        // Intentamos cada parser en orden de registro.
-        // El orden en DI determina la prioridad si dos parsers hacen CanHandle=true.
-        foreach (var statementParser in _pdfParsers)
+        // Se evalúan TODOS los parsers PDF, no el primero que matchea. Si más de uno
+        // reconoce el mismo documento es una ambigüedad real (ver doc-comment de la
+        // clase), no un empate a resolver por prioridad implícita de registro en DI.
+        var candidates = _pdfParsers.Where(p => p.CanHandle(lines)).ToList();
+
+        if (candidates.Count == 0)
         {
-            if (statementParser.CanHandle(lines))
-            {
-                _logger.LogInformation(
-                    "PDF {FilePath} → parser '{ParserId}'",
-                    Path.GetFileName(filePath),
-                    statementParser.ParserId);
-                return (IFileParser)statementParser;
-            }
+            _logger.LogWarning(
+                "Ningún parser reconoció el PDF {FilePath}. " +
+                "Parsers intentados: {Parsers}",
+                Path.GetFileName(filePath),
+                string.Join(", ", _pdfParsers.Select(p => p.ParserId)));
+
+            return FileParserResolution.NotFound;
         }
 
-        _logger.LogWarning(
-            "Ningún parser reconoció el PDF {FilePath}. " +
-            "Parsers intentados: {Parsers}",
-            Path.GetFileName(filePath),
-            string.Join(", ", _pdfParsers.Select(p => p.ParserId)));
+        if (candidates.Count > 1)
+        {
+            var conflictingIds = candidates.Select(p => p.ParserId).ToList();
+            _logger.LogError(
+                "Múltiples parsers PDF reconocen {FilePath}: {Parsers}. " +
+                "No se elige ninguno automáticamente — la importación de este archivo debe abortar.",
+                Path.GetFileName(filePath), string.Join(", ", conflictingIds));
 
-        return null;
+            return FileParserResolution.Ambiguous(conflictingIds);
+        }
+
+        var selected = candidates[0];
+        _logger.LogInformation(
+            "PDF {FilePath} → parser '{ParserId}'",
+            Path.GetFileName(filePath),
+            selected.ParserId);
+
+        return FileParserResolution.Resolved((IFileParser)selected);
     }
 }

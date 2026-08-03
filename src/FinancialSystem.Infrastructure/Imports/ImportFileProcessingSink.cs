@@ -21,7 +21,24 @@ internal sealed class ImportFileProcessingSink(
         var totalSw = Stopwatch.StartNew();
         logger.LogInformation("Import file detected: {FilePath}", filePath);
 
-        if (!parserFactory.TryGetParser(filePath, out var parser) || parser is null)
+        var resolution = parserFactory.ResolveParser(filePath);
+
+        if (resolution.Status == FileParserResolutionStatus.Ambiguous)
+        {
+            // Fail fast (Patch 0050): más de un parser reconoce el mismo archivo — nunca
+            // se elige uno automáticamente, porque el riesgo es procesar datos financieros
+            // reales con el parser equivocado sin ningún error visible.
+            logger.LogError(
+                "Import abortado para {FilePath}: múltiples parsers coinciden ({Parsers}). " +
+                "No se elige ninguno automáticamente.",
+                filePath,
+                string.Join(", ", resolution.ConflictingParserIds));
+            return ImportRunResult.Failure(
+                $"Múltiples parsers coinciden con este archivo ({string.Join(", ", resolution.ConflictingParserIds)}). " +
+                "Importación abortada para evitar procesarlo con el parser incorrecto — revisar manualmente.");
+        }
+
+        if (resolution.Status == FileParserResolutionStatus.NotFound || resolution.Parser is null)
         {
             logger.LogWarning(
                 "No parser registered for {FilePath} (extension {Extension})",
@@ -30,6 +47,9 @@ internal sealed class ImportFileProcessingSink(
             return ImportRunResult.Failure(
                 $"No hay parser registrado para la extensión '{Path.GetExtension(filePath)}'.");
         }
+
+        // Invariante de FileParserResolution: Status == Resolved implica Parser no-null.
+        var parser = resolution.Parser!;
 
         logger.LogInformation(
             "Selected parser {ParserType} for {FilePath}",
