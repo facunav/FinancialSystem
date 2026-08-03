@@ -44,7 +44,21 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
 
         public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
         {
-            var result = await _importer.ImportAsync(filePath, ct);
+            BbvaBankStatementImporter.ImportResult result;
+            try
+            {
+                result = await _importer.ImportAsync(filePath, ct);
+            }
+            catch (Exception ex)
+            {
+                // Patch 0055 (Epic P, unificación de contrato): mismo criterio que
+                // BbvaDebitCardEnrichmentHandler e ImportFileProcessingSink ante una
+                // falla al abrir/leer el archivo -- se reporta como Failure explícito
+                // (Outcome=Failed), no como una corrida "exitosa con advertencias".
+                _logger.LogError(ex, "[BbvaBankStatement] Error leyendo el archivo: {File}", filePath);
+                return ImportRunResult.Failure($"No se pudo abrir el archivo: {ex.Message}")
+                    with { ParserUsed = nameof(BbvaBankStatementParser) };
+            }
 
             if (result.HasErrors)
             {

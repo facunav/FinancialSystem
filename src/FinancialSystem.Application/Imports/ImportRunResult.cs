@@ -38,6 +38,23 @@ namespace FinancialSystem.Application.Imports;
 /// fallas antes de resolver un parser). FileImportRouter reclasifica centralizadamente
 /// Processed a ProcessedWithWarnings cuando Failed/Skipped &gt; 0, para distinguir
 /// "Exitosa" de "Exitosa con advertencias" sin que cada handler lo decida por su cuenta.
+///
+/// CONTRATO ÚNICO PARA TODO IFileImportHandler (Patch 0055 — unificación): cualquier
+/// implementación, existente o futura, debe seguir estas reglas sin excepciones
+/// particulares:
+///   1. Un archivo que no pudo siquiera abrirse/leerse/parsearse es Failure() -- nunca un
+///      ImportRunResult "normal" con Failed/Diagnostics simulando una advertencia (ver el
+///      fix de BbvaBankStatementImportHandler, que antes de este patch era la única
+///      excepción a esta regla).
+///   2. Inserted/Duplicates/Failed/Skipped son siempre los 4 contadores crudos y nada
+///      más -- ningún handler decide Outcome=ProcessedWithWarnings por su cuenta, eso lo
+///      centraliza FileImportRouter.ClassifyOutcome a partir de esos mismos 4 números.
+///   3. Un handler puede delegar a su propio try/catch interno (como
+///      BbvaDebitCardEnrichmentHandler o ImportFileProcessingSink) o dejar que la
+///      excepción escale sin capturarla -- FileImportRouter.RouteAsync ya normaliza
+///      cualquier excepción no controlada de un handler en Outcome=Failed (Patch 0053).
+///      Ninguna de las dos formas es "la incorrecta"; lo que nunca debe pasar es que un
+///      handler capture la excepción y la convierta en un resultado que parezca exitoso.
 /// </summary>
 public sealed record ImportRunResult(
     int Inserted,

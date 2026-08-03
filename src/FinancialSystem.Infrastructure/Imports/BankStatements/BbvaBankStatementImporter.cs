@@ -63,24 +63,17 @@ public sealed class BbvaBankStatementImporter
         var sw = Stopwatch.StartNew();
         _logger.LogInformation("Iniciando importación BBVA XLS: {File}", filePath);
 
-        if (!File.Exists(filePath))
-        {
-            _logger.LogError("Archivo no encontrado: {File}", filePath);
-            return Failure(filePath, "Archivo no encontrado", sw.Elapsed);
-        }
-
-        // ── Paso 1: Leer XLS ──────────────────────────────────────
-        string?[][] rawRows;
-        string sheetName;
-        try
-        {
-            (rawRows, sheetName) = _reader.ReadFirstSheet(filePath);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error leyendo XLS: {File}", filePath);
-            return Failure(filePath, $"No se pudo abrir el archivo: {ex.Message}", sw.Elapsed);
-        }
+        // Patch 0055 (Epic P, unificación de contrato): ya no se valida existencia ni
+        // legibilidad acá -- IImportFileValidator (Patch 0051) ya lo garantiza antes de
+        // que FileImportRouter ofrezca el archivo a este handler. Si de todos modos falla
+        // la lectura (ej. el archivo se borró justo después de validarse, o el contenido
+        // no es un XLS/XLSX real pese a pasar la validación de "forma"), la excepción se
+        // deja propagar -- BbvaBankStatementImportHandler la captura y la reporta como
+        // ImportRunResult.Failure, igual que BbvaDebitCardEnrichmentHandler y
+        // ImportFileProcessingSink ante el mismo tipo de falla. Antes, este método la
+        // convertía en un ImportResult "silencioso" con ParseErrors=1 que el pipeline
+        // terminaba clasificando como Exitosa con advertencias, nunca como Fallida.
+        var (rawRows, sheetName) = _reader.ReadFirstSheet(filePath);
 
         // ── Paso 2: Parsear ───────────────────────────────────────
         var parseResult = _parser.Parse(rawRows, filePath, sheetName);
@@ -199,10 +192,4 @@ public sealed class BbvaBankStatementImporter
             "a {Count} movimientos (número '{AccountNumber}')",
             financialAccountId, statements.Count, accountNumber);
     }
-
-    private static ImportResult Failure(string filePath, string error, TimeSpan elapsed) =>
-        new(filePath,
-            Inserted: 0, Duplicates: 0, ParseErrors: 1, SkippedRows: 0,
-            Diagnostics: [error],
-            Elapsed: elapsed);
 }
