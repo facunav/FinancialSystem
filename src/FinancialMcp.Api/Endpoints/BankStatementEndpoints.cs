@@ -9,7 +9,9 @@ public static class BankStatementEndpoints
 {
     public static IEndpointRouteBuilder MapBankStatementEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/bank-statements").WithTags("BankStatements");
+        // Patch 0059 (PATCH-010): asignar cuenta financiera modifica un movimiento --
+        // protegido con la misma infraestructura del Patch 0058.
+        var group = app.MapGroup("/api/bank-statements").WithTags("BankStatements").RequireAuthorization();
 
         group.MapPut("/{id:guid}/financial-account", AssignFinancialAccount);
 

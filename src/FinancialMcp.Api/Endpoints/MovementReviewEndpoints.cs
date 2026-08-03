@@ -16,7 +16,10 @@ public static class MovementReviewEndpoints
 {
     public static IEndpointRouteBuilder MapMovementReviewEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/movement-review").WithTags("MovementReview");
+        // Patch 0059 (PATCH-010): reclasificar movimientos y su endpoint de sugerencia
+        // asociado operan sobre datos financieros -- protegidos con la misma
+        // infraestructura del Patch 0058.
+        var group = app.MapGroup("/api/movement-review").WithTags("MovementReview").RequireAuthorization();
 
         group.MapPost("/classify", Classify);
         group.MapGet("/effective-date-suggestion", GetEffectiveDateSuggestion);

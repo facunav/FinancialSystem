@@ -9,7 +9,9 @@ public static class TransactionEndpoints
 {
     public static IEndpointRouteBuilder MapTransactionEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/transactions").WithTags("Transactions");
+        // Patch 0059 (PATCH-010): asignar cuenta financiera modifica un movimiento --
+        // protegido con la misma infraestructura del Patch 0058.
+        var group = app.MapGroup("/api/transactions").WithTags("Transactions").RequireAuthorization();
 
         group.MapPut("/{id:guid}/financial-account", AssignFinancialAccount);
 

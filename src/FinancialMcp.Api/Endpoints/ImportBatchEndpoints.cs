@@ -11,7 +11,11 @@ public static class ImportBatchEndpoints
 
     public static IEndpointRouteBuilder MapImportBatchEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/imports").WithTags("Imports");
+        // Patch 0059 (PATCH-010): protegido con la infraestructura de autenticación del
+        // Patch 0058 -- subir archivos e iniciar importaciones, y consultar el historial,
+        // son operaciones sobre datos financieros. RequireAuthorization() en el grupo
+        // cubre las 3 rutas sin repetir la llamada por endpoint (ver ApiKeyAuthenticationHandler).
+        var group = app.MapGroup("/api/imports").WithTags("Imports").RequireAuthorization();
 
         group.MapGet("/history", GetHistory);
         group.MapGet("/{id:guid}", GetById);

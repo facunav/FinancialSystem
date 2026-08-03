@@ -35,7 +35,9 @@ public static class MovementsEndpoints
 
     public static IEndpointRouteBuilder MapMovementsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/movements").WithTags("Movements");
+        // Patch 0059 (PATCH-010): consultar movimientos es una operación sobre datos
+        // financieros -- protegido con la misma infraestructura del Patch 0058.
+        var group = app.MapGroup("/api/movements").WithTags("Movements").RequireAuthorization();
 
         group.MapGet("/", GetAll);
 
