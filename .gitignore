@@ -361,3 +361,10 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Patch 0049 — Backup y restauración de la base de datos.
+# Los archivos de backup y la configuración local con credenciales/rutas reales
+# no deben subirse al repositorio. El template versionado es backup.env.example.
+/backups/
+scripts/backup/backup.env
+*.dump
