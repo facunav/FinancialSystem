@@ -1,8 +1,11 @@
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
+using FinancialSystem.Api.Imports;
 using FinancialSystem.Application;
 using FinancialSystem.Infrastructure;
 using FinancialSystem.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +18,12 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // todavía -- se agrega acá, ya integrada al pipeline, para que los próximos patches solo
 // necesiten agregar .RequireAuthorization() a los grupos de endpoints correspondientes.
 builder.Services.AddApiKeyAuthentication(builder.Configuration);
+
+// Patch 0063 (PATCH-014): límite explícito y configurable para POST /api/imports (ver
+// ImportUploadOptions) -- se aplica más abajo, después de app.Build(), acotado a esa
+// ruta puntual (no afecta al resto de la API).
+builder.Services.Configure<ImportUploadOptions>(
+    builder.Configuration.GetSection(ImportUploadOptions.SectionName));
 
 var app = builder.Build();
 
@@ -36,6 +45,31 @@ app.UseHttpsRedirection();
 // ningún endpoint -- ver ApiKeyAuthenticationHandler para el porqué.
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Patch 0063 (PATCH-014): límite de tamaño explícito para POST /api/imports, sin
+// depender del default implícito de Kestrel (~28.6 MB) ni del de FormOptions (128 MB)
+// -- ninguno de los dos queda documentado en ningún archivo de configuración hoy.
+// IHttpMaxRequestBodySizeFeature es el mecanismo estándar de ASP.NET Core para
+// Minimal APIs (RequestSizeLimitAttribute es exclusivo del pipeline de filtros de
+// MVC, no aplica acá) -- se fija por request, antes de que el endpoint lea el form,
+// así que tiene que registrarse antes de MapImportBatchEndpoints en el pipeline.
+// Acotado a POST /api/imports puntualmente: el resto de la API sigue con el límite
+// por default del servidor, sin cambios de comportamiento fuera de este endpoint.
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsPost(context.Request.Method) &&
+        context.Request.Path.StartsWithSegments("/api/imports", StringComparison.OrdinalIgnoreCase))
+    {
+        var maxRequestBodySizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxRequestBodySizeFeature is not null && !maxRequestBodySizeFeature.IsReadOnly)
+        {
+            var uploadOptions = context.RequestServices.GetRequiredService<IOptions<ImportUploadOptions>>();
+            maxRequestBodySizeFeature.MaxRequestBodySize = uploadOptions.Value.MaxFileSizeBytes;
+        }
+    }
+
+    await next();
+});
 
 app.MapGet("/", () => Results.Redirect("/dashboard.html"));
 

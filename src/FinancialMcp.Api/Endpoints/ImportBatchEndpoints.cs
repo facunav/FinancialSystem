@@ -1,6 +1,8 @@
 using FinancialSystem.Api.DTOs;
+using FinancialSystem.Api.Imports;
 using FinancialSystem.Application.Imports;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FinancialSystem.Api.Endpoints;
 
@@ -39,21 +41,38 @@ public static class ImportBatchEndpoints
     // conservarlo, así que se borra siempre en el finally, haya salido bien o mal la
     // importación. El borrado es best-effort: si falla, se loguea y no afecta el
     // resultado ya devuelto al handler.
+    //
+    // Patch 0063 (PATCH-014): validaciones agregadas antes de tocar disco o llamar al
+    // router -- tamaño, extensión y "magic bytes" -- en ese orden, todas devolviendo el
+    // mismo Results.BadRequest(string) que ya usaba este endpoint (sin excepciones sin
+    // controlar, sin cambiar el formato de respuesta). Nada de esto toca
+    // IFileImportRouter/los parsers/los importadores: si un archivo pasa las cuatro
+    // validaciones, el resto del flujo es exactamente el mismo que antes del patch.
 
     private static async Task<IResult> Upload(
         IFormFile? file,
         [FromServices] IFileImportRouter router,
         [FromServices] IWebHostEnvironment env,
+        [FromServices] IOptions<ImportUploadOptions> uploadOptions,
         [FromServices] ILogger<Program> logger,
         CancellationToken ct)
     {
         if (file is null || file.Length == 0)
             return Results.BadRequest("Debe adjuntarse un archivo.");
 
+        var maxFileSizeBytes = uploadOptions.Value.MaxFileSizeBytes;
+        if (file.Length > maxFileSizeBytes)
+            return Results.BadRequest(
+                $"El archivo supera el tamaño máximo permitido ({maxFileSizeBytes / (1024 * 1024)} MB).");
+
         var extension = Path.GetExtension(file.FileName);
         if (!FileIngestionOptions.WatchedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
             return Results.BadRequest(
                 $"Extensión no soportada '{extension}'. Soportadas: {string.Join(", ", FileIngestionOptions.WatchedExtensions)}");
+
+        if (!await HasExpectedSignatureAsync(file, extension, ct))
+            return Results.BadRequest(
+                $"El contenido del archivo no coincide con la extensión declarada ('{extension}').");
 
         // Path.GetFileName descarta cualquier componente de directorio que venga en el
         // nombre — el archivo llega de un cliente no confiable, no se puede combinar
@@ -86,6 +105,23 @@ public static class ImportBatchEndpoints
         {
             TryDeleteTempImport(savedPath, tempDir, logger);
         }
+    }
+
+    // Lee solo el encabezado del archivo (8 bytes alcanza para las cuatro extensiones
+    // soportadas) para chequear la firma sin cargar el archivo completo en memoria.
+    // IFormFile ya llega completamente bufferizado (Length está disponible de forma
+    // sincrónica más arriba) -- OpenReadStream() puede volver a abrirse más abajo
+    // (CopyToAsync) de forma independiente, sin depender de la posición en la que
+    // quede este stream.
+    private static async Task<bool> HasExpectedSignatureAsync(IFormFile file, string extension, CancellationToken ct)
+    {
+        const int headerLength = 8;
+        var header = new byte[headerLength];
+
+        await using var stream = file.OpenReadStream();
+        var read = await stream.ReadAsync(header.AsMemory(0, headerLength), ct);
+
+        return ImportFileSignatureValidator.HasExpectedSignature(extension, header.AsSpan(0, read));
     }
 
     private static void TryDeleteTempImport(string filePath, string tempDir, ILogger logger)
