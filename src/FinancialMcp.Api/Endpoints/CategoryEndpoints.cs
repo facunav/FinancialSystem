@@ -1,6 +1,7 @@
 using FinancialSystem.Api.DTOs;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Domain.Entities;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,13 +45,20 @@ public static class CategoryEndpoints
     }
 
     // POST /api/categories
+    //
+    // Patch 0065 (PATCH-016): validación migrada a FluentValidation (ver
+    // Validation/CreateCategoryRequestValidator.cs) -- mismo formato de respuesta que
+    // antes (Results.BadRequest(string)), sin lanzar excepciones por errores de
+    // validación.
     private static async Task<IResult> Create(
         [FromBody] CreateCategoryRequest request,
+        [FromServices] IValidator<CreateCategoryRequest> validator,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.DisplayName))
-            return Results.BadRequest("displayName es requerido");
+        var validation = await validator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            return Results.BadRequest(string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)));
 
         // Name se deriva del DisplayName normalizado si no se provee
         var name = string.IsNullOrWhiteSpace(request.Name)
@@ -83,12 +91,22 @@ public static class CategoryEndpoints
     }
 
     // PUT /api/categories/{id}
+    //
+    // Patch 0065 (PATCH-016): validación migrada a FluentValidation (ver
+    // Validation/UpdateCategoryRequestValidator.cs) -- un DisplayName nulo/vacío sigue
+    // sin ser un error acá (significa "no cambiar este campo"), solo se valida su
+    // longitud máxima cuando se provee un valor.
     private static async Task<IResult> Update(
         Guid id,
         [FromBody] UpdateCategoryRequest request,
+        [FromServices] IValidator<UpdateCategoryRequest> validator,
         [FromServices] IApplicationDbContext db,
         CancellationToken ct)
     {
+        var validation = await validator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            return Results.BadRequest(string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)));
+
         var category = await db.Categories.FindAsync([id], ct);
         if (category is null) return Results.NotFound();
 

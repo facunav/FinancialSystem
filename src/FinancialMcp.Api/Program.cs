@@ -2,9 +2,11 @@ using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
 using FinancialSystem.Api.ErrorHandling;
 using FinancialSystem.Api.Imports;
+using FinancialSystem.Api.Validation;
 using FinancialSystem.Application;
 using FinancialSystem.Infrastructure;
 using FinancialSystem.Infrastructure.Persistence;
+using FluentValidation;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 
@@ -30,6 +32,13 @@ builder.Services.Configure<ImportUploadOptions>(
 // (ver ApiProblemDetailsServiceCollectionExtensions) -- app.UseExceptionHandler() más
 // abajo es lo que efectivamente activa el manejo global.
 builder.Services.AddApiProblemDetails(builder.Environment);
+
+// Patch 0065 (PATCH-016): módulo piloto de validación estructurada (FluentValidation),
+// acotado a Categories -- ver src/FinancialMcp.Api/Validation/README.md.
+// AddValidatorsFromAssemblyContaining registra automáticamente todo IValidator<T>
+// declarado en este assembly (hoy: CreateCategoryRequestValidator y
+// UpdateCategoryRequestValidator); no hace falta registrar cada uno a mano.
+builder.Services.AddValidatorsFromAssemblyContaining<CreateCategoryRequestValidator>();
 
 var app = builder.Build();
 

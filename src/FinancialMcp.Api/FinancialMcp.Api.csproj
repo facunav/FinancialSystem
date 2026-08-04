@@ -9,6 +9,10 @@
 
   <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+    <!-- Patch 0065 (PATCH-016): mecanismo de validación estructurada, piloto en el
+         módulo Categories. Ver src/FinancialMcp.Api/Validation. -->
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
   </ItemGroup>
 
   <ItemGroup>
