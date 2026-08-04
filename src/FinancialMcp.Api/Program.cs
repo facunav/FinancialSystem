@@ -1,5 +1,6 @@
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
+using FinancialSystem.Api.ErrorHandling;
 using FinancialSystem.Api.Imports;
 using FinancialSystem.Application;
 using FinancialSystem.Infrastructure;
@@ -25,7 +26,24 @@ builder.Services.AddApiKeyAuthentication(builder.Configuration);
 builder.Services.Configure<ImportUploadOptions>(
     builder.Configuration.GetSection(ImportUploadOptions.SectionName));
 
+// Patch 0064 (PATCH-015): registro de ProblemDetails para excepciones no controladas
+// (ver ApiProblemDetailsServiceCollectionExtensions) -- app.UseExceptionHandler() más
+// abajo es lo que efectivamente activa el manejo global.
+builder.Services.AddApiProblemDetails(builder.Environment);
+
 var app = builder.Build();
+
+// Patch 0064 (PATCH-015): manejo global de excepciones -- primera línea del pipeline,
+// para envolver TODO lo que viene después (autenticación, archivos estáticos,
+// endpoints). UseExceptionHandler() sin delegate propio, combinado con
+// AddProblemDetails() de arriba, ya devuelve por default de ASP.NET Core un
+// ProblemDetails (RFC 9457) con status 500 para cualquier excepción no controlada --
+// sin exponer stack traces ni nombres de clases salvo en Development (ver
+// ApiProblemDetailsServiceCollectionExtensions). No reemplaza ni duplica ninguna
+// respuesta de error ya controlada por los endpoints (Results.BadRequest/NotFound/
+// Problem siguen exactamente igual -- este middleware nunca llega a intervenir en
+// esos casos, porque no son excepciones).
+app.UseExceptionHandler();
 
 await DatabaseMigrationExtensions.ApplyMigrationsAsync(app.Services, "FinancialMcp.Api");
 
