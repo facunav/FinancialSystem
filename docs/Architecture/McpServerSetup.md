@@ -35,20 +35,34 @@ escriben en sus propias tablas de memoria (`Investigations`, `InvestigationRefer
 
 ## Cómo configurar el connection string
 
-`hosts/FinancialSystem.McpServer/appsettings.json` (y
-`appsettings.Development.json` para el entorno de desarrollo) ya traen:
+Desde el Patch 0062 (PATCH-013), `hosts/FinancialSystem.McpServer/appsettings.json` y
+`appsettings.Development.json` ya **no** traen una credencial real -- solo el nombre
+lógico vacío, para que el archivo siga documentando qué clave espera la aplicación sin
+versionar ningún dato sensible:
 
 ```json
 "ConnectionStrings": {
-  "Postgres": "Host=localhost;Port=5432;Database=financialsystem;Username=postgres;Password=postgres"
+  "Postgres": ""
 }
 ```
 
-Para apuntar a otra base, la forma más simple es editar ese valor directamente. Si
-preferís no tocar el archivo (por ejemplo en CI o para no versionar credenciales
-distintas), `Host.CreateApplicationBuilder` ya incluye el proveedor de variables de
-entorno estándar de .NET, así que también se puede pisar con una variable de entorno
-sin cambiar código:
+Si `ConnectionStrings:Postgres` llega vacío o ausente, `AddInfrastructure` (compartida
+por los tres hosts -- API, Worker y este servidor MCP) falla rápido al arrancar con un
+`InvalidOperationException` explicando cómo configurarlo, en vez de fallar más
+adelante con un error críptico de Npgsql. Ver
+`docs/Architecture/ConfiguracionCredenciales.md` para el detalle completo (User
+Secrets, variables de entorno, por qué ningún host depende de una credencial
+embebida) -- acá solo el resumen aplicado a este host:
+
+**Desarrollo, vía User Secrets** (no queda en ningún archivo versionado):
+
+```bash
+cd hosts/FinancialSystem.McpServer
+dotnet user-secrets set "ConnectionStrings:Postgres" "Host=localhost;Port=5432;Database=financialsystem;Username=...;Password=..."
+```
+
+**Cualquier entorno, vía variable de entorno estándar de .NET** (`Host.CreateApplicationBuilder`
+ya incluye el proveedor correspondiente, sin código adicional):
 
 ```bash
 export ConnectionStrings__Postgres="Host=mi-host;Port=5432;Database=financialsystem;Username=...;Password=..."

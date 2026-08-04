@@ -10,6 +10,11 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Patch 0062 (PATCH-013): habilita "dotnet user-secrets" para este host, mismo
+         mecanismo que ya tenían FinancialMcp.Api y FinancialSystem.Worker. Sin esto,
+         Host.CreateApplicationBuilder no agrega el proveedor de User Secrets en
+         Development, aunque el resto de la resolución de configuración sí funcione. -->
+    <UserSecretsId>dotnet-FinancialSystem.McpServer-207f8875-e8ab-4c0b-8c34-10f6eeea8259</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

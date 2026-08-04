@@ -35,8 +35,25 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Postgres")
-            ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.");
+        // Patch 0062 (PATCH-013): el nombre lógico ("Postgres") y el único punto de
+        // lectura (GetConnectionString) no cambian -- ningún consumidor de
+        // IApplicationDbContext se entera de este cambio. Lo que cambia es que
+        // appsettings.json versionado ya no trae una credencial real (queda "" -- ver
+        // docs/Architecture/ConfiguracionCredenciales.md): antes, "" no es null, así que
+        // el "?? throw" original solo cubría la clave ausente, no una clave presente con
+        // valor vacío -- ese caso pasaba en silencio una cadena de conexión vacía a
+        // Npgsql. IsNullOrWhiteSpace cubre ambos casos con el mismo mensaje accionable.
+        // La resolución en sí sigue siendo 100% responsabilidad de IConfiguration/
+        // ConfigurationBuilder (appsettings -> User Secrets en Development -> variables
+        // de entorno estándar de .NET, p.ej. ConnectionStrings__Postgres, que ya tienen
+        // prioridad sobre lo anterior) -- sin ningún mecanismo manual o paralelo acá.
+        var connectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException(
+                "Connection string 'Postgres' no está configurada. Definila vía User Secrets " +
+                "(dotnet user-secrets set \"ConnectionStrings:Postgres\" \"...\") en desarrollo, o vía la " +
+                "variable de entorno ConnectionStrings__Postgres en cualquier otro entorno -- ver " +
+                "docs/Architecture/ConfiguracionCredenciales.md.");
 
         services.AddDbContextFactory<AppDbContext>(options =>
             options.UseNpgsql(
