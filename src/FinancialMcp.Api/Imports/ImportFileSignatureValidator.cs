@@ -12,8 +12,14 @@ namespace FinancialSystem.Api.Imports;
 /// aplica una heurística (ausencia de bytes nulos en el encabezado) en vez de una
 /// firma exacta, documentado explícitamente para no sugerir que valida el contenido
 /// CSV en sí (eso lo sigue haciendo el parser correspondiente, sin cambios).
+///
+/// Pública (no internal): FinancialMcp.Api.Tests es un assembly separado y necesita
+/// llamar a HasExpectedSignature directamente en sus tests unitarios -- a diferencia
+/// de los servicios internos de Infrastructure (con interfaz pública propia, cubiertos
+/// con fakes en los tests), esta clase no tiene una interfaz separada de la que
+/// depender.
 /// </summary>
-internal static class ImportFileSignatureValidator
+public static class ImportFileSignatureValidator
 {
     private static readonly byte[] PdfSignature = "%PDF"u8.ToArray();
 

@@ -13,9 +13,12 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
     <!-- IConfigurationBuilder.AddInMemoryCollection (usado por
          PostgresConnectionStringConfigurationTests) no viene incluido en
-         Microsoft.EntityFrameworkCore.InMemory. Es un paquete de configuración
-         aparte. -->
-    <PackageReference Include="Microsoft.Extensions.Configuration.Memory" Version="9.0.0" />
+         Microsoft.EntityFrameworkCore.InMemory. Microsoft.Extensions.Configuration.Memory
+         (paquete separado) dejó de publicarse para versiones recientes. El
+         provider "Memory" quedó incorporado directamente al paquete núcleo
+         Microsoft.Extensions.Configuration, que es lo que efectivamente hace falta
+         referenciar acá. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <PrivateAssets>all</PrivateAssets>
