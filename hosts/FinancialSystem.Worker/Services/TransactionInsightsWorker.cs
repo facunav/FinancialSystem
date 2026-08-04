@@ -58,27 +58,35 @@ public sealed class TransactionInsightsWorker(
                 .Select(TransactionSummary.FromTransaction)
                 .ToList();
 
-            var provider = options.Provider.Trim();
-            var runOpenAi = provider.Equals(InsightsProviders.OpenAI, StringComparison.OrdinalIgnoreCase)
-                || provider.Equals(InsightsProviders.Both, StringComparison.OrdinalIgnoreCase);
-            var runOllama = provider.Equals(InsightsProviders.Ollama, StringComparison.OrdinalIgnoreCase)
-                || provider.Equals(InsightsProviders.Both, StringComparison.OrdinalIgnoreCase);
+            // Patch 0066 (PATCH-017): la selección de proveedor vive en
+            // InsightsProviderSelector -- único punto de esta decisión, para que sea
+            // testeable sin depender de BackgroundService/PeriodicTimer. Mismo
+            // comportamiento que antes para "OpenAI"/"Ollama"/"Both"/valor
+            // desconocido; "None" es nuevo (antes cualquier valor no reconocido,
+            // incluido uno vacío, caía en la misma rama de warning que un typo real).
+            var selection = InsightsProviderSelector.Resolve(options.Provider);
 
-            if (!runOpenAi && !runOllama)
+            if (selection.IsDisabled)
+            {
+                logger.LogInformation("Transaction insights generation disabled (Provider=None)");
+                return;
+            }
+
+            if (selection.IsUnrecognized)
             {
                 logger.LogWarning(
-                    "Unknown InsightsWorker:Provider '{Provider}'. Use OpenAI, Ollama, or Both.",
+                    "Unknown InsightsWorker:Provider '{Provider}'. Use None, Ollama, OpenAI, or Both.",
                     options.Provider);
                 return;
             }
 
-            if (runOpenAi)
+            if (selection.RunOpenAi)
             {
                 var openAi = scope.ServiceProvider.GetRequiredService<IOpenAIFinancialInsightsService>();
                 await RunOpenAiInsightsAsync(openAi, summaries, cancellationToken);
             }
 
-            if (runOllama)
+            if (selection.RunOllama)
             {
                 var ollama = scope.ServiceProvider.GetRequiredService<IFinancialInsightsService>();
                 await RunOllamaInsightsAsync(ollama, summaries, cancellationToken);
