@@ -29,6 +29,15 @@ namespace FinancialSystem.Api.Endpoints;
 /// rango) que ya usa MovementsEndpoints.GetAll -- el Centro de Auditoría (audit.html)
 /// siempre va a mandarlos explícitos desde su selector de período; el fallback solo
 /// cubre a un caller que no los mande (compatibilidad, no una decisión de negocio).
+///
+/// Patch 0061 (PATCH-012): grupo protegido con RequireAuthorization() (mismo esquema
+/// "ApiKey" de los Patches 0058/0059/0060), incluyendo /status y /report pese a ser
+/// de solo lectura -- misma decisión ya tomada para datos maestros en el Patch 0060
+/// (aplicación single-user, sin ningún consumidor legítimo que deba leer sin
+/// autenticarse). /report además genera un reporte completo (BuildFullAuditReportAsync,
+/// recorre movimientos/clasificaciones/sugerencias del período) -- por sí solo, ya
+/// calificaría como "operación sensible" bajo el criterio del Patch 0061 aunque no
+/// escriba nada.
 /// </summary>
 public static class AuditEndpoints
 {
@@ -38,7 +47,7 @@ public static class AuditEndpoints
 
     public static IEndpointRouteBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/audit").WithTags("Audit");
+        var group = app.MapGroup("/api/audit").WithTags("Audit").RequireAuthorization();
 
         group.MapGet("/status", GetStatus);
         group.MapGet("/report", GetReport);

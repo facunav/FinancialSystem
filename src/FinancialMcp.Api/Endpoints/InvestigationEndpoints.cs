@@ -4,11 +4,17 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FinancialSystem.Api.Endpoints;
 
+/// <summary>
+/// Patch 0061 (PATCH-012): grupo protegido con RequireAuthorization() (mismo esquema
+/// "ApiKey" de los Patches 0058/0059/0060) -- iniciar una investigación es una
+/// operación de escritura, misma categoría que las ya protegidas en Importaciones/
+/// Movimientos (Patch 0059) y datos maestros (Patch 0060).
+/// </summary>
 public static class InvestigationEndpoints
 {
     public static IEndpointRouteBuilder MapInvestigationEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/investigations").WithTags("Investigations");
+        var group = app.MapGroup("/api/investigations").WithTags("Investigations").RequireAuthorization();
 
         group.MapPost("/", Create);
 

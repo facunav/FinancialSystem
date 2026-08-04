@@ -17,12 +17,19 @@ namespace FinancialSystem.Api.Endpoints;
 ///
 /// Patch 0047: agrega GetDashboardSummary — único consumidor: el resumen de
 /// conteos que muestra dashboard.html (sección 8 de la épica). Sin escrituras.
+///
+/// Patch 0061 (PATCH-012): ambos grupos (/api/planning-months y /api/planning-items)
+/// quedan protegidos con RequireAuthorization() (mismo esquema "ApiKey" de los
+/// Patches 0058/0059/0060), incluyendo las lecturas (GetByPeriod, GetLatest,
+/// GetSummary, GetMatchSuggestions, GetDashboardSummary) -- misma decisión ya tomada
+/// para datos maestros en el Patch 0060 (aplicación single-user, sin consumidor
+/// legítimo que deba leer planificación sin autenticarse).
 /// </summary>
 public static class PlanningEndpoints
 {
     public static IEndpointRouteBuilder MapPlanningEndpoints(this IEndpointRouteBuilder app)
     {
-        var months = app.MapGroup("/api/planning-months").WithTags("PlanningMonths");
+        var months = app.MapGroup("/api/planning-months").WithTags("PlanningMonths").RequireAuthorization();
 
         months.MapPost("/", CreateMonth);
         months.MapGet("/", GetByPeriod);
@@ -33,7 +40,7 @@ public static class PlanningEndpoints
         months.MapGet("/{id:guid}/match-suggestions", GetMatchSuggestions);
         months.MapGet("/dashboard-summary", GetDashboardSummary);
 
-        var items = app.MapGroup("/api/planning-items").WithTags("PlanningItems");
+        var items = app.MapGroup("/api/planning-items").WithTags("PlanningItems").RequireAuthorization();
 
         items.MapPost("/", AddItem);
         items.MapPut("/{id:guid}", EditItem);
