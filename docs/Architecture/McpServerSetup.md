@@ -12,9 +12,9 @@ exclusivamente operativo (cómo correrlo), no de diseño.
 `FinancialSystem.McpServer` (`hosts/FinancialSystem.McpServer/`) es un servidor
 [Model Context Protocol](https://modelcontextprotocol.io/) que expone el estado del
 sistema financiero (movimientos, clasificación, cuentas, categorías, contrapartes,
-documentación del proyecto e investigaciones/memoria) como *tools* que un cliente
-MCP (Claude Desktop, Claude Code, un cliente propio, etc.) puede invocar durante una
-conversación. Es un proceso .NET independiente, separado de `FinancialMcp.Api` y de
+auditoría, documentación del proyecto e investigaciones/memoria) como *tools* que un
+cliente MCP (Claude Desktop, Claude Code, un cliente propio, etc.) puede invocar
+durante una conversación. Es un proceso .NET independiente, separado de `FinancialMcp.Api` y de
 `FinancialSystem.Worker` — comparte con ellos la misma base de datos y las mismas
 capas `Application`/`Infrastructure`, pero no depende de que ningún otro host esté
 corriendo.
@@ -185,8 +185,16 @@ registra) hay que resolverlo contra la documentación de esa herramienta.
 
 ## Qué herramientas expone actualmente
 
+**Actualización (PATCH-031):** inventario re-verificado contra el código (todo archivo
+bajo `Tools/` con `[McpServerToolType]`) y contra `ToolRegistry.cs` (sincronizado en
+PATCH-024, con verificación automática por reflexión — `ToolRegistrySyncTests`). Son
+**32 tools en 9 clases**. Esta sección tenía 4 tools sin documentar (`AuditDatabase`,
+`ListAvailableTools`, `AskProjectKnowledge`, `AskInvestigation`) — agregadas abajo.
+
 Todas de solo lectura salvo las marcadas (**escribe memoria**) — ésas escriben en las
-tablas de investigaciones del propio MCP, nunca en datos financieros.
+tablas de investigaciones del propio MCP, nunca en datos financieros. Las marcadas
+(**usa Ollama**) hacen una llamada a un modelo local vía `ILocalAiService` — ver
+"Qué fases del roadmap..." más abajo.
 
 **`FinancialTools.cs`** (preexistente al roadmap de ADR-006):
 * `GetMonthlySummary` — resumen financiero de un mes (ingresos, gastos, ahorro, cantidad de movimientos).
@@ -209,11 +217,19 @@ tablas de investigaciones del propio MCP, nunca en datos financieros.
 * `FindSuspiciousMovements` — grupos de movimientos sospechosos detectados por el motor existente.
 * `FindMisclassifiedMovements` — movimientos ya clasificados que podrían estar mal clasificados, con motivos.
 
+**`AuditDatabaseTools.cs`** (faltaba en esta guía):
+* `AuditDatabase` — ejecuta todas las auditorías existentes (sospechosos, mal
+  clasificados, pendientes, investigaciones) para el mes en curso y devuelve un
+  resumen único; no detecta nada nuevo, combina lo que ya calculan
+  `FindSuspiciousMovements`/`FindMisclassifiedMovements` y las investigaciones.
+
 **`ProjectTools.cs`**:
 * `ListArchitectureDocuments` — lista los documentos de `docs/Architecture/`.
 * `ReadArchitectureDocument` — contenido crudo de un documento de esa carpeta.
 * `SearchDocumentation` — búsqueda literal (sin IA) en toda `docs/`.
 * `GetRoadmap` — contenido de `docs/RoadMaps/FinancialMcp-vNext.md`.
+* `AskProjectKnowledge` (**usa Ollama**, faltaba en esta guía) — responde una pregunta
+  sobre el proyecto usando el roadmap + el catálogo de tools como contexto.
 
 **`ConfigurationTools.cs`**:
 * `ListFinancialAccounts`, `ListCategories`, `ListCounterparties` — catálogos completos.
@@ -227,6 +243,15 @@ tablas de investigaciones del propio MCP, nunca en datos financieros.
 * `UpdateInvestigationStatus` (**escribe memoria**) — cambia el estado de una investigación.
 * `GetInvestigation` — detalle completo de una investigación (datos, referencias, hallazgos).
 * `SearchInvestigations` — busca investigaciones por status/tag/texto.
+* `AskInvestigation` (**usa Ollama**, faltaba en esta guía) — responde una pregunta
+  sobre una investigación puntual, con la investigación y sus movimientos
+  referenciados como contexto real.
+
+**`RegistryTools.cs`** (faltaba en esta guía):
+* `ListAvailableTools` — devuelve este mismo catálogo de tools (nombre, descripción,
+  cuándo usarla, parámetros, qué devuelve), agrupado por clase — mismo contenido de
+  `ToolRegistry.Tools` formateado para lectura, útil para descubrir qué tools existen
+  sin haber leído el código.
 
 ## Qué fases del roadmap ya están implementadas y cuáles no
 
@@ -237,12 +262,15 @@ tablas de investigaciones del propio MCP, nunca en datos financieros.
 | Fase 1 — Investigación básica | `Ping`/`Version`/`Health`/`SearchMovements`/`GetMovement`/`ExplainMovement` | ✅ Implementada, más `ExplainClassification` (no estaba en el listado original de la ADR). |
 | Fase 1.5 — Conocimiento del proyecto | Que el LLM lea `docs/` sin repetir explicaciones | ✅ Implementada como `ProjectTools.cs` — los nombres de tool difieren de los sugeridos originalmente en la ADR (`SearchDocs`/`ReadAdr`/`ExplainConcept`/`GetArchitecture`); lo implementado es `ListArchitectureDocuments`/`ReadArchitectureDocument`/`SearchDocumentation`/`GetRoadmap`. |
 | Fase 2 — Auditoría | Encontrar inconsistencias automáticamente | ⚠️ Parcial: `FindSuspiciousMovements` y `FindMisclassifiedMovements` existen (en `AuditTools.cs`); `FindDuplicates` y `FindUnclassified`, mencionadas en la ADR, no están implementadas. |
-| Fase 3 — IA local (Ollama) | Tools puntuales que usen Ollama | ❌ No implementada. No hay ninguna tool del MCP que use Ollama/OpenAI hoy (la configuración `Ollama`/`OpenAI` en `appsettings.json` la usa `FinancialSystem.Worker`, no el MCP). |
+| Fase 3 — IA local (Ollama) | Tools puntuales que usen Ollama | ⚠️ Implementada, con alcance distinto al sugerido — **corregido PATCH-031**: sí hay tools del MCP que usan Ollama (`AskProjectKnowledge` en `ProjectTools.cs`, `AskInvestigation` en `InvestigationTools.cs`, ambas vía `ILocalAiService`/`OllamaLocalAiService`); ninguna se llama `AnalyzeMovement`/`AnalyzeMonth`/`SuggestCategory`/`SuggestCounterparty` como sugería el texto original de la ADR — mismo patrón de "nombres distintos a los sugeridos" que ya se documentó para Fase 1.5. |
 | Fase 4 — Memoria | Investigaciones persistentes | Reemplazada por su propia ADR — ver ADR-007 abajo. |
 
 `ConfigurationTools.cs` no está listada explícitamente en ninguna fase de ADR-006 —
 se agregó como complemento natural de Fase 1 (catálogos de configuración) sin encajar
-literalmente en el texto original de la ADR.
+literalmente en el texto original de la ADR. Lo mismo aplica a `AuditDatabaseTools.cs`
+(complemento de Fase 2, combina auditorías existentes en un resumen) y a
+`RegistryTools.cs` (tool de meta-descubrimiento del propio catálogo, sin equivalente
+en ninguna fase de la ADR original) — **agregado (PATCH-031)**.
 
 ### ADR-007 (memoria/investigaciones)
 
@@ -251,5 +279,5 @@ literalmente en el texto original de la ADR.
 | Fase 1 — Sin memoria | Tools de solo lectura ya construidas | ✅ (es la Fase 1/1.5/2 de ADR-006 de arriba). |
 | Fase 2 — Persistencia de investigaciones | Tablas `Investigation`/`InvestigationReference`/`InvestigationFinding` | ✅ Implementada. |
 | Fase 3 — Tools de investigaciones | Crear/actualizar/consultar investigaciones | ✅ Implementada (`InvestigationTools.cs`, ver arriba). |
-| Fase 4 — Integración con Ollama | Ollama como contexto adicional sobre lo que ya devuelven las tools | ❌ No implementada. |
-| Fase 5 — Auditorías inteligentes | Nuevas señales de auditoría basadas en el historial de investigaciones | ❌ No implementada. |
+| Fase 4 — Integración con Ollama | Ollama como contexto adicional sobre lo que ya devuelven las tools | ✅ Implementada — **corregido PATCH-031**: `AskInvestigation` (`InvestigationTools.cs`) arma el contexto (investigación completa + movimientos referenciados) y hace una única llamada a `ILocalAiService.AskAsync`, sin escribir nada ni encadenar llamadas. |
+| Fase 5 — Auditorías inteligentes | Nuevas señales de auditoría basadas en el historial de investigaciones | 📋 No implementada — confirmado (PATCH-031). `AuditDatabaseTools.AuditDatabase` ya incluye un conteo de investigaciones abiertas/resueltas junto al resto de los hallazgos, pero es una superficie compartida en el mismo reporte, no una señal de auditoría *derivada* del historial de investigaciones (mismo matiz documentado en ADR-007 §6). |

@@ -288,7 +288,7 @@ flowchart LR
     end
 
     subgraph MCP["FinancialSystem.McpServer (stdio)"]
-        T[Tools: SystemTools, MovementTools,<br/>AuditTools, ConfigurationTools,<br/>ProjectTools, InvestigationTools,<br/>FinancialTools, RegistryTools]
+        T[Tools: SystemTools, MovementTools,<br/>AuditTools, AuditDatabaseTools,<br/>ConfigurationTools, ProjectTools,<br/>InvestigationTools, FinancialTools,<br/>RegistryTools]
         O[AskProjectKnowledge /<br/>AskInvestigation]
     end
 
@@ -320,7 +320,8 @@ Puntos clave del diagrama:
 
 ## 4. Todas las tools
 
-Ocho clases, `[McpServerToolType]`, descubiertas automáticamente por
+Nueve clases (**corregido PATCH-031** — decía "ocho", faltaba `AuditDatabaseTools`,
+ver 4.9), `[McpServerToolType]`, descubiertas automáticamente por
 `WithToolsFromAssembly()` (no hace falta registrar nada a mano en `Program.cs` para
 agregar una tool nueva a una clase existente, ni una clase nueva en
 `hosts/FinancialSystem.McpServer/Tools/`).
@@ -484,7 +485,8 @@ origen que explicar."
 
 Ninguna regla de detección nueva vive acá: son la exposición, en texto estructurado,
 de dos señales que ya existen en el dominio. Comparten el mismo límite de 90 días que
-`MovementTools`.
+`MovementTools`. Para ejecutar ambas juntas (más pendientes e investigaciones) en una
+sola llamada sobre el mes en curso, ver `AuditDatabase` (sección 4.9).
 
 #### `FindSuspiciousMovements`
 
@@ -919,6 +921,41 @@ usarla, parámetros y qué devuelve, tool por tool.
 
 ---
 
+### 4.9. `AuditDatabaseTools` (agregada — PATCH-031)
+
+**Faltaba documentarse en esta guía.** Existe desde antes del Patch 0077 (que la
+encontró ausente también de `ToolRegistry`, ver el llamado arriba), pero nunca había
+tenido su propia entrada acá con el mismo formato que el resto de las tools.
+
+Cero reglas nuevas: desde el Patch 0027 (previo a esta guía), toda la orquestación
+vive en `AuditReportService.BuildFullAuditReportAsync` (`Infrastructure`) — la misma
+clase que usa el Centro de Auditoría de `FinancialMcp.Api` (`audit.html`), para que
+ambos produzcan exactamente el mismo resultado sin duplicar lógica. Esta clase solo
+calcula el período por defecto (mes en curso) y delega.
+
+#### `AuditDatabase`
+
+**¿Para qué sirve?** Ejecuta en una sola llamada todas las auditorías que ya existen
+por separado — `FindSuspiciousMovements`, `FindMisclassifiedMovements`, movimientos
+pendientes (vía `IMovementsQueryService`) e investigaciones abiertas/resueltas — y
+devuelve un resumen único con totales, el detalle de cada categoría de problema y una
+conclusión. No detecta nada nuevo: combina lo que esas tools/servicios ya calculan.
+
+**¿Cuándo usarla?** Se necesita un panorama completo del mes en curso sin llamar a
+`FindSuspiciousMovements`/`FindMisclassifiedMovements`/`SearchInvestigations` por
+separado — por ejemplo, como primer chequeo al empezar una sesión de trabajo.
+
+**Ejemplo:** `AuditDatabase()`, sin parámetros — siempre usa el mes en curso, no
+acepta `from`/`to`.
+
+**Resultado esperado:** texto con secciones "Resumen" (movimientos analizados,
+pendientes, clasificados, grupos sospechosos, mal clasificados, investigaciones
+abiertas/resueltas), "Problemas encontrados" (desglosado en Clasificaciones dudosas /
+Grupos sospechosos / Pendientes / Investigaciones abiertas) y una "Conclusión" final
+("No se detectaron problemas." o la cantidad total que requiere revisión).
+
+---
+
 ## 5. Flujos reales
 
 Esta es la parte más importante de la guía: no alcanza con conocer cada tool por
@@ -942,6 +979,10 @@ MCP) y hay que verificar que quedó bien antes de confiar en las métricas del p
 3. **`FindMisclassifiedMovements(from, to)`** — de lo que ya quedó clasificado
    (normalmente por matching automático contra el historial), ver qué candidatos a
    reclasificar aparecen.
+   *(Atajo: si el rango que interesa es el mes en curso, `AuditDatabase()` —
+   sección 4.9 — hace los pasos 2 y 3 en una sola llamada, junto con pendientes e
+   investigaciones. No reemplaza a `SearchMovements` del paso 1 ni permite elegir
+   un rango distinto al mes actual.)*
 4. **`ExplainMovement(sourceEntityType, sourceId)`** — para cada movimiento puntual
    que llamó la atención en los pasos 2 o 3, ver su detalle estructurado completo.
 5. **`ExplainClassification(sourceEntityType, sourceId)`** — si la duda es
@@ -1049,6 +1090,7 @@ investigación puntual — la diferencia es el contexto que arma la tool: acá e
 | Entender por qué un movimiento quedó clasificado así | `ExplainClassification` | Es la única tool enfocada específicamente en el origen (`ProcessingSource`) de la clasificación, sin mezclar el resto del detalle del movimiento. |
 | Auditar un período por duplicados o splits | `FindSuspiciousMovements` | Expone directamente `ISuspicionDetector`, el motor que ya usa la pantalla Movimientos — no hay otra tool que cubra esto. |
 | Encontrar candidatos a reclasificar en un período ya clasificado | `FindMisclassifiedMovements` | Es la única tool que compara clasificación actual contra historial de descripciones + defaults de contraparte. |
+| Tener un panorama completo del mes en curso sin llamar varias tools de auditoría | `AuditDatabase` | Es la única tool que combina sospechosos + mal clasificados + pendientes + investigaciones en una sola llamada — a cambio de no aceptar un rango de fechas propio (agregada — PATCH-031). |
 | Saber qué cuentas/categorías/contrapartes existen, para poder filtrar por Id | `ListFinancialAccounts` / `ListCategories` / `ListCounterparties` | Son los únicos catálogos completos — sin ellos, hay que adivinar los Ids. |
 | Ver los defaults de clasificación de una contraparte puntual | `GetCounterparty` | Es la única tool que expone `Default*` — `ListCounterparties` no los incluye. |
 | Preguntar cuánto gasté/ahorré en un mes | `GetMonthlySummary` | Responde exactamente esa pregunta agregada, sin tener que sumar movimientos a mano. |
@@ -1228,7 +1270,11 @@ se verificó contra el código descrito en la sección 4.
 
 `ConfigurationTools` no está listada en ninguna fase de ADR-006 — se agregó como
 complemento natural de Fase 1 (catálogos de configuración) sin encajar literalmente
-en el texto original de la ADR.
+en el texto original de la ADR. Lo mismo aplica a `AuditDatabaseTools` (sección 4.9,
+**agregada PATCH-031**) — complemento de Fase 2 que combina auditorías existentes en
+un resumen único, sin encajar tampoco en el texto original de la ADR — y a
+`RegistryTools`, sin equivalente en ninguna fase (es una tool de meta-descubrimiento
+del propio catálogo).
 
 ### ADR-007 — memoria del MCP
 
