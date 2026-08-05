@@ -154,18 +154,10 @@ public sealed class ImportsFolderWatcherHostedService(
         }
     }
 
-    private string ResolveImportsPath()
-    {
-        var configured = options.Value.ImportsPath;
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return Path.Combine(AppContext.BaseDirectory, "imports");
-        }
-
-        return Path.IsPathRooted(configured)
-            ? configured
-            : Path.Combine(hostEnvironment.ContentRootPath, configured);
-    }
+    // Patch 0067 (PATCH-018): algoritmo movido a ImportsPathResolver.Resolve para que
+    // sea testeable de forma aislada -- mismo comportamiento que antes, sin cambios.
+    private string ResolveImportsPath() =>
+        ImportsPathResolver.Resolve(options.Value.ImportsPath, AppContext.BaseDirectory, hostEnvironment.ContentRootPath);
 
     private static IEnumerable<string> EnumerateWatchedFiles(string importsPath)
     {

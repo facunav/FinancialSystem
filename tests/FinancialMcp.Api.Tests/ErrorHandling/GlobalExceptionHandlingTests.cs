@@ -71,7 +71,7 @@ public class GlobalExceptionHandlingTests
         // ruta de archivo local, ver el endpoint de prueba más abajo) debe aparecer en
         // ningún lado del body, ni siquiera fuera de los campos esperados.
         Assert.DoesNotContain(nameof(InvalidOperationException), raw);
-        Assert.DoesNotContain("Colo", raw);
+        Assert.DoesNotContain("no-debe-exponerse", raw);
         Assert.DoesNotContain("at FinancialMcp.Api.Tests", raw);
     }
 
@@ -86,7 +86,7 @@ public class GlobalExceptionHandlingTests
         var root = body.RootElement;
 
         Assert.Equal(typeof(InvalidOperationException).FullName, root.GetProperty("exceptionType").GetString());
-        Assert.Contains("Colo", root.GetProperty("exceptionMessage").GetString());
+        Assert.Contains("no-debe-exponerse", root.GetProperty("exceptionMessage").GetString());
         Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("stackTrace").GetString()));
     }
 
@@ -153,7 +153,7 @@ public class GlobalExceptionHandlingTests
                         // natural inferible al pasarlo como el Delegate que espera MapGet.
                         endpoints.MapGet("/throws", (Func<IResult>)(() =>
                             throw new InvalidOperationException(
-                                "Fallo simulado leyendo C:\\Colo\\Programas\\FinancialMcp\\secreto.txt")));
+                                "Fallo simulado leyendo /ruta/interna/no-debe-exponerse/secreto.txt")));
                     });
                 });
             });
