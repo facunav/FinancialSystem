@@ -24,7 +24,7 @@ Contiene:
 Contratos (interfaces), comandos, queries, handlers, y opciones de configuración. Depende solo de Domain.
 
 Contiene:
-* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del motor de sugerencias de clasificación, ver `docs/Architecture/PRS1analisismotorsugerencias.md`. Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período). PR-S4: `MovementsQueryService` lo consume directamente (no a través de `IReviewEngine`) para completar `MovementView.Suggestions` — todavía sin consumidor en `movements.html`.
+* Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del motor de sugerencias de clasificación, ver `docs/Archive/PRS1analisismotorsugerencias.md` (archivado en PATCH-026 — funcionalidad ya implementada). Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período). PR-S4: `MovementsQueryService` lo consume directamente (no a través de `IReviewEngine`) para completar `MovementView.Suggestions` — todavía sin consumidor en `movements.html`.
 * Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4).
 * Opciones de configuración (`ReviewEngineOptions`, `FileIngestionOptions`, `OllamaOptions`, `OpenAIOptions`, `InsightsWorkerOptions`).
 
@@ -40,7 +40,7 @@ Contiene:
 * `AppDbContext` + configuraciones EF Core por entidad.
 * Parsers de importación (PDF, XLS, CSV, Excel legacy).
 * `MovementLoader`, `SuspicionDetector`, `ReviewEngine`. PR-L4: `MatchScorer` y las 4 implementaciones de `IMatchingRule` se retiraron junto con el backend de matching Legacy.
-* `ClassificationSuggestionService` (PR-S3, carpeta `Suggestions/`, reemplaza a `NullClassificationSuggestionService` de PR-S2) — implementación de `IClassificationSuggestionService`, solo lectura, sin IA. Dos heurísticas: exact match de descripción normalizada contra el historial de `ClassifiedMovements` (PR-S3), y enriquecimiento vía `Counterparty.DefaultCategoryId`/`DefaultMovementType`/`DefaultFinancialImpact` cuando la primera ya sugirió una contraparte (PR-S7). Sin abstracción de "regla" todavía — ver `docs/Architecture/PRS6analisissiguienteheuristica.md`, sección 5.
+* `ClassificationSuggestionService` (PR-S3, carpeta `Suggestions/`, reemplaza a `NullClassificationSuggestionService` de PR-S2) — implementación de `IClassificationSuggestionService`, solo lectura, sin IA. Dos heurísticas: exact match de descripción normalizada contra el historial de `ClassifiedMovements` (PR-S3), y enriquecimiento vía `Counterparty.DefaultCategoryId`/`DefaultMovementType`/`DefaultFinancialImpact` cuando la primera ya sugirió una contraparte (PR-S7). Sin abstracción de "regla" todavía — ver `docs/Archive/PRS6analisissiguienteheuristica.md` (archivado en PATCH-026), sección 5.
 * `FinancialMetricsService`.
 * Registro de DI (`AddInfrastructure`).
 
