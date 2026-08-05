@@ -112,7 +112,7 @@
 | Épica | Estado | Qué implementó realmente | Qué quedó fuera |
 |---|---|---|---|
 | **Review & Classification Engine v2** | Archivada | Motor de matching original (`IMatchScorer`, `IMatchingRule`) construido y luego retirado por completo al no tener consumidor real tras la Épica K. | — (correctamente archivado en `docs/Archive/`) |
-| **K — Nueva UX de clasificación** | Terminada | `movements.html` como pantalla central de clasificación, sin matching contra Excel. | Un punto de su propio documento de diseño (`ClassificationUX.md`) quedó desactualizado. |
+| **K — Nueva UX de clasificación** | Terminada | `movements.html` como pantalla central de clasificación, sin matching contra Excel. | — (su documento de diseño, `ClassificationUX.md`, se actualizó en PATCH-032). |
 | **I — Confiabilidad de importación** | Activa | `ImportBatch`, idempotencia por contenido en el pipeline catch-all. | Corrección del fingerprint Visa/Mastercard (I7) — pendiente. |
 | **J — Modelo de Cuentas Financieras** | Terminada (núcleo) | `FinancialAccount` como entidad explícita, CRUD completo (`accounts.html`), asignación automática de cuenta al importar cuando el número resuelve sin ambigüedad (banco y tarjeta). | Asignación manual solo para el caso restante: archivo sin número de cuenta o con ambigüedad. |
 | **L — Visibilidad de cobertura** | Terminada | Badge de pendientes en el nav; endpoint de cobertura de clasificación + indicador visual de 3 estados en el Dashboard (PATCH-019/PATCH-020). | — |
@@ -152,7 +152,7 @@
 - `docs/Architecture/SimplificacionModeloClasificacion.md` (PATCH-028) — consolida `analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md` y `redisenoflujofuncional.md` (archivados), insumo base para la futura Épica N.
 - `docs/Decisions/ADR-001` a `ADR-006`, `docs/Architecture/Decisions/ADR-007` — ver sección 6 para vigencia de cada uno.
 - `docs/Epics/EpicaI-Importacion.md`, `EpicaO-ImportacionManual.md`, `Epica-PlanificacionMensual.md` — diseño de épicas concretas (con notas de estado desactualizadas en algunos casos, contenido técnico vigente).
-- `docs/UX/ClassificationUX.md` — vigente salvo un punto puntual sobre el campo de cuenta financiera.
+- `docs/UX/ClassificationUX.md` — vigente; actualizado en PATCH-032 (campo de cuenta financiera de solo lectura, resolución automática de Épica J, controles del modal de clasificación no documentados hasta ahora).
 - `docs/UserGuide/McpUserGuide.md` — vigente, catálogo de tools un paso atrás del código.
 
 **Históricos (tienen valor de referencia, no de verdad activa):**
