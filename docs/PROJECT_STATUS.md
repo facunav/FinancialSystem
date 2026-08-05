@@ -25,7 +25,7 @@
 | **Importación** (`Application/Imports`, `Infrastructure/Imports`, Worker watcher) | Ingerir extractos de banco/tarjeta y volcarlos a movimientos normalizados | En desarrollo | Alta en banco/catch-all genérico; media en tarjeta de crédito PDF (riesgo conocido de ruteo Visa↔Mastercard) | Domain (`BankStatement`, `Transaction`, `ImportBatch`) |
 | **Revisión y clasificación** (`Application/Review`, `Infrastructure/Review`, `Domain/Review`) | Detectar duplicados/sospechosos y clasificar movimientos en 4 dimensiones | Terminado | Alta (núcleo bien probado); `SuspicionDetector`/`ReviewEngine` sin tests propios | Domain, motor de sugerencias |
 | **Motor de sugerencias** (`Application/Suggestions`, `Infrastructure/Suggestions`) | Sugerir clasificación por historial + valores por defecto de contraparte | Terminado | Alta — la mejor cobertura de tests del repositorio | Historial de `ClassifiedMovement` |
-| **Centro de Auditoría** (`Infrastructure/Audit`, tools MCP `AuditTools`/`AuditDatabaseTools`, `audit.html`) | Detectar movimientos sospechosos/mal clasificados y dar visibilidad del estado de los datos | Terminado (funcionalmente) | Experimental — cero tests, sin documento de diseño propio, recalcula resultados redundantemente | Review, Suggestions, Movements |
+| **Centro de Auditoría** (`Infrastructure/Audit`, tools MCP `AuditTools`/`AuditDatabaseTools`, `audit.html`) | Detectar movimientos sospechosos/mal clasificados y dar visibilidad del estado de los datos | Terminado (funcionalmente) | Experimental — cero tests, recalcula resultados redundantemente. Documento de diseño: `docs/Architecture/CentroDeAuditoria.md` (PATCH-033). | Review, Suggestions, Movements |
 | **Planificación Mensual** (`Application/Planning`, `Infrastructure/Planning`, `Domain/Planning`, `planning.html`) | Presupuesto simple mes a mes, independiente del historial de movimientos | Terminado | Alta (tests fieles a la épica) | Ninguna dura; matching opcional de solo lectura contra `ClassifiedMovement` |
 | **Cuentas financieras** (`FinancialAccount`, `accounts.html`) | Modelar cuentas (banco/tarjeta/inversión/efectivo) como entidad explícita | Terminado (núcleo) | Alta | — |
 | **Categorías y Contrapartes** (`Category`, `Counterparty`, `counterparties.html`) | Catálogos administrables usados en la clasificación | Terminado | Alta (CRUD simple, sin capa Application propia) | — |
@@ -124,7 +124,7 @@
 | **U — UX de un clic** | Terminada (mayormente) | Chips de confianza, aceptación rápida de sugerencias. | Algunos puntos menores no verificados en detalle. |
 | **UI — Arquitectura de UI compartida** | Pendiente | — no iniciada. | Extracción de CSS/JS común (`wwwroot/shared/`) — el problema que buscaba resolver empeoró con más páginas agregadas. |
 | **Planificación Mensual** | Terminada | Modelo completo, CRUD, copia de mes, resumen. | Su propio documento de alcance excluye explícitamente el matching contra Movimientos — se implementó igual (scope creep documentado, no destructivo). |
-| **Centro de Auditoría** (sin épica formal) | Terminada (funcionalmente) | Reporte completo de sospechosos/mal clasificados, flujo de revisión humana. | Ningún documento de diseño — brecha documental, no funcional. |
+| **Centro de Auditoría** (sin épica formal) | Terminada (funcionalmente) | Reporte completo de sospechosos/mal clasificados, flujo de revisión humana. | — (documentado en PATCH-033, `docs/Architecture/CentroDeAuditoria.md`). |
 
 ---
 
@@ -154,6 +154,7 @@
 - `docs/Epics/EpicaI-Importacion.md`, `EpicaO-ImportacionManual.md`, `Epica-PlanificacionMensual.md` — diseño de épicas concretas (con notas de estado desactualizadas en algunos casos, contenido técnico vigente).
 - `docs/UX/ClassificationUX.md` — vigente; actualizado en PATCH-032 (campo de cuenta financiera de solo lectura, resolución automática de Épica J, controles del modal de clasificación no documentados hasta ahora).
 - `docs/UserGuide/McpUserGuide.md` — vigente, catálogo de tools un paso atrás del código.
+- `docs/Architecture/CentroDeAuditoria.md` (PATCH-033, nuevo) — arquitectura, flujo y limitaciones reales del Centro de Auditoría; no tenía documento de diseño propio hasta este patch.
 
 **Históricos (tienen valor de referencia, no de verdad activa):**
 - `docs/Archive/*` — correctamente archivado.
@@ -289,7 +290,7 @@ Según el plan de implementación priorizado ya elaborado (`FinancialMcp-Plan-Im
 1. **Integridad de datos e importación** — corregir el ruteo Visa/Mastercard y la fragilidad del `ExternalId` posicional de `BankStatement`. Es lo primero porque compromete la premisa fundacional del sistema (banco/tarjeta como fuente de verdad).
 2. **Seguridad y endurecimiento** — autenticación de la API y saneamiento de credenciales. Bloqueante para cualquier uso fuera de una máquina local.
 3. **Consistencia y confianza del producto** — ~~indicador de cobertura de clasificación~~ (hecho, Épica L), guía de UX para pago de tarjeta (parcial, ver ADR-003; falta el caso general de Épica N), ~~corrección de los documentos que hoy mienten sobre su propio estado (ADR-007;~~ `vNext.md` corregido en PATCH-029; `PROJECT_STATUS.md` sincronizado en PATCH-0078A; **ADR-005 y ADR-007 corregidos en PATCH-030**).
-4. **Consolidación documental** — archivar lo obsoleto, actualizar lo vigente, documentar el Centro de Auditoría (hoy sin ningún documento de diseño).
+4. **Consolidación documental** — archivar lo obsoleto, actualizar lo vigente. ~~documentar el Centro de Auditoría (hoy sin ningún documento de diseño)~~ — Hecho (PATCH-033): `docs/Architecture/CentroDeAuditoria.md`.
 5. **Cobertura de tests en módulos críticos** — Auditoría e Investigaciones antes de seguir construyendo sobre ellos.
 6. **Deuda de arquitectura y performance** — eliminar la recomputación redundante del Centro de Auditoría, homogeneizar el patrón CQRS.
 7. **Consolidación de frontend** — infraestructura de CSS/JS compartida entre las 8 páginas.
@@ -312,7 +313,8 @@ Módulos terminados:    Revisión y clasificación, Motor de sugerencias, Planif
 Módulos en desarrollo: Importación de tarjeta de crédito (riesgo de ruteo conocido),
                         Dashboard/Frontend (sin infraestructura compartida)
 
-Módulos experimentales: Centro de Auditoría (sin tests ni documentación de diseño),
+Módulos experimentales: Centro de Auditoría (sin tests; documentación de diseño ya
+                        existe, ver docs/Architecture/CentroDeAuditoria.md),
                         Investigaciones/memoria del MCP (sin tests), Worker de insights (sin consumidor)
 
 Épicas cerradas:        K, J (núcleo), L, O, S, U, Planificación Mensual
