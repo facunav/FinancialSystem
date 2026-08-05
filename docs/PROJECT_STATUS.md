@@ -146,7 +146,7 @@
 
 **Fuente de verdad (vigentes, consultar primero):**
 - **`docs/PROJECT_STATUS.md`** (este documento) — estado real y punto de entrada.
-- `docs/RoadMaps/FinancialMcp-vNext.md` — roadmap por épicas (I-O); desactualizado en varios puntos puntuales (ver sección 5), pero sigue siendo el documento de planificación activo.
+- `docs/RoadMaps/FinancialMcp-vNext.md` — roadmap por épicas (I-O); actualizado en PATCH-029 contra el estado real del código (antes marcaba J/L/O como planificadas y varios problemas de la sección 6 como abiertos, estando ya resueltos).
 - `docs/Architecture/Architecture.md` — arquitectura formal (una línea puntual desactualizada, resto vigente).
 - `docs/Architecture/EstadoMVP.md` — estado del MVP original, reemplaza explícitamente a tres documentos anteriores.
 - `docs/Architecture/SimplificacionModeloClasificacion.md` (PATCH-028) — consolida `analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md` y `redisenoflujofuncional.md` (archivados), insumo base para la futura Épica N.
@@ -288,7 +288,7 @@ Según el plan de implementación priorizado ya elaborado (`FinancialMcp-Plan-Im
 
 1. **Integridad de datos e importación** — corregir el ruteo Visa/Mastercard y la fragilidad del `ExternalId` posicional de `BankStatement`. Es lo primero porque compromete la premisa fundacional del sistema (banco/tarjeta como fuente de verdad).
 2. **Seguridad y endurecimiento** — autenticación de la API y saneamiento de credenciales. Bloqueante para cualquier uso fuera de una máquina local.
-3. **Consistencia y confianza del producto** — indicador de cobertura de clasificación, guía de UX para pago de tarjeta, corrección de los documentos que hoy mienten sobre su propio estado (ADR-007, `vNext.md`).
+3. **Consistencia y confianza del producto** — indicador de cobertura de clasificación, guía de UX para pago de tarjeta, corrección de los documentos que hoy mienten sobre su propio estado (ADR-007; `vNext.md` corregido en PATCH-029).
 4. **Consolidación documental** — archivar lo obsoleto, actualizar lo vigente, documentar el Centro de Auditoría (hoy sin ningún documento de diseño).
 5. **Cobertura de tests en módulos críticos** — Auditoría e Investigaciones antes de seguir construyendo sobre ellos.
 6. **Deuda de arquitectura y performance** — eliminar la recomputación redundante del Centro de Auditoría, homogeneizar el patrón CQRS.

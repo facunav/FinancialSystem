@@ -56,7 +56,7 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 
 ## 5. Documentación a actualizar
 
-- **`docs/RoadMaps/FinancialMcp-vNext.md`** → Actualizar: es el único documento que debería quedar como fuente de verdad del roadmap; hoy marca la Épica J como no iniciada cuando ya tiene código (M5). Absorber el contenido de este documento y reemplazar las secciones 7-9.
+- ~~**`docs/RoadMaps/FinancialMcp-vNext.md`** → Actualizar: es el único documento que debería quedar como fuente de verdad del roadmap; hoy marca la Épica J como no iniciada cuando ya tiene código (M5). Absorber el contenido de este documento y reemplazar las secciones 7-9.~~ **Hecho (PATCH-029)**: secciones 1, 4-9 actualizadas contra el estado real del código (Épicas I/J/L/O corregidas, problemas 1/2/4/6/7 de la sección 6 marcados resueltos).
 - **`docs/UX/ClassificationUX.md`** → Actualizar §1.2 (describe un `<select>` editable de cuenta que ya es de solo lectura) y §1.5 (dice que "Cuentas" no existe, cuando `accounts.html` ya existe).
 - ~~**`docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md`** → Unificar en un solo documento (misma conclusión repetida tres veces), insumo de la futura Épica N — no se toca hasta que esa épica se retome.~~ **Hecho (PATCH-028)**: consolidados en `docs/Architecture/SimplificacionModeloClasificacion.md`; los tres originales se archivaron en `docs/Archive/`.
 
@@ -73,8 +73,8 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 2. ~~**Idempotencia de tarjeta PDF** (bug #2)~~ — ✅ Hecho. Etapa 0 completa.
 3. ~~**Fix de XSS en dashboard** (bug #3)~~ — ✅ Hecho. Etapa 0 completa.
 4. ~~**Badge de pendientes de clasificar**~~ — ✅ Hecho.
-5. **Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.
+5. ~~**Actualizar `FinancialMcp-vNext.md`** para que vuelva a ser la única fuente de verdad, incorporando el estado real confirmado en este documento.~~ — ✅ Hecho (PATCH-029).
 
-**Con los 4 puntos técnicos cerrados, el MVP tal como fue definido está funcionalmente completo.** Solo queda el punto 5 (consolidación documental) — no es código, es dejar `FinancialMcp-vNext.md` alineado con este documento. Todo lo demás mencionado en esta conversación es backlog de producto futuro, no camino a un MVP usable.
+**Con los 5 puntos cerrados, el MVP tal como fue definido está funcionalmente completo y su documentación de roadmap está alineada con el código.** Todo lo demás mencionado en esta conversación es backlog de producto futuro, no camino a un MVP usable.
 
 No implementé nada, no modifiqué ningún archivo del repositorio.
