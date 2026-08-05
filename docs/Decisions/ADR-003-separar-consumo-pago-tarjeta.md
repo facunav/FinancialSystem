@@ -1,6 +1,6 @@
 # ADR-003 — Separar consumo de tarjeta y pago de resumen usando `FinancialImpact.DebtPayment`
 
-**Estado:** Aceptado (modelo de dominio ya implementado; UX de guía todavía pendiente — ver Consecuencias).
+**Estado:** Aceptado e implementado (modelo de dominio + UX de guía en `movements.html`, ver Actualización).
 
 ## Contexto
 
@@ -21,3 +21,10 @@ Se confirma `FinancialImpact.DebtPayment` + `Counterparty` de tipo `OwnCard` com
 * No hay cambio de código de dominio pendiente por este ADR — es un ADR de confirmación, no de construcción.
 * La UX de clasificación (Épica K, PR K4, ver `docs/UX/ClassificationUX.md`) debe: (a) al elegir una `Counterparty` de tipo `OwnCard`, pre-cargar `FinancialImpact = DebtPayment` usando `DefaultFinancialImpact`; (b) idealmente, detectar heurísticamente un débito bancario cuyo monto coincide con el total de un resumen de tarjeta del mismo período y sugerir la clasificación — esto último queda fuera de alcance de K4 y se anota como posible refinamiento futuro, no como requisito de esta ADR.
 * Mientras la UX no guíe esta clasificación, el riesgo de doble conteo persiste por error humano, no por defecto del sistema — cualquier reporte futuro de "doble conteo" debe primero verificar cómo se clasificó el pago del resumen antes de asumir un bug de dominio.
+
+## Actualización (PATCH-022)
+
+Implementada la guía de UX del punto (a) de "Consecuencias": al elegir en `movements.html` una `Counterparty` cuyo `Type` es `OwnCard`, se precarga `FinancialImpact = DebtPayment` en el modal de clasificación manual, de forma inmediata y editable (ver
+`docs/Architecture/PrecargaOwnCardDebtPayment.md`).
+
+**Desvío deliberado respecto del texto original de este ADR**: en vez de leer `Counterparty.DefaultFinancialImpact` (que requeriría que cada contraparte `OwnCard` tenga ese campo configurado a mano — el alta rápida de contraparte desde `movements.html` no lo pide, así que en la práctica quedaría casi siempre vacío y la guía de UX no se activaría), la precarga se dispara directamente sobre `Counterparty.Type == OwnCard`. Es una realización más confiable de la misma intención: no depende de una configuración manual adicional por contraparte, y sigue sin introducir ningún mecanismo de dominio nuevo — reutiliza el mismo campo `Type`/`CounterpartyType.OwnCard` que esta ADR ya confirmó como el mecanismo estándar. `DefaultFinancialImpact` queda intacto y sigue funcionando igual que antes para el motor de sugerencias (`ClassificationSuggestionService`), sin relación con este cambio.

@@ -591,6 +591,13 @@
                         <option value="DebtPayment">Pago de deuda</option>
                         <option value="Income">Ingreso</option>
                     </select>
+                    <!-- Patch 0075 (PATCH-022): visible solo mientras el valor precargado
+                         por la contraparte OwnCard sigue vigente -- se oculta apenas el
+                         usuario toca #cImpact a mano (ver listener más abajo). Nunca
+                         bloquea el <select>, es una leyenda informativa. -->
+                    <p id="cImpactSuggestedHint" style="display:none; font-size:11px; color:var(--faint); margin-top:6px">
+                        Sugerido porque la contraparte es una tarjeta propia — podés cambiarlo.
+                    </p>
                 </div>
                 <div class="modal-field">
                     <label for="cMovementType" class="req">Tipo de movimiento</label>
@@ -1375,6 +1382,9 @@
             document.getElementById('cComment').value = '';
             document.getElementById('btnClassifySave').textContent = 'Guardar clasificación';
             document.getElementById('classifyToast').innerHTML = '';
+            // Cada apertura parte de "sin sugerencia activa" -- mismo criterio que
+            // state.effectiveDateSuggested más abajo (Patch 0075, PATCH-022).
+            document.getElementById('cImpactSuggestedHint').style.display = 'none';
             // PR-U4: el modal es compartido con el modo lote (ver openBatchModal) —
             // se oculta acá para no dejar visible el listado de una apertura en
             // lote anterior.
@@ -1465,6 +1475,7 @@
             document.getElementById('cComment').value = '';
             document.getElementById('btnClassifySave').textContent = `Clasificar ${n} movimiento${n !== 1 ? 's' : ''}`;
             document.getElementById('classifyToast').innerHTML = '';
+            document.getElementById('cImpactSuggestedHint').style.display = 'none';
             // Período financiero: nunca en modo lote -- un mismo ajuste no debe
             // aplicarse a movimientos distintos (ver revisión de UX). El campo ni
             // siquiera queda disponible para abrirse acá.
@@ -1487,6 +1498,45 @@
         document.getElementById('btnToggleEffectiveDate').addEventListener('click', () => {
             document.getElementById('effectiveDateInputWrap').style.display = 'block';
             document.getElementById('btnToggleEffectiveDate').style.display = 'none';
+        });
+
+        // Precarga de Impacto financiero = Pago de deuda para contrapartes OwnCard
+        // (Patch 0075, PATCH-022) -- reutiliza el catálogo ya cargado
+        // (state.counterparties, que ya trae `type` desde siempre, ver
+        // CounterpartyDto/GET /api/counterparties) y el mismo evento 'change' de
+        // #cCounterparty que dispara el listener de sugerencia de período financiero
+        // más abajo -- sin fetch nuevo, sin mecanismo paralelo. Se registra ANTES a
+        // propósito: ese otro listener lee #cImpact de forma síncrona apenas dispara
+        // el evento (antes de esperar su propia fetch) para decidir si aplica: si esta
+        // precarga corriera después, una carrera entre el fetch asincrónico de ese
+        // listener y esta actualización síncrona podría dejar aplicada una sugerencia
+        // de período pensada para Ingreso sobre un movimiento que recién pasó a Pago
+        // de deuda. Se ejecuta tanto en clasificación individual como en lote -- ambas
+        // son edición manual, y no depende de state.selectedMovement.
+        // Precarga, no un valor forzado: el usuario sigue viendo un <select> común y
+        // puede cambiarlo como cualquier otro campo (ver leyenda #cImpactSuggestedHint,
+        // que se oculta apenas el usuario toca #cImpact a mano, más abajo).
+        document.getElementById('cCounterparty').addEventListener('change', () => {
+            const counterpartyId = document.getElementById('cCounterparty').value;
+            const counterparty = state.counterparties.find(c => c.id === counterpartyId);
+            const hint = document.getElementById('cImpactSuggestedHint');
+
+            if (counterparty?.type !== 'OwnCard') {
+                hint.style.display = 'none';
+                return;
+            }
+
+            document.getElementById('cImpact').value = 'DebtPayment';
+            hint.style.display = 'block';
+        });
+
+        // Si el usuario cambia Impacto a mano después de la precarga de arriba, la
+        // leyenda de "sugerido" deja de aplicar -- ya no es la precarga, es una
+        // elección explícita. Asignar #cImpact.value por código (como hace el
+        // listener de arriba) no dispara 'change', así que esto solo reacciona a una
+        // interacción real del usuario con el <select>.
+        document.getElementById('cImpact').addEventListener('change', () => {
+            document.getElementById('cImpactSuggestedHint').style.display = 'none';
         });
 
         // Sugerencia automática de período financiero -- V1 mínima. Dispara al elegir
