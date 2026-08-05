@@ -17,10 +17,12 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Patch 0058 (PATCH-009): infraestructura de autenticación. Ningún endpoint la exige
-// todavía -- se agrega acá, ya integrada al pipeline, para que los próximos patches solo
-// necesiten agregar .RequireAuthorization() a los grupos de endpoints correspondientes.
-builder.Services.AddApiKeyAuthentication(builder.Configuration);
+// Patch 0058 (PATCH-009): infraestructura de autenticación, extendida en el Patch
+// 0067A con Cookie Authentication para la UI web (ver
+// ApiAuthenticationServiceCollectionExtensions.AddApiAuthentication) -- ApiKey y
+// Cookie coexisten, cada .RequireAuthorization() ya existente acepta cualquiera de
+// los dos sin que ningún grupo de endpoints necesite tocarse.
+builder.Services.AddApiAuthentication(builder.Configuration);
 
 // Patch 0063 (PATCH-014): límite explícito y configurable para POST /api/imports (ver
 // ImportUploadOptions) -- se aplica más abajo, después de app.Build(), acotado a esa
@@ -67,9 +69,10 @@ app.UseStaticFiles();
 app.UseHttpsRedirection();
 
 // Patch 0058 (PATCH-009): middleware de autenticación/autorización, ya en el orden
-// correcto (después de routing/archivos estáticos, antes de mapear endpoints). Sin
-// ningún .RequireAuthorization() todavía, no cambia el comportamiento observable de
-// ningún endpoint -- ver ApiKeyAuthenticationHandler para el porqué.
+// correcto (después de routing/archivos estáticos, antes de mapear endpoints).
+// Patch 0067A: ahora resuelve entre ApiKey y Cookie por request (ver
+// ApiAuthenticationServiceCollectionExtensions.AddApiAuthentication) -- el orden del
+// middleware no cambió, solo lo que AddApiAuthentication registra por detrás.
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -99,6 +102,9 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/", () => Results.Redirect("/dashboard.html"));
+
+// Patch 0067A: login/logout/verificación de sesión para la UI web -- ver AuthEndpoints.
+app.MapAuthEndpoints();
 
 app.MapCategoryEndpoints();
 app.MapCounterpartyEndpoints();

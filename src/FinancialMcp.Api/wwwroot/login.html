@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingresar · FinancialMcp</title>
+    <style>
+        /* Patch 0067A: mismos design tokens que el resto de la UI (dashboard.html,
+           movements.html, etc.) -- no se rediseña nada, solo se reutiliza la misma
+           paleta para que esta pantalla no desentone. */
+        :root {
+            --bg: #0f1117;
+            --surface: #161b25;
+            --surface2: #1e2535;
+            --border: #2a3347;
+            --text: #e2e8f4;
+            --dim: #8b98b0;
+            --faint: #4a5568;
+            --green: #4ade80;
+            --green-dim: #166534;
+            --green-bg: #052e16;
+            --red: #f87171;
+            --red-bg: #2d0a0a;
+            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
+            --radius: 10px;
+            --shadow: 0 2px 12px rgba(0,0,0,.4);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.6 var(--sans);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 340px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 28px 26px;
+        }
+
+        .login-logo { margin-bottom: 22px; text-align: center }
+            .login-logo h1 { font-size: 17px; font-weight: 700; letter-spacing: -.3px }
+                .login-logo h1 em { color: var(--green); font-style: normal }
+            .login-logo p { font-size: 12px; color: var(--faint); margin-top: 4px }
+
+        .field { margin-bottom: 16px }
+            .field label {
+                display: block;
+                font-size: 11px;
+                color: var(--faint);
+                text-transform: uppercase;
+                letter-spacing: .05em;
+                margin-bottom: 6px;
+            }
+            .field input {
+                width: 100%;
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text);
+                padding: 9px 10px;
+                font: 13px var(--sans);
+            }
+                .field input:focus { outline: 2px solid var(--green); outline-offset: 1px }
+
+        .btn-login {
+            width: 100%;
+            background: var(--green-bg);
+            border: 1px solid var(--green-dim);
+            border-radius: 4px;
+            color: var(--green);
+            padding: 10px;
+            font: 600 13px var(--sans);
+            cursor: pointer;
+        }
+            .btn-login:hover { opacity: .85 }
+            .btn-login:disabled { opacity: .5; cursor: default }
+
+        .error-box {
+            display: none;
+            background: var(--red-bg);
+            border: 1px solid var(--red);
+            color: var(--red);
+            border-radius: 4px;
+            padding: 8px 10px;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+            .error-box.visible { display: block }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-logo">
+            <h1>Financial<em>Mcp</em></h1>
+            <p>Asistente financiero personal</p>
+        </div>
+
+        <div class="error-box" id="errorBox">Contraseña incorrecta.</div>
+
+        <form id="loginForm" autocomplete="on">
+            <div class="field">
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" autofocus required>
+            </div>
+            <button type="submit" class="btn-login" id="submitBtn">Ingresar</button>
+        </form>
+    </div>
+
+    <script>
+        // Patch 0067A: la única pieza de UI de este módulo. Sin registro, sin
+        // recuperación de contraseña -- solo login. Al autenticar con éxito, el
+        // servidor emite una cookie (Set-Cookie, HttpOnly) -- esta página no la
+        // maneja ni la guarda, el navegador lo hace solo.
+        (function () {
+            var form = document.getElementById('loginForm');
+            var errorBox = document.getElementById('errorBox');
+            var submitBtn = document.getElementById('submitBtn');
+
+            function redirectAfterLogin() {
+                var params = new URLSearchParams(window.location.search);
+                var next = params.get('next');
+                // Solo se acepta una ruta relativa propia (empieza con "/" y no con
+                // "//") -- nunca una URL absoluta a otro origen, para no convertir
+                // este redirect en un vector de open-redirect.
+                if (next && next.indexOf('/') === 0 && next.indexOf('//') !== 0) {
+                    window.location.href = next;
+                } else {
+                    window.location.href = '/dashboard.html';
+                }
+            }
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                errorBox.classList.remove('visible');
+                submitBtn.disabled = true;
+
+                fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ password: document.getElementById('password').value })
+                })
+                    .then(function (r) {
+                        if (r.ok) {
+                            redirectAfterLogin();
+                            return;
+                        }
+                        errorBox.classList.add('visible');
+                        submitBtn.disabled = false;
+                    })
+                    .catch(function () {
+                        errorBox.textContent = 'No se pudo conectar con el servidor.';
+                        errorBox.classList.add('visible');
+                        submitBtn.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>
