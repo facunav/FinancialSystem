@@ -2,6 +2,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Review.Commands;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
+using FinancialSystem.Domain.Review;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -167,6 +168,131 @@ public class ClassifyMovementHandlerTests
         Assert.Equal(2, await finalDb.ClassifiedMovements.CountAsync());
     }
 
+    // ── Patch 0074 (PATCH-021): ProcessingSource debe reflejar siempre el origen de
+    // la clasificación vigente, no el de la clasificación inicial ──────────────────
+
+    [Fact]
+    public async Task Handle_ClasificacionInicial_EstableceProcessingSourceManualReview()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName);
+        var transactionId = await SeedTransactionAsync(dbName, new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc));
+
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        Assert.True(result.IsSuccess);
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
+    }
+
+    [Fact]
+    public async Task Handle_ReclasificarManualmente_MantieneProcessingSourceManualReview()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName, "Original");
+        var otherCategoryId = await SeedCategoryAsync(dbName, "Otra");
+        var transactionId = await SeedTransactionAsync(dbName, new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc));
+
+        await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        // Reclasificación manual posterior (mismo handler, mismo origen: no hay
+        // ningún otro flujo que llegue acá) -- debe seguir siendo ManualReview.
+        await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, otherCategoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(otherCategoryId, classified.CategoryId);
+        Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
+    }
+
+    [Fact]
+    public async Task Handle_ReclasificarUnMovimientoConfirmadoPorSugerencia_ActualizaProcessingSourceAManualReview()
+    {
+        // Simula un ClassifiedMovement histórico clasificado por un origen distinto
+        // de ManualReview: ConfirmedFromSuggestion, del flujo de sugerencias que
+        // PR-L4/PR-L5 retiró como productor pero cuyas filas históricas siguen
+        // existiendo (ver ProcessingSource.cs). Antes de este patch, reclasificarlo
+        // acá dejaba ese origen desactualizado indefinidamente aunque el usuario
+        // acabara de reclasificarlo a mano.
+        var dbName = Guid.NewGuid().ToString();
+        var originalCategoryId = await SeedCategoryAsync(dbName, "Original");
+        var newCategoryId = await SeedCategoryAsync(dbName, "Nueva");
+        var bankDate = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+        var transactionId = await SeedTransactionAsync(dbName, bankDate);
+        await SeedClassifiedMovementAsync(
+            dbName, SourceEntityType.Transaction, transactionId, originalCategoryId,
+            ProcessingSource.ConfirmedFromSuggestion, bankDate);
+
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, newCategoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        Assert.True(result.IsSuccess);
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(newCategoryId, classified.CategoryId);
+        Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
+    }
+
+    [Fact]
+    public async Task Handle_ReclasificarUnMovimientoConfirmadoPorMatchManual_ActualizaProcessingSourceAManualReview()
+    {
+        // Mismo caso que el anterior, con otro origen histórico soportado por el enum
+        // (ManualMatch) -- confirma que la actualización no depende del valor previo.
+        var dbName = Guid.NewGuid().ToString();
+        var originalCategoryId = await SeedCategoryAsync(dbName, "Original");
+        var newCategoryId = await SeedCategoryAsync(dbName, "Nueva");
+        var bankDate = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        var transactionId = await SeedTransactionAsync(dbName, bankDate);
+        await SeedClassifiedMovementAsync(
+            dbName, SourceEntityType.Transaction, transactionId, originalCategoryId,
+            ProcessingSource.ManualMatch, bankDate);
+
+        await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, newCategoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
+    }
+
+    [Fact]
+    public async Task Handle_ClasificacionInicial_NoTieneRegresionesEnLasDemasDimensiones()
+    {
+        // Ausencia de regresiones (sección de tests del patch): agregar la
+        // actualización de ProcessingSource en la rama de reclasificación no debe
+        // afectar en nada la rama de creación inicial -- mismas dimensiones, mismo
+        // Status, mismo comportamiento que antes de este patch.
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName);
+        var transactionId = await SeedTransactionAsync(dbName, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, "comentario"));
+
+        Assert.True(result.IsSuccess);
+
+        await using var db = OpenDb(dbName);
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(MovementType.Purchase, classified.MovementType);
+        Assert.Equal(FinancialImpact.Expense, classified.FinancialImpact);
+        Assert.Equal(categoryId, classified.CategoryId);
+        Assert.Equal("comentario", classified.Comment);
+        Assert.Equal(ClassificationStatus.Reviewed, classified.Status);
+        Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
+    }
+
     private static ClassifyMovementHandler CreateHandler(string dbName) =>
         new(OpenDb(dbName), new FakeDateTimeProvider(), NullLogger<ClassifyMovementHandler>.Instance);
 
@@ -195,6 +321,45 @@ public class ClassifyMovementHandlerTests
         db.Transactions.Add(transaction);
         await db.SaveChangesAsync();
         return transaction.Id;
+    }
+
+    // Siembra directa (sin pasar por el handler, que siempre escribe ManualReview) de
+    // un ClassifiedMovement con un ProcessingSource arbitrario -- simula el estado de
+    // un movimiento histórico clasificado por otro origen antes de ser reclasificado
+    // en el test.
+    private static async Task SeedClassifiedMovementAsync(
+        string dbName, SourceEntityType sourceEntityType, Guid sourceId, Guid categoryId,
+        ProcessingSource processingSource, DateTime effectiveDate)
+    {
+        await using var db = OpenDb(dbName);
+        var classifiedMovement = new ClassifiedMovement
+        {
+            EffectiveDate = effectiveDate,
+            TotalAmount = 100m,
+            Currency = "ARS",
+            Description = "Movimiento clasificado de prueba",
+            MovementType = MovementType.Purchase,
+            FinancialImpact = FinancialImpact.Expense,
+            CategoryId = categoryId,
+            Status = ClassificationStatus.Confirmed,
+            ProcessingSource = processingSource,
+            CreatedAt = effectiveDate,
+            ProcessedAt = effectiveDate,
+        };
+        db.ClassifiedMovements.Add(classifiedMovement);
+        db.ClassifiedMovementItems.Add(new ClassifiedMovementItem
+        {
+            ClassifiedMovementId = classifiedMovement.Id,
+            ClassifiedMovement = classifiedMovement,
+            SourceEntityType = sourceEntityType,
+            SourceId = sourceId,
+            Role = MovementRole.Reference,
+            OriginalAmount = 100m,
+            OriginalDate = effectiveDate,
+            OriginalDescription = "Movimiento clasificado de prueba",
+            OriginalCurrency = "ARS",
+        });
+        await db.SaveChangesAsync();
     }
 
     private sealed class FakeDateTimeProvider : IDateTimeProvider

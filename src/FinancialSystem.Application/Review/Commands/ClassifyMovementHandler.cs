@@ -21,6 +21,11 @@ namespace FinancialSystem.Application.Review.Commands;
 /// podían crearse vía ConfirmMatchCommand (retirado — exigía al menos un Reference y
 /// un Candidate, dos items como mínimo), así que ya no se generan grupos nuevos, pero
 /// los históricos siguen existiendo y esta protección los sigue cubriendo.
+///
+/// Patch 0074 (PATCH-021): al reclasificar, ProcessingSource se actualiza a
+/// ManualReview igual que el resto de las dimensiones, sin importar cuál haya sido el
+/// origen previo (incluyendo orígenes de flujos ya retirados, ver ProcessingSource.cs)
+/// -- representa siempre el origen de la clasificación vigente, nunca el inicial.
 /// </summary>
 public sealed class ClassifyMovementHandler
 {
@@ -86,6 +91,18 @@ public sealed class ClassifyMovementHandler
             existing.CounterpartyId = command.CounterpartyId;
             existing.Comment = command.Comment;
             existing.ProcessedAt = now;
+
+            // Patch 0074 (PATCH-021): ProcessingSource debe reflejar el origen de la
+            // clasificación VIGENTE, no el de la clasificación inicial. Este handler
+            // solo se invoca para clasificación manual (ver doc-comment de
+            // ClassifyMovementCommand: "Clasifica manualmente un movimiento crudo") --
+            // antes de este patch, reclasificar acá un movimiento cuyo ProcessingSource
+            // original era, por ejemplo, ConfirmedFromSuggestion (de un flujo de
+            // sugerencias ya retirado, PR-L4/PR-L5, pero con filas históricas) dejaba
+            // ese origen desactualizado indefinidamente, aunque el usuario acabara de
+            // reclasificarlo a mano. Sin versionado ni ProcessingSource múltiple (fuera
+            // de alcance): se sobrescribe, igual que el resto de las dimensiones.
+            existing.ProcessingSource = ProcessingSource.ManualReview;
 
             // Sin EffectiveDate en el comando: no tocar el campo. Nunca
             // "command.EffectiveDate ?? OriginalDate" — eso resetearía silenciosamente
