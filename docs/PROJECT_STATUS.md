@@ -88,13 +88,13 @@
 ### Alta prioridad
 - Autenticación/autorización en la API (hoy inexistente).
 - Corrección del ruteo ambiguo de PDF Visa/Mastercard (riesgo activo de pérdida silenciosa de movimientos).
-- Indicador de "% de movimientos clasificados" visible en el Dashboard (visibilidad de cobertura).
-- Guía de UX para distinguir pago de resumen de tarjeta vs. consumo (evitar doble conteo de gasto).
+- ~~Indicador de "% de movimientos clasificados" visible en el Dashboard (visibilidad de cobertura).~~ **Resuelto (PATCH-019/PATCH-020, Épica L)**: endpoint de cobertura + indicador visual en `dashboard.html` + badge `#navPending`.
+- Guía de UX para distinguir pago de resumen de tarjeta vs. consumo (evitar doble conteo de gasto) — **parcialmente resuelto (PATCH-022)**: precarga de `FinancialImpact=DebtPayment` + hint al elegir contraparte `OwnCard` (ver ADR-003). Sigue pendiente como guía general del campo (Épica N), no solo para ese caso puntual.
 
 ### Prioridad media
 - Módulo de gastos fijos con vencimientos (parte de la visión original del producto, nunca construido).
 - Presupuestos por categoría con alertas de desvío.
-- Asignación automática de `FinancialAccount` al importar (hoy es manual).
+- Asignación automática de `FinancialAccount` al importar cuando el archivo no trae número de cuenta o hay ambigüedad — **ya se asigna sola cuando el número resuelve sin ambigüedad** (banco y pipeline catch-all de tarjeta, ver tabla de épicas, fila J); solo ese caso restante sigue siendo manual.
 - Simplificación del formulario de clasificación (reducir de 4 campos a la decisión real que el usuario toma).
 - Infraestructura de UI compartida (CSS/JS comunes entre las 8 páginas).
 - Reglas de clasificación configurables (hoy son 2 heurísticas hardcodeadas en código).
@@ -114,8 +114,8 @@
 | **Review & Classification Engine v2** | Archivada | Motor de matching original (`IMatchScorer`, `IMatchingRule`) construido y luego retirado por completo al no tener consumidor real tras la Épica K. | — (correctamente archivado en `docs/Archive/`) |
 | **K — Nueva UX de clasificación** | Terminada | `movements.html` como pantalla central de clasificación, sin matching contra Excel. | Un punto de su propio documento de diseño (`ClassificationUX.md`) quedó desactualizado. |
 | **I — Confiabilidad de importación** | Activa | `ImportBatch`, idempotencia por contenido en el pipeline catch-all. | Corrección del fingerprint Visa/Mastercard (I7) — pendiente. |
-| **J — Modelo de Cuentas Financieras** | Terminada (núcleo) | `FinancialAccount` como entidad explícita, CRUD completo (`accounts.html`). | Asignación automática de cuenta al importar. |
-| **L — Visibilidad de cobertura** | Pendiente | Badge de pendientes en el nav. | Indicador de % de período clasificado en el Dashboard. |
+| **J — Modelo de Cuentas Financieras** | Terminada (núcleo) | `FinancialAccount` como entidad explícita, CRUD completo (`accounts.html`), asignación automática de cuenta al importar cuando el número resuelve sin ambigüedad (banco y tarjeta). | Asignación manual solo para el caso restante: archivo sin número de cuenta o con ambigüedad. |
+| **L — Visibilidad de cobertura** | Terminada | Badge de pendientes en el nav; endpoint de cobertura de clasificación + indicador visual de 3 estados en el Dashboard (PATCH-019/PATCH-020). | — |
 | **M — Cuentas de inversión** | Pendiente | — no iniciada. | Todo — `InvestmentAccount` no existe en el código. |
 | **Mejoras al flujo de importación** (documento con nombre colisionado con la Épica M de inversión) | Activa | Corrección de desfasaje de fila, autoasignación de cuenta en enriquecimiento de débito. | Mostrar "Enriquecidos" en `imports.html`, limpiar estado "Confirmado" inalcanzable, diagnóstico de cuenta sin match. |
 | **N — Simplificación del formulario de clasificación** | Pendiente | — no iniciada. | Todo — `MovementType` sigue siendo un campo obligatorio. |
@@ -134,7 +134,7 @@
 |---|---|---|---|
 | **ADR-001** | Modelo de clasificación en 4 dimensiones fijas | Parcialmente vigente | Implementado tal cual en el código, pero un análisis posterior encontró evidencia de que una de las 4 dimensiones (`MovementType`) no tiene consumidor real verificado — sin que exista todavía el ADR de reemplazo que el propio ADR-001 exige para poder modificarse. |
 | **ADR-002** | Excel como mecanismo histórico de migración | Parcialmente vigente | El diagnóstico general (Excel no es la fuente de verdad) sigue vigente; la decisión específica de "mantener `group-reconciliation.html`" fue revertida (se eliminó la pantalla y su backend), revisión documentada dentro del propio archivo. |
-| **ADR-003** | Separar consumo de tarjeta de pago de resumen | Vigente (dominio); UX pendiente | El modelo de dominio (`FinancialImpact.DebtPayment` + `Counterparty.OwnCard`) está completo y correcto; la guía de UX que el propio ADR reconoce como pendiente todavía no se construyó, por lo que el riesgo que motivó el ADR sigue latente en la práctica. |
+| **ADR-003** | Separar consumo de tarjeta de pago de resumen | Vigente (dominio); UX parcialmente resuelta | El modelo de dominio (`FinancialImpact.DebtPayment` + `Counterparty.OwnCard`) está completo y correcto; la guía de UX que el propio ADR reconocía como pendiente ya tiene una primera pieza construida (PATCH-022: precarga de `DebtPayment` + hint al elegir contraparte `OwnCard`), acotada a ese caso puntual — el riesgo general que motivó el ADR (resto de `MovementType`) sigue latente hasta que se retome como parte de Épica N. |
 | **ADR-004** | `FinancialAccount` antes que cuentas de inversión | Vigente | El orden de dependencia se respetó: `FinancialAccount` existe, `InvestmentAccount` todavía no. |
 | **ADR-005** | `ImportBatch` como mecanismo de trazabilidad | Vigente (texto del ADR desactualizado) | La entidad está completamente implementada y en uso, pero el propio documento todavía dice "entidad no implementada" — requiere solo una actualización de texto, no de decisión. |
 | **ADR-006** | Roadmap del MCP como compañero de investigación | Parcialmente vigente | Fases 1-2 implementadas; Fase 3 (IA local) implementada pero con nombres de herramientas distintos a los que sugería el ADR original. |
@@ -274,8 +274,8 @@ ClassifyMovementCommand — el usuario confirma/ajusta → ClassifiedMovement (�
 1. **Sin autenticación en la API** — cualquiera con acceso de red puede leer, modificar o borrar todos los datos financieros, incluida la importación de archivos arbitrarios.
 2. **Credenciales de base de datos versionadas en git** — mala práctica que, si el proyecto se despliega alguna vez fuera de un entorno estrictamente local, se vuelve una exposición real.
 3. **Pérdida silenciosa de movimientos por ambigüedad de parser PDF** (Visa vs. Mastercard) — un extracto real puede procesarse sin extraer ningún movimiento, sin ningún error visible.
-4. **Métricas potencialmente engañosas sin advertencia** — el Dashboard puede mostrar un resumen calculado sobre una fracción minoritaria de los movimientos reales del período, sin ningún indicador de cobertura.
-5. **Doble conteo de gasto** — nada en la UI guía la distinción entre pago de resumen de tarjeta y consumo, pese a que el modelo de dominio ya lo resuelve.
+4. ~~**Métricas potencialmente engañosas sin advertencia** — el Dashboard puede mostrar un resumen calculado sobre una fracción minoritaria de los movimientos reales del período, sin ningún indicador de cobertura.~~ **Mitigado (Épica L)**: el Dashboard ya muestra un indicador de cobertura de clasificación.
+5. **Doble conteo de gasto (parcialmente mitigado)** — la UI ya guía el caso `OwnCard`/pago de resumen (PATCH-022, ver ADR-003), pero no el resto de la distinción entre pago de resumen de tarjeta y consumo para otros `MovementType`.
 6. **Documentación "fuente de verdad" desactualizada** — riesgo de que futuras sesiones de trabajo (humanas o de IA) tomen decisiones sobre información que ya no es cierta.
 7. **Cero cobertura de tests en Auditoría e Investigaciones** — riesgo de regresión silenciosa al seguir iterando sobre las piezas más nuevas del sistema.
 8. **Envío de datos financieros a un servicio externo (OpenAI)** sin mecanismo de consentimiento visible en la UI, solo por configuración de servidor.
@@ -288,7 +288,7 @@ Según el plan de implementación priorizado ya elaborado (`FinancialMcp-Plan-Im
 
 1. **Integridad de datos e importación** — corregir el ruteo Visa/Mastercard y la fragilidad del `ExternalId` posicional de `BankStatement`. Es lo primero porque compromete la premisa fundacional del sistema (banco/tarjeta como fuente de verdad).
 2. **Seguridad y endurecimiento** — autenticación de la API y saneamiento de credenciales. Bloqueante para cualquier uso fuera de una máquina local.
-3. **Consistencia y confianza del producto** — indicador de cobertura de clasificación, guía de UX para pago de tarjeta, corrección de los documentos que hoy mienten sobre su propio estado (ADR-007; `vNext.md` corregido en PATCH-029).
+3. **Consistencia y confianza del producto** — ~~indicador de cobertura de clasificación~~ (hecho, Épica L), guía de UX para pago de tarjeta (parcial, ver ADR-003; falta el caso general de Épica N), corrección de los documentos que hoy mienten sobre su propio estado (ADR-007; `vNext.md` corregido en PATCH-029; `PROJECT_STATUS.md` sincronizado en PATCH-0078A).
 4. **Consolidación documental** — archivar lo obsoleto, actualizar lo vigente, documentar el Centro de Auditoría (hoy sin ningún documento de diseño).
 5. **Cobertura de tests en módulos críticos** — Auditoría e Investigaciones antes de seguir construyendo sobre ellos.
 6. **Deuda de arquitectura y performance** — eliminar la recomputación redundante del Centro de Auditoría, homogeneizar el patrón CQRS.
@@ -315,16 +315,16 @@ Módulos en desarrollo: Importación de tarjeta de crédito (riesgo de ruteo con
 Módulos experimentales: Centro de Auditoría (sin tests ni documentación de diseño),
                         Investigaciones/memoria del MCP (sin tests), Worker de insights (sin consumidor)
 
-Épicas cerradas:        K, J (núcleo), O, S, U, Planificación Mensual
+Épicas cerradas:        K, J (núcleo), L, O, S, U, Planificación Mensual
 
 Épicas activas:         I (Confiabilidad de importación), Mejoras al flujo de importación
 
-Épicas pendientes:      L (Visibilidad de cobertura), M (Inversiones), N (Simplificación de
-                        formulario), UI (Arquitectura de UI compartida)
+Épicas pendientes:      M (Inversiones), N (Simplificación de formulario),
+                        UI (Arquitectura de UI compartida)
 
 Principales riesgos:    Sin autenticación en la API · Credenciales de DB versionadas ·
                         Riesgo de pérdida silenciosa de movimientos (Visa/Mastercard) ·
-                        Métricas sin indicador de cobertura
+                        Doble conteo de gasto sin guía de UX general (parcial, ver ADR-003)
 
 Próximo objetivo:       Cerrar Integridad de datos + Seguridad (Epics P y Q del plan de
                         implementación) antes de considerar cualquier despliegue fuera de
