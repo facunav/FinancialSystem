@@ -149,6 +149,7 @@
 - `docs/RoadMaps/FinancialMcp-vNext.md` — roadmap por épicas (I-O); desactualizado en varios puntos puntuales (ver sección 5), pero sigue siendo el documento de planificación activo.
 - `docs/Architecture/Architecture.md` — arquitectura formal (una línea puntual desactualizada, resto vigente).
 - `docs/Architecture/EstadoMVP.md` — estado del MVP original, reemplaza explícitamente a tres documentos anteriores.
+- `docs/Architecture/SimplificacionModeloClasificacion.md` (PATCH-028) — consolida `analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md` y `redisenoflujofuncional.md` (archivados), insumo base para la futura Épica N.
 - `docs/Decisions/ADR-001` a `ADR-006`, `docs/Architecture/Decisions/ADR-007` — ver sección 6 para vigencia de cada uno.
 - `docs/Epics/EpicaI-Importacion.md`, `EpicaO-ImportacionManual.md`, `Epica-PlanificacionMensual.md` — diseño de épicas concretas (con notas de estado desactualizadas en algunos casos, contenido técnico vigente).
 - `docs/UX/ClassificationUX.md` — vigente salvo un punto puntual sobre el campo de cuenta financiera.
@@ -159,9 +160,6 @@
 - Serie `PRS1/6/8/11/12` (motor de sugerencias, ya implementado).
 - Serie `PRU1/3/4` y `analisisentidadcounterparty.md`, `PRUI1analisisarquitecturaui.md` (este último sigue siendo un plan vigente, no ejecutado).
 - `docs/patch/enriquecimiento-tarjeta-debito.md`.
-
-**Deberían archivarse (obsoletos, superados por otro documento del propio repositorio):**
-- `docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md` — mismo análisis repetido 3 veces, candidatos a fusión en un único documento.
 
 **No deberían archivarse todavía (verificado contra el código en PATCH-027 — corrige la evaluación anterior de esta misma tabla):**
 - `docs/Architecture/analisisnavegacion.md` — propone unificar el shell con sidebar de `dashboard.html` en las pantallas secundarias; siguen usando un topbar aislado con "← Dashboard" (`movements.html`, `accounts.html`, `imports.html`, `counterparties.html`, `audit.html`, `planning.html`) — no implementado.

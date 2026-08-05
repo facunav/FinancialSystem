@@ -58,7 +58,7 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 
 - **`docs/RoadMaps/FinancialMcp-vNext.md`** → Actualizar: es el único documento que debería quedar como fuente de verdad del roadmap; hoy marca la Épica J como no iniciada cuando ya tiene código (M5). Absorber el contenido de este documento y reemplazar las secciones 7-9.
 - **`docs/UX/ClassificationUX.md`** → Actualizar §1.2 (describe un `<select>` editable de cuenta que ya es de solo lectura) y §1.5 (dice que "Cuentas" no existe, cuando `accounts.html` ya existe).
-- **`docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md`** → Unificar en un solo documento (misma conclusión repetida tres veces), insumo de la futura Épica N — no se toca hasta que esa épica se retome.
+- ~~**`docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md`** → Unificar en un solo documento (misma conclusión repetida tres veces), insumo de la futura Épica N — no se toca hasta que esa épica se retome.~~ **Hecho (PATCH-028)**: consolidados en `docs/Architecture/SimplificacionModeloClasificacion.md`; los tres originales se archivaron en `docs/Archive/`.
 
 *(La entrada que estaba acá para `analisisproximaepicausabilidad.md`/`analisisnavegacion.md`/`auditoriasemanticamovimientosreales.md` se corrigió en PATCH-027: solo el tercero resultó tener su contenido absorbido/implementado y se archivó en `docs/Archive/`. Los otros dos siguen describiendo funcionalidad pendiente, verificado contra el código — quedan en su lugar; ver `docs/PROJECT_STATUS.md` para el detalle punto por punto.)*
 
