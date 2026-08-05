@@ -293,6 +293,41 @@ public class ClassifyMovementHandlerTests
         Assert.Equal(ProcessingSource.ManualReview, classified.ProcessingSource);
     }
 
+    [Fact]
+    public async Task Handle_ClasificacionInicialYReclasificacion_NuncaEscribenMatchScoreNiAmountDelta()
+    {
+        // Patch 0076 (PATCH-023): confirma en código lo que documenta
+        // ClassifiedMovement.cs -- ClassifyMovementHandler, el único productor de
+        // ClassifiedMovement hoy, no escribe MatchScore ni AmountDelta en ninguna de
+        // sus dos ramas (creación ni reclasificación). Ambos son remanentes del
+        // motor de matching retirado en PR-L4 y quedan siempre en null para
+        // cualquier fila creada o actualizada después de ese retiro.
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName, "Original");
+        var otherCategoryId = await SeedCategoryAsync(dbName, "Otra");
+        var transactionId = await SeedTransactionAsync(dbName, new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        await using (var db = OpenDb(dbName))
+        {
+            var created = await db.ClassifiedMovements.SingleAsync();
+            Assert.Null(created.MatchScore);
+            Assert.Null(created.AmountDelta);
+        }
+
+        await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.Transaction, transactionId, otherCategoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        await using var finalDb = OpenDb(dbName);
+        var reclassified = await finalDb.ClassifiedMovements.SingleAsync();
+        Assert.Null(reclassified.MatchScore);
+        Assert.Null(reclassified.AmountDelta);
+    }
+
     private static ClassifyMovementHandler CreateHandler(string dbName) =>
         new(OpenDb(dbName), new FakeDateTimeProvider(), NullLogger<ClassifyMovementHandler>.Instance);
 

@@ -85,7 +85,9 @@ Archivo: `src/FinancialSystem.Domain/Review/ClassifiedMovement.cs` + `Classified
 
 `ClassifiedMovementItem` aporta el **snapshot inmutable** (`OriginalDescription`, `OriginalAmount`, `OriginalDate`, `OriginalCurrency`) del movimiento crudo tal como estaba al momento de clasificar — coincide en semántica con lo que carga `FinancialMovement`, pero es la copia congelada, no la fuente viva.
 
-Dos campos muertos que NO hay que confundir con algo reutilizable: `MatchScore` (`double?`) y `AmountDelta` (`decimal?`) — eran trazabilidad del viejo motor de matching (`ConfirmMatchHandler`, retirado en PR-L4), ya no tienen productor, y **no deben interpretarse como un precedente de diseño** para el nuevo motor. Son deuda dejada intacta a propósito (ver informe de PR-L4) porque tocarlos no es parte de esta épica.
+Dos campos que NO hay que confundir con algo reutilizable: `MatchScore` (`double?`) y `AmountDelta` (`decimal?`) — eran trazabilidad del viejo motor de matching (`ConfirmMatchHandler`, retirado en PR-L4), ya no tienen productor, y **no deben interpretarse como un precedente de diseño** para el nuevo motor. Son deuda dejada intacta a propósito (ver informe de PR-L4) porque tocarlos no era parte de esta épica.
+
+**Nota (PATCH-023):** al momento de este análisis (PRS1) eran código muerto sin ningún consumidor. Dejaron de serlo con las herramientas MCP de investigación agregadas después (`MovementTools`/`InvestigationTools`, ver ADR-006, Fase 1): ambas leen y muestran `MatchScore`/`AmountDelta` cuando existen, y `AmountDelta != 0` dispara una observación. Siguen sin productor (siempre `null` para cualquier fila clasificada después de PR-L4) — se conservan por trazabilidad histórica y por ese consumo de solo lectura, no porque haya vuelto a haber una escritura activa. La conclusión de este párrafo (no usarlos como precedente de diseño para el nuevo motor) sigue vigente sin cambios.
 
 ### 1.4 Qué información puede reutilizarse como historial
 

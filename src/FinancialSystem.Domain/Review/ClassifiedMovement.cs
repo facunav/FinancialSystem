@@ -99,15 +99,41 @@ public class ClassifiedMovement
     /// </summary>
     public string? Comment { get; set; }
 
-    // ── Métricas del motor de sugerencias (trazabilidad, no para MCP) ────────
-    // Null cuando la clasificación fue completamente manual.
+    // ── Remanentes del motor de matching retirado (PR-L4) ────────────────────
+    // Patch 0076 (PATCH-023): MatchScore y AmountDelta pertenecían a
+    // IMatchScorer/ConfirmMatchCommand, el motor que comparaba banco/tarjeta
+    // contra movimientos "Candidate" (Excel legacy) -- retirado por completo en
+    // PR-L4/PR-L5 (ver ReviewResult.cs y docs/UX/ClassificationUX.md).
+    // ClassifyMovementHandler, el único productor de ClassifiedMovement hoy,
+    // nunca los escribe: para toda fila creada o reclasificada después del
+    // retiro, ambos quedan en null. Solo filas históricas previas a PR-L4 pueden
+    // conservar un valor no nulo.
+    // Se conservan (no se eliminan) porque sí tienen un consumidor de solo
+    // lectura vigente: las herramientas MCP de investigación
+    // (MovementTools.GetMovement/ExplainMovement/ExplainClassification,
+    // InvestigationTools -- ver
+    // docs/Decisions/ADR-006-financial-mcp-roadmap-investigacion.md) los
+    // muestran como parte de la trazabilidad completa de un movimiento, y
+    // AmountDelta != 0 dispara una observación en
+    // MovementTools.BuildObservations. No usar como precedente de diseño para
+    // ningún motor nuevo (ver docs/Architecture/PRS1analisismotorsugerencias.md).
 
-    /// <summary>Score del motor al momento de la sugerencia. Null si fue manual puro.</summary>
+    /// <summary>
+    /// Score de coincidencia asignado por el motor de matching retirado en
+    /// PR-L4 (<c>IMatchScorer</c>). Sin productor actual -- siempre null para
+    /// cualquier clasificación hecha después del retiro (ver comentario de la
+    /// sección arriba). Se conserva por trazabilidad histórica y porque las
+    /// herramientas MCP de investigación todavía lo exponen cuando existe.
+    /// </summary>
     public double? MatchScore { get; set; }
 
     /// <summary>
-    /// Diferencia absoluta entre suma de References y suma de Candidates.
-    /// 0 en coincidencias perfectas. Null en revisiones sin contraparte.
+    /// Diferencia de importe entre References y Candidates de un grupo de
+    /// matching, calculada por el motor retirado en PR-L4. Sin productor actual
+    /// -- mismo caso que <see cref="MatchScore"/>: siempre null para cualquier
+    /// clasificación hecha después del retiro. Se conserva por trazabilidad
+    /// histórica y porque las herramientas MCP de investigación todavía lo
+    /// exponen y lo usan para una observación (<c>AmountDelta != 0</c>).
     /// </summary>
     public decimal? AmountDelta { get; set; }
 

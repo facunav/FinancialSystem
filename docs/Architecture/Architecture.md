@@ -72,7 +72,7 @@ Contiene:
 
 Movimiento financiero ya clasificado. Única fuente de verdad para métricas y MCP. Cada fila representa una decisión de clasificación completa y verificada por el usuario — no hay estados intermedios ("pendiente") en esta tabla, porque lo pendiente simplemente no tiene fila todavía.
 
-Campos clave: `EffectiveDate`, `TotalAmount` (siempre positivo, magnitud), `Currency`, `Description`, y las 4 dimensiones de clasificación (`MovementType`, `FinancialImpact`, `CategoryId`, `CounterpartyId` opcional). Estado (`ClassificationStatus`: `Confirmed`/`Reviewed`) y trazabilidad (`ProcessingSource`, `MatchScore` opcional, `AmountDelta` opcional).
+Campos clave: `EffectiveDate`, `TotalAmount` (siempre positivo, magnitud), `Currency`, `Description`, y las 4 dimensiones de clasificación (`MovementType`, `FinancialImpact`, `CategoryId`, `CounterpartyId` opcional). Estado (`ClassificationStatus`: `Confirmed`/`Reviewed`) y trazabilidad (`ProcessingSource`, `MatchScore` opcional, `AmountDelta` opcional — remanentes del motor de matching retirado en PR-L4, sin productor actual: siempre `null` desde entonces, se conservan porque las herramientas MCP de investigación todavía los leen, ver `ClassifiedMovement.cs`).
 
 ### `ClassifiedMovementItem`
 
