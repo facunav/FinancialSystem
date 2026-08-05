@@ -338,5 +338,9 @@ public class MasterDataProtectedEndpointsTests
             Task.FromResult(new MonthComparison(
                 new PeriodSummary(new DateOnly(year, month, 1), new DateOnly(year, month, 1), 0m, 0m, 0m, 0m, 0, 0, 0, "ARS"),
                 null, 0m, 0, []));
+
+        public Task<ClassificationCoverage> GetClassificationCoverageAsync(
+            DateOnly from, DateOnly to, CancellationToken ct = default) =>
+            Task.FromResult(new ClassificationCoverage(from, to, 0, 0, 0m));
     }
 }

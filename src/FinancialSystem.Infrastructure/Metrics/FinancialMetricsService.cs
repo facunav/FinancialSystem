@@ -1,5 +1,6 @@
 ﻿using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Metrics;
+using FinancialSystem.Application.Movements;
 using FinancialSystem.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -9,11 +10,16 @@ namespace FinancialSystem.Infrastructure.Metrics;
 internal sealed class FinancialMetricsService : IFinancialMetricsService
 {
     private readonly IApplicationDbContext _db;
+    private readonly IMovementsQueryService _movementsQuery;
     private readonly ILogger<FinancialMetricsService> _logger;
 
-    public FinancialMetricsService(IApplicationDbContext db, ILogger<FinancialMetricsService> logger)
+    public FinancialMetricsService(
+        IApplicationDbContext db,
+        IMovementsQueryService movementsQuery,
+        ILogger<FinancialMetricsService> logger)
     {
         _db = db;
+        _movementsQuery = movementsQuery;
         _logger = logger;
     }
 
@@ -206,6 +212,30 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
         return new MonthComparison(
             currentSummary, previousSummary, expVariation, expVariationPct,
             variations.AsReadOnly());
+    }
+
+    // ── GetClassificationCoverageAsync ────────────────────────────────────────
+    // Patch 0068 (PATCH-019), Épica L: reutiliza IMovementsQueryService.GetAsync --
+    // la misma fuente que ya usa la pantalla Movimientos -- en vez de una consulta
+    // propia contra ClassifiedMovements/Transactions/BankStatements por separado, para
+    // no duplicar la lógica de "pendiente vs. clasificado" (unión banco+tarjeta,
+    // resolución de ClassifiedMovementItem) que esa clase ya resuelve. Determinístico
+    // para un mismo período: sin aleatoriedad ni dependencia de la hora de ejecución
+    // más allá del contenido de la base en el momento de la consulta.
+
+    public async Task<ClassificationCoverage> GetClassificationCoverageAsync(
+        DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        var movements = await _movementsQuery.GetAsync(
+            from, to, financialAccountId: null, search: null, ct);
+
+        var total = movements.Count;
+        var classified = movements.Count(m => m.Status is not null);
+        var coveragePercentage = total > 0
+            ? Math.Round((decimal)classified / total * 100, 1)
+            : 0m;
+
+        return new ClassificationCoverage(from, to, total, classified, coveragePercentage);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

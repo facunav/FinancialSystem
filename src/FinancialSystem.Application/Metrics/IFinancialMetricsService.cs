@@ -45,6 +45,33 @@ public sealed record CategoryVariation(
     decimal Variation,
     double VariationPct);
 
+/// <summary>
+/// Cobertura de clasificación de un período (Patch 0068, PATCH-019, Épica L
+/// "Visibilidad de cobertura" -- ver docs/RoadMaps/FinancialMcp-vNext.md). Responde
+/// "¿qué porcentaje de los movimientos reales de este período ya está clasificado?" --
+/// distinto de PeriodSummary, que solo describe lo YA clasificado sin decir nada sobre
+/// cuánto queda pendiente (riesgo #4 de docs/PROJECT_STATUS.md).
+///
+/// DEFINICIÓN DE "CLASIFICADO" (consistente con el modelo vigente, sin alternativas):
+///   Un movimiento (banco o tarjeta) está clasificado si y solo si existe un
+///   ClassifiedMovement/ClassifiedMovementItem que lo referencia -- exactamente el
+///   mismo criterio que ya usa IMovementsQueryService (MovementView.Status non-null =
+///   clasificado, null = pendiente) para la pantalla Movimientos. No hay estados
+///   intermedios: ClassifiedMovement exige MovementType/FinancialImpact/CategoryId
+///   obligatorios por diseño (ver ClassifiedMovement.cs) -- si la fila existe, las
+///   dimensiones obligatorias ya están completas.
+///
+/// TotalMovements = ClassifiedMovements + pendientes -- ambos números vienen de la
+/// misma fuente (IMovementsQueryService.GetAsync), nunca de dos consultas
+/// independientes que puedan desincronizarse entre sí.
+/// </summary>
+public sealed record ClassificationCoverage(
+    DateOnly From,
+    DateOnly To,
+    int TotalMovements,
+    int ClassifiedMovements,
+    decimal CoveragePercentage);
+
 // ── Interfaz del servicio ─────────────────────────────────────────────────────
 
 /// <summary>
@@ -70,4 +97,8 @@ public interface IFinancialMetricsService
 
     Task<MonthComparison> CompareWithPreviousMonthAsync(
         int year, int month, CancellationToken ct = default);
+
+    /// <summary>Ver ClassificationCoverage para la definición completa.</summary>
+    Task<ClassificationCoverage> GetClassificationCoverageAsync(
+        DateOnly from, DateOnly to, CancellationToken ct = default);
 }

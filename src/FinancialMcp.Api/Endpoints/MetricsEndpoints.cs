@@ -14,6 +14,7 @@ public static class MetricsEndpoints
         group.MapGet("/by-category", GetByCategory);
         group.MapGet("/monthly-trend", GetMonthlyTrend);
         group.MapGet("/compare", GetComparison);
+        group.MapGet("/classification-coverage", GetClassificationCoverage);
 
         return app;
     }
@@ -78,6 +79,28 @@ public static class MetricsEndpoints
 
         var comparison = await metrics.CompareWithPreviousMonthAsync(year, month, ct);
         return Results.Ok(MonthComparisonDto.Create(comparison));
+    }
+
+    // ── GET /api/metrics/classification-coverage?year=2026&month=6 ───────────
+    // o bien: ?from=2026-01-01&to=2026-06-30 para períodos arbitrarios (Patch 0068,
+    // PATCH-019) -- mismo estilo de parámetros que /summary (ResolvePeriod, sin
+    // duplicar esa lógica). Ver ClassificationCoverageDto/ClassificationCoverage para
+    // qué representa el porcentaje y qué cuenta como "clasificado".
+
+    private static async Task<IResult> GetClassificationCoverage(
+        [FromQuery] int? year,
+        [FromQuery] int? month,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromServices] IFinancialMetricsService metrics,
+        CancellationToken ct)
+    {
+        var (f, t) = ResolvePeriod(year, month, from, to);
+        if (f is null || t is null)
+            return Results.BadRequest("Indicá year+month o from+to");
+
+        var coverage = await metrics.GetClassificationCoverageAsync(f.Value, t.Value, ct);
+        return Results.Ok(ClassificationCoverageDto.Create(coverage));
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────
