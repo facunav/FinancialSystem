@@ -1,10 +1,17 @@
 # Cobertura de clasificación — GET /api/metrics/classification-coverage
 
-Documento operativo del Patch 0068 (PATCH-019, épica "Consistencia y confianza del
-producto" — Épica L "Visibilidad de cobertura" de `docs/RoadMaps/FinancialMcp-vNext.md`).
-Cubre exclusivamente esta métrica y su endpoint. Backend únicamente: este patch no
-integra el indicador al Dashboard ni a ninguna pantalla (esa integración queda para
-un patch futuro, cuando se retome la Épica L en el frontend).
+Documento operativo del PATCH-019 (épica "Consistencia y confianza del producto" —
+Épica L "Visibilidad de cobertura" de `docs/RoadMaps/FinancialMcp-vNext.md`). Cubre
+exclusivamente esta métrica y su endpoint. Backend únicamente: no integra el indicador
+al Dashboard ni a ninguna pantalla (esa integración queda para un patch futuro, cuando
+se retome la Épica L en el frontend).
+
+Implementado en dos pasos:
+* **Patch 0071**: endpoint, modelo y criterio de clasificación originales.
+* **Patch 0072**: agrega `PendingMovements` como campo explícito de la respuesta y
+  reemplaza el cálculo (que traía a memoria el período completo vía
+  `IMovementsQueryService.GetAsync`) por tres consultas `COUNT` directas contra la
+  base — mismo resultado, sin materializar movimientos.
 
 ## Qué representa el porcentaje
 
@@ -30,10 +37,10 @@ dimensiones obligatorias ya están completas. `CounterpartyId` es opcional y no 
 si un movimiento cuenta como clasificado (tampoco lo hace en ningún otro lugar del
 sistema).
 
-Este es literalmente el mismo criterio que `IMovementsQueryService` (consumido hoy por
-la pantalla Movimientos y por `AuditEndpoints`) usa para distinguir pendientes de
-clasificados: `MovementView.Status` no-nulo significa clasificado; nulo significa
-pendiente.
+Este es el mismo criterio que usan `MovementLoader` (pendientes: `BankStatement`/
+`Transaction` del período sin `ClassifiedMovementItem` que los referencie) y
+`MovementsQueryService` (clasificados: `MovementView.Status` no nulo) para la pantalla
+Movimientos — ninguno de los dos cambió.
 
 ## Cómo se calcula
 
@@ -44,11 +51,16 @@ GET /api/metrics/classification-coverage?from=2026-01-01&to=2026-06-30
 
 (Mismo estilo de parámetros que `GET /api/metrics/summary`.)
 
-1. Se obtiene la lista completa de movimientos del período vía
-   `IMovementsQueryService.GetAsync` (misma fuente que la pantalla Movimientos) — una
-   sola consulta, sin recalcular nada por separado.
-2. `TotalMovements` = cantidad total de movimientos devueltos (pendientes + clasificados).
-3. `ClassifiedMovements` = cantidad de esos movimientos con `Status` no nulo.
+`FinancialMetricsService.GetClassificationCoverageAsync` resuelve todo con 3 consultas
+`COUNT` secuenciales contra la base (secuenciales porque comparten el mismo
+`DbContext`, que no admite operaciones concurrentes sobre la misma instancia) — en
+ningún momento se carga un movimiento completo a memoria:
+
+1. `PendingMovements` = `BankStatement`s del período sin `ClassifiedMovementItem` que
+   los referencie, más `Transaction`s del período en la misma condición (2 `COUNT`).
+2. `ClassifiedMovements` = `ClassifiedMovementItem`s (de banco o tarjeta) cuyo
+   `OriginalDate` cae en el período (1 `COUNT`).
+3. `TotalMovements` = `ClassifiedMovements` + `PendingMovements`.
 4. `CoveragePercentage` = `ClassifiedMovements / TotalMovements * 100`, redondeado a 1
    decimal (mismo criterio de redondeo que `SavingsRate`/`PercentageOfTotal` en el
    resto del módulo de métricas). `0` si `TotalMovements` es `0` (período sin
@@ -66,6 +78,7 @@ externo.
   "to": "2026-06-30",
   "totalMovements": 42,
   "classifiedMovements": 30,
+  "pendingMovements": 12,
   "coveragePercentage": 71.4
 }
 ```
@@ -75,7 +88,9 @@ externo.
 * Ningún endpoint de métricas existente (`/summary`, `/by-category`, `/monthly-trend`,
   `/compare`) — mismas firmas, mismo comportamiento.
 * El modelo de clasificación, `ClassifiedMovement`, ni la lógica de
-  `IMovementsQueryService`.
+  `IMovementsQueryService`/`MovementLoader` (siguen siendo la fuente de verdad para la
+  pantalla Movimientos y para Auditoría — este endpoint ya no depende de
+  `IMovementsQueryService`, pero no lo modifica).
 * El grupo `/api/metrics` sigue sin `RequireAuthorization()` (nunca lo tuvo — fuera de
   alcance de este patch, que no toca autenticación).
 * Dashboard/frontend: el endpoint existe y devuelve datos correctos, pero ninguna

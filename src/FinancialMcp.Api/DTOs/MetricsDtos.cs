@@ -111,18 +111,19 @@ public sealed record CategoryVariationDto(
 }
 
 // ── GET /api/metrics/classification-coverage ─────────────────────────────────
-// Patch 0068 (PATCH-019). Ver ClassificationCoverage (Application) para la
-// definición completa de "clasificado" y cómo se calcula CoveragePercentage.
+// Patch 0071/0072 (PATCH-019). Ver ClassificationCoverage (Application) para la
+// definición completa de "clasificado"/"pendiente" y cómo se calcula CoveragePercentage.
 
 public sealed record ClassificationCoverageDto(
     string From,
     string To,
     int TotalMovements,
     int ClassifiedMovements,
+    int PendingMovements,
     decimal CoveragePercentage)
 {
     public static ClassificationCoverageDto Create(ClassificationCoverage c) => new(
         c.From.ToString("yyyy-MM-dd"),
         c.To.ToString("yyyy-MM-dd"),
-        c.TotalMovements, c.ClassifiedMovements, c.CoveragePercentage);
+        c.TotalMovements, c.ClassifiedMovements, c.PendingMovements, c.CoveragePercentage);
 }

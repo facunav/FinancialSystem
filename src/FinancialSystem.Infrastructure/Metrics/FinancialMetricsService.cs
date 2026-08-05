@@ -1,6 +1,5 @@
 ﻿using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Metrics;
-using FinancialSystem.Application.Movements;
 using FinancialSystem.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,16 +9,11 @@ namespace FinancialSystem.Infrastructure.Metrics;
 internal sealed class FinancialMetricsService : IFinancialMetricsService
 {
     private readonly IApplicationDbContext _db;
-    private readonly IMovementsQueryService _movementsQuery;
     private readonly ILogger<FinancialMetricsService> _logger;
 
-    public FinancialMetricsService(
-        IApplicationDbContext db,
-        IMovementsQueryService movementsQuery,
-        ILogger<FinancialMetricsService> logger)
+    public FinancialMetricsService(IApplicationDbContext db, ILogger<FinancialMetricsService> logger)
     {
         _db = db;
-        _movementsQuery = movementsQuery;
         _logger = logger;
     }
 
@@ -215,27 +209,65 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
     }
 
     // ── GetClassificationCoverageAsync ────────────────────────────────────────
-    // Patch 0068 (PATCH-019), Épica L: reutiliza IMovementsQueryService.GetAsync --
-    // la misma fuente que ya usa la pantalla Movimientos -- en vez de una consulta
-    // propia contra ClassifiedMovements/Transactions/BankStatements por separado, para
-    // no duplicar la lógica de "pendiente vs. clasificado" (unión banco+tarjeta,
-    // resolución de ClassifiedMovementItem) que esa clase ya resuelve. Determinístico
-    // para un mismo período: sin aleatoriedad ni dependencia de la hora de ejecución
-    // más allá del contenido de la base en el momento de la consulta.
+    // Patch 0072 (PATCH-019), Épica L: resuelve la cobertura con COUNT directos sobre
+    // la base -- sin traer un solo movimiento a memoria -- reemplazando la versión
+    // original del Patch 0071, que reutilizaba IMovementsQueryService.GetAsync
+    // (materializaba el período completo, motor de sospechosos y sugerencias de
+    // clasificación incluidos, solo para contar).
+    //
+    // Mismo criterio de "clasificado"/"pendiente" que ya usa el resto del sistema, sin
+    // introducir una definición alternativa (idéntico al que aplican MovementLoader y
+    // MovementsQueryService, sin cambios en ninguna de las dos):
+    //   - Pendiente: BankStatement/Transaction con Date en el período que NO tiene
+    //     ningún ClassifiedMovementItem que lo referencie (ver MovementLoader.LoadAsync).
+    //   - Clasificado: ClassifiedMovementItem (de BankStatement o Transaction) con
+    //     OriginalDate en el período (ver MovementsQueryService.LoadClassifiedAsync).
+    //
+    // 3 consultas COUNT secuenciales (pendientes de banco, pendientes de tarjeta,
+    // clasificados) -- secuenciales porque comparten el mismo IApplicationDbContext,
+    // que no admite operaciones concurrentes sobre la misma instancia (mismo motivo ya
+    // documentado en MovementsQueryService.GetAsync). No hay forma de unir banco y
+    // tarjeta en una sola consulta sin SQL crudo, y esta cantidad de queries es la
+    // mínima necesaria sin duplicar lógica de exclusión entre ambas fuentes.
 
     public async Task<ClassificationCoverage> GetClassificationCoverageAsync(
         DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        var movements = await _movementsQuery.GetAsync(
-            from, to, financialAccountId: null, search: null, ct);
+        var (fromUtc, toUtc) = ToUtcRange(from, to);
 
-        var total = movements.Count;
-        var classified = movements.Count(m => m.Status is not null);
+        var classifiedBankStatementIds = _db.ClassifiedMovementItems
+            .Where(i => i.SourceEntityType == SourceEntityType.BankStatement)
+            .Select(i => i.SourceId);
+        var classifiedTransactionIds = _db.ClassifiedMovementItems
+            .Where(i => i.SourceEntityType == SourceEntityType.Transaction)
+            .Select(i => i.SourceId);
+
+        var pendingBankStatements = await _db.BankStatements
+            .AsNoTracking()
+            .Where(b => b.Date >= fromUtc && b.Date <= toUtc)
+            .Where(b => !classifiedBankStatementIds.Contains(b.Id))
+            .CountAsync(ct);
+
+        var pendingTransactions = await _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.Date >= fromUtc && t.Date <= toUtc)
+            .Where(t => !classifiedTransactionIds.Contains(t.Id))
+            .CountAsync(ct);
+
+        var classified = await _db.ClassifiedMovementItems
+            .AsNoTracking()
+            .Where(i => i.SourceEntityType == SourceEntityType.BankStatement
+                     || i.SourceEntityType == SourceEntityType.Transaction)
+            .Where(i => i.OriginalDate >= fromUtc && i.OriginalDate <= toUtc)
+            .CountAsync(ct);
+
+        var pending = pendingBankStatements + pendingTransactions;
+        var total = classified + pending;
         var coveragePercentage = total > 0
             ? Math.Round((decimal)classified / total * 100, 1)
             : 0m;
 
-        return new ClassificationCoverage(from, to, total, classified, coveragePercentage);
+        return new ClassificationCoverage(from, to, total, classified, pending, coveragePercentage);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

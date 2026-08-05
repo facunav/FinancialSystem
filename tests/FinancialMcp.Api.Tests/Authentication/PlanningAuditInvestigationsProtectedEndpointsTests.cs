@@ -337,6 +337,6 @@ public class PlanningAuditInvestigationsProtectedEndpointsTests
 
         public Task<ClassificationCoverage> GetClassificationCoverageAsync(
             DateOnly from, DateOnly to, CancellationToken ct = default) =>
-            Task.FromResult(new ClassificationCoverage(from, to, 0, 0, 0m));
+            Task.FromResult(new ClassificationCoverage(from, to, 0, 0, 0, 0m));
     }
 }

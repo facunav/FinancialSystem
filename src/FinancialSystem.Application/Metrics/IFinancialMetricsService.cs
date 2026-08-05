@@ -46,7 +46,7 @@ public sealed record CategoryVariation(
     double VariationPct);
 
 /// <summary>
-/// Cobertura de clasificación de un período (Patch 0068, PATCH-019, Épica L
+/// Cobertura de clasificación de un período (Patch 0071/0072, PATCH-019, Épica L
 /// "Visibilidad de cobertura" -- ver docs/RoadMaps/FinancialMcp-vNext.md). Responde
 /// "¿qué porcentaje de los movimientos reales de este período ya está clasificado?" --
 /// distinto de PeriodSummary, que solo describe lo YA clasificado sin decir nada sobre
@@ -61,15 +61,17 @@ public sealed record CategoryVariation(
 ///   obligatorios por diseño (ver ClassifiedMovement.cs) -- si la fila existe, las
 ///   dimensiones obligatorias ya están completas.
 ///
-/// TotalMovements = ClassifiedMovements + pendientes -- ambos números vienen de la
-/// misma fuente (IMovementsQueryService.GetAsync), nunca de dos consultas
-/// independientes que puedan desincronizarse entre sí.
+/// TotalMovements = ClassifiedMovements + PendingMovements -- Patch 0072: ambos
+/// números vienen de consultas COUNT directas contra la base (ver
+/// FinancialMetricsService.GetClassificationCoverageAsync), sin materializar ningún
+/// movimiento en memoria.
 /// </summary>
 public sealed record ClassificationCoverage(
     DateOnly From,
     DateOnly To,
     int TotalMovements,
     int ClassifiedMovements,
+    int PendingMovements,
     decimal CoveragePercentage);
 
 // ── Interfaz del servicio ─────────────────────────────────────────────────────

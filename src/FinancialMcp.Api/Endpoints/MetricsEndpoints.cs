@@ -82,10 +82,10 @@ public static class MetricsEndpoints
     }
 
     // ── GET /api/metrics/classification-coverage?year=2026&month=6 ───────────
-    // o bien: ?from=2026-01-01&to=2026-06-30 para períodos arbitrarios (Patch 0068,
-    // PATCH-019) -- mismo estilo de parámetros que /summary (ResolvePeriod, sin
+    // o bien: ?from=2026-01-01&to=2026-06-30 para períodos arbitrarios (Patch 0071/
+    // 0072, PATCH-019) -- mismo estilo de parámetros que /summary (ResolvePeriod, sin
     // duplicar esa lógica). Ver ClassificationCoverageDto/ClassificationCoverage para
-    // qué representa el porcentaje y qué cuenta como "clasificado".
+    // qué representa el porcentaje y qué cuenta como "clasificado"/"pendiente".
 
     private static async Task<IResult> GetClassificationCoverage(
         [FromQuery] int? year,
