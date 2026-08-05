@@ -899,7 +899,14 @@ alternativa en texto a esta misma guía.
 **Resultado esperado:** texto agrupado por clase, con nombre, descripción, cuándo
 usarla, parámetros y qué devuelve, tool por tool.
 
-> **Atención — esta tool está incompleta respecto de la realidad.** `ToolRegistry`
+> **Actualización (Patch 0077, PATCH-024):** el registro se sincronizó con la
+> implementación real (incluidas `FinancialTools`, `AuditDatabaseTools.AuditDatabase`
+> — ausente incluso de esta guía hasta este patch — y esta misma tool), y un test
+> nuevo (`ToolRegistrySyncTests`) verifica esa consistencia en cada build. La
+> advertencia original (`ToolRegistry` omitía 5 de 31 tools reales) queda resuelta;
+> se conserva tachada abajo y en la sección 8 por su valor histórico.
+>
+> ~~**Atención — esta tool está incompleta respecto de la realidad.** `ToolRegistry`
 > es una lista mantenida a mano (ver comentario en `ToolRegistry.cs`: *"Si se agrega
 > o cambia una tool, esta lista se actualiza a mano en el mismo PR -- no hay ningún
 > mecanismo que la mantenga sincronizada automáticamente"*), y hoy **no incluye las
@@ -908,7 +915,7 @@ usarla, parámetros y qué devuelve, tool por tool.
 > (`RegistryTools.ListAvailableTools`). Es decir: si le pedís a un cliente que
 > "liste las tools disponibles" usando esta tool, la respuesta va a omitir 5 de las
 > 31 tools reales del servidor. Ver sección 8 para el detalle de esta
-> inconsistencia y su impacto en `AskProjectKnowledge`/`AskInvestigation`.
+> inconsistencia y su impacto en `AskProjectKnowledge`/`AskInvestigation`.~~
 
 ---
 
@@ -1057,7 +1064,7 @@ investigación puntual — la diferencia es el contexto que arma la tool: acá e
 | Retomar una investigación abierta hace tiempo | `GetInvestigation` (con Id) o `SearchInvestigations` (sin Id) | `GetInvestigation` trae todo el detalle de una; `SearchInvestigations` sirve para encontrar cuál. |
 | Cerrar o descartar una investigación | `UpdateInvestigationStatus` | Es la única tool que cambia el estado (y exige `conclusion` si el cierre es `Resolved`). |
 | Que un modelo razone sobre los movimientos reales de una investigación | `AskInvestigation` | Es la única tool que arma ese contexto completo (investigación + movimientos referenciados) y se lo pasa a Ollama. |
-| Ver el catálogo completo de tools desde dentro del MCP | `ListAvailableTools` | Único atajo en texto — pero ver la advertencia de la sección 4.8: hoy omite `FinancialTools` y a sí misma. |
+| Ver el catálogo completo de tools desde dentro del MCP | `ListAvailableTools` | Único atajo en texto — sincronizado con la implementación real desde el Patch 0077 (PATCH-024), ver sección 4.8. |
 
 ---
 
@@ -1107,10 +1114,11 @@ recomendaciones genéricas:
   y `FindMisclassifiedMovements` señalan candidatos; ninguna de las dos, ni ninguna
   otra tool del MCP, reclasifica por su cuenta — ese paso siempre es manual, en la
   aplicación.
-* **No asumir que `ListAvailableTools` (o el contexto que reciben
-  `AskProjectKnowledge`/`AskInvestigation`) enumera el 100% de las tools reales.**
-  Ver la advertencia de la sección 4.8 y el detalle de la sección 8: hoy faltan 5 de
-  31.
+* **`ListAvailableTools` (y el contexto que reciben `AskProjectKnowledge`/
+  `AskInvestigation`) enumera el 100% de las tools reales desde el Patch 0077
+  (PATCH-024)** — ver sección 4.8 y el detalle de la sección 8. Si en el futuro se
+  agrega, saca o renombra una tool sin actualizar `ToolRegistry`,
+  `ToolRegistrySyncTests` (`tests/FinancialSystem.McpServer.Tests`) falla el build.
 
 ---
 
@@ -1151,9 +1159,10 @@ recomendaciones genéricas:
   que lo siga).
 * Guardar la respuesta de `AskProjectKnowledge`/`AskInvestigation` como memoria — hay
   que llamar `AddFinding` a mano si vale la pena conservarla (ver 5.5).
-* Mantener `ToolRegistry` (y por lo tanto `ListAvailableTools`) al día — es una lista
-  escrita a mano, sin ningún mecanismo automático de sincronización (ver 4.8 y más
-  abajo).
+* Mantener `ToolRegistry` (y por lo tanto `ListAvailableTools`) al día — sigue siendo
+  una lista escrita a mano, sin ningún mecanismo automático que la actualice sola (ver
+  4.8 y más abajo); `ToolRegistrySyncTests` solo avisa cuando se desincroniza, no la
+  corrige.
 
 ### Inconsistencias detectadas entre el código y la documentación existente
 
@@ -1162,7 +1171,7 @@ Estas dos inconsistencias se detectaron al escribir esta guía, comparando
 ADRs. Se documentan acá explícitamente en vez de "corregirlas" silenciosamente en
 otro archivo:
 
-1. **`ToolRegistry` (y por lo tanto `ListAvailableTools`, y el contexto que reciben
+1. ~~**`ToolRegistry` (y por lo tanto `ListAvailableTools`, y el contexto que reciben
    `AskProjectKnowledge`/`AskInvestigation` vía `ToolRegistry.ToLlmCatalog()`) no
    incluye las 4 tools de `FinancialTools`** (`GetMonthlySummary`,
    `GetExpensesByCategory`, `GetMonthlyTrend`, `CompareWithPreviousMonth`) **ni se
@@ -1171,7 +1180,18 @@ otro archivo:
    sincronización automática — pero no advierte que hoy, concretamente, faltan estas
    5 tools de las 31 reales. El efecto práctico: un modelo que solo mire ese catálogo
    (por ejemplo, Ollama dentro de `AskProjectKnowledge`) no se entera de que existen
-   esas 5 tools.
+   esas 5 tools.~~
+
+   **Resuelto (Patch 0077, PATCH-024).** El inventario completo por reflexión hecho
+   para ese patch encontró, además, una sexta tool ausente que ni siquiera esta guía
+   había detectado: `AuditDatabaseTools.AuditDatabase` — el total real era 32, no 31.
+   `ToolRegistry` ahora incluye las 32 (`FinancialTools` completo, `AuditDatabase` y
+   `ListAvailableTools`), y `tests/FinancialSystem.McpServer.Tests/ToolRegistrySyncTests.cs`
+   (nuevo) verifica por reflexión, en cada build, que el registro y la implementación
+   real coincidan exactamente — para que esta inconsistencia no vuelva a pasar
+   inadvertida. `ToolRegistry` sigue siendo una lista mantenida a mano por decisión de
+   diseño (ver su doc-comment); lo nuevo es solo la red de seguridad que avisa cuando
+   se desincroniza.
 2. **`docs/Architecture/McpServerSetup.md` afirma, en su tabla de fases, que la Fase
    3 de ADR-006 ("IA local") y la Fase 4 de ADR-007 ("Integración con Ollama") no
    están implementadas**, con el texto literal *"No hay ninguna tool del MCP que use

@@ -3,13 +3,24 @@ using System.Text;
 namespace FinancialSystem.McpServer;
 
 /// <summary>
-/// Registro explícito, escrito a mano, de las tools MCP existentes hasta 0024 —
-/// preparación para que un modelo (Ollama u otro) pueda en el futuro saber qué tools
-/// existen y cuándo usarlas. Esto NO es tool calling: nada acá ejecuta una tool, elige
-/// una tool, ni encadena llamadas. Es solo metadata estática, consumida por
-/// ListAvailableTools (RegistryTools.cs, formato legible) y por AskProjectKnowledge/
-/// AskInvestigation (ToLlmCatalog, como contexto adicional para ILocalAiService --
-/// nunca para que el modelo ejecute nada).
+/// Registro explícito, escrito a mano, de las tools MCP existentes — preparación para
+/// que un modelo (Ollama u otro) pueda en el futuro saber qué tools existen y cuándo
+/// usarlas. Esto NO es tool calling: nada acá ejecuta una tool, elige una tool, ni
+/// encadena llamadas. Es solo metadata estática, consumida por ListAvailableTools
+/// (RegistryTools.cs, formato legible) y por AskProjectKnowledge/AskInvestigation
+/// (ToLlmCatalog, como contexto adicional para ILocalAiService -- nunca para que el
+/// modelo ejecute nada).
+///
+/// Patch 0077 (PATCH-024): sincronizado con un inventario completo de las tools
+/// realmente implementadas (todo archivo bajo Tools/ con [McpServerToolType]) --
+/// faltaban por completo AuditDatabaseTools.AuditDatabase, las 4 de FinancialTools
+/// (GetMonthlySummary/GetExpensesByCategory/GetMonthlyTrend/CompareWithPreviousMonth)
+/// y RegistryTools.ListAvailableTools, ausentes desde que cada una se agregó. Ninguna
+/// tool registrada dejó de existir. Ver ToolRegistrySyncTests
+/// (tests/FinancialSystem.McpServer.Tests) para la verificación automática de que este
+/// registro y la implementación real coinciden -- corre por reflexión sobre este
+/// mismo ensamblado, sin afectar en nada cómo se arma la lista de abajo (sigue siendo
+/// 100% manual, ver el porqué unos párrafos más abajo).
 ///
 /// SIN REFLEXIÓN, SIN ESCANEO DE ENSAMBLADOS, SIN GENERACIÓN AUTOMÁTICA (a propósito):
 ///   Reflejar [McpServerTool]/[Description] por reflexión evitaría mantener esta lista
@@ -53,6 +64,33 @@ public static class ToolRegistry
             "Diagnosticar si el MCP puede leer datos antes de investigar un problema puntual.",
             "(ninguno)",
             "Texto con estado de conexión, proveedor, migración aplicada y hora UTC."),
+
+        // ── FinancialTools ───────────────────────────────────────────────────
+        new(
+            "FinancialTools", "GetMonthlySummary",
+            "Resumen financiero de un mes: ingresos, gastos, ahorro y movimientos procesados.",
+            "El usuario pregunta cuánto gastó, cuánto ahorró o cómo le fue en un mes específico.",
+            "year (int), month (1-12)",
+            "Texto con ingresos, gastos, balance, tasa de ahorro y conteo de movimientos procesados."),
+        new(
+            "FinancialTools", "GetExpensesByCategory",
+            "Gastos reales agrupados por categoría para un período.",
+            "El usuario pregunta en qué gasta más, cómo distribuye sus gastos, o cuánto gastó en " +
+            "una categoría específica.",
+            "from, to (yyyy-MM-dd)",
+            "Texto con el total y el detalle por categoría (monto, porcentaje, cantidad de movimientos)."),
+        new(
+            "FinancialTools", "GetMonthlyTrend",
+            "Evolución de gastos e ingresos mes a mes durante los últimos N meses.",
+            "El usuario pregunta si sus gastos suben o bajan, o quiere ver una tendencia histórica.",
+            "months (1-24)",
+            "Tabla de texto por mes (gastos/ingresos/balance/ahorro) y una conclusión de tendencia simple."),
+        new(
+            "FinancialTools", "CompareWithPreviousMonth",
+            "Compara los gastos de un mes contra el mes anterior, con variación por categoría.",
+            "El usuario pregunta si gastó más o menos que el mes pasado, o qué categorías aumentaron.",
+            "year (int), month (1-12)",
+            "Texto con gastos actuales/anteriores, variación total y las categorías con mayor variación."),
 
         // ── MovementTools ────────────────────────────────────────────────────
         new(
@@ -98,6 +136,17 @@ public static class ToolRegistry
             "(defaults de contraparte, sugerencias del motor de clasificación).",
             "from?, to? (yyyy-MM-dd, máx. 90 días), financialAccountId?",
             "Lista de movimientos con sus motivos (Origen/Dimensión/Valor actual/Valor sugerido)."),
+
+        // ── AuditDatabaseTools ───────────────────────────────────────────────
+        new(
+            "AuditDatabaseTools", "AuditDatabase",
+            "Ejecuta todas las auditorías existentes (sospechosos, mal clasificados, pendientes, " +
+            "investigaciones) para el mes en curso y devuelve un resumen único.",
+            "Se necesita un panorama completo del mes actual sin llamar a cada tool de auditoría por separado.",
+            "(ninguno; siempre usa el mes en curso)",
+            "Texto con totales, problemas por categoría y una conclusión -- no detecta nada nuevo, " +
+            "combina lo que ya calculan FindSuspiciousMovements/FindMisclassifiedMovements y las " +
+            "investigaciones."),
 
         // ── ProjectTools ─────────────────────────────────────────────────────
         new(
@@ -209,6 +258,16 @@ public static class ToolRegistry
             "este movimiento parece mal clasificado?'), no solo consultarlos tal cual (para eso, GetInvestigation).",
             "investigationId, question (pregunta en lenguaje natural)",
             "La respuesta de Ollama, 'InvestigationNotFound', o un error si Ollama no está disponible."),
+
+        // ── RegistryTools ────────────────────────────────────────────────────
+        new(
+            "RegistryTools", "ListAvailableTools",
+            "Devuelve este mismo catálogo de tools MCP (nombre, descripción, cuándo usarla, " +
+            "parámetros, qué devuelve), agrupado por clase.",
+            "Se necesita descubrir qué tools existen sin haber leído el código.",
+            "(ninguno)",
+            "Texto con todas las tools agrupadas por clase -- mismo contenido de ToolRegistry.Tools, " +
+            "formateado para lectura."),
     };
 
     /// <summary>
