@@ -673,6 +673,38 @@
             transition: width .6s ease
         }
 
+        /* ── Cobertura de clasificación (Patch 0073, PATCH-020) ──
+           Mismos tokens de color que .nav a .badge.badge-attention (--amber/--amber-bg)
+           y .kpi-card.income/.expense (--green/--red) -- sin paleta nueva. */
+        .coverage-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+
+            .coverage-badge--high {
+                background: var(--green-bg);
+                color: var(--green);
+            }
+
+            .coverage-badge--medium {
+                background: var(--amber-bg);
+                color: var(--amber);
+            }
+
+            .coverage-badge--low {
+                background: var(--red-bg);
+                color: var(--red);
+            }
+
+        .coverage-sub {
+            font-size: 11px;
+            color: var(--faint);
+            margin-top: 6px;
+        }
+
         /* ── Placeholder cards (futuras secciones) ── */
         .placeholder-card {
             background: var(--surface);
@@ -881,6 +913,18 @@
                     </div>
                 </div>
 
+                <!-- ── Cobertura de clasificación (Patch 0073, PATCH-020) ──
+                     Consume GET /api/metrics/classification-coverage (Patch 0071/0072).
+                     Sin recálculo en el frontend: todo lo que se muestra viene tal cual
+                     del endpoint. -->
+                <div class="section-title">Confiabilidad de los datos</div>
+                <div class="card">
+                    <div class="card-title">Cobertura de clasificación</div>
+                    <div id="coverageContent">
+                        <div style="color:var(--faint);font-size:12px">Cargando…</div>
+                    </div>
+                </div>
+
                 <!-- ── Categorías + Comparación ── -->
                 <div class="section-title">Distribución y comparación</div>
                 <div class="grid-2">
@@ -1020,6 +1064,13 @@
             } finally {
                 setLoading(false);
             }
+
+            // Independiente del try/catch de arriba a propósito (sección "Errores" del
+            // Patch 0073, PATCH-020, mismo criterio que loadPlanningSummary()): una
+            // falla acá no debe afectar el resto del Dashboard, ni bloquear su loading
+            // overlay -- loadClassificationCoverage tiene su propio manejo de error,
+            // acotado a esta tarjeta.
+            loadClassificationCoverage(currentYear, currentMonth);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -1057,6 +1108,76 @@
             if (!badge) return;
             badge.textContent = String(count);
             badge.classList.toggle('badge-attention', count > 0);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // COBERTURA DE CLASIFICACIÓN (Patch 0073, PATCH-020) — consume GET
+        // /api/metrics/classification-coverage (Patch 0071/0072). No recalcula nada
+        // acá: TotalMovements/ClassifiedMovements/PendingMovements/CoveragePercentage
+        // vienen tal cual del backend. Independiente de la carga principal de
+        // loadDashboard() -- mismo criterio que loadPlanningSummary(): una falla acá
+        // queda contenida en esta tarjeta, nunca tira abajo el resto del Dashboard.
+        // ─────────────────────────────────────────────────────────────────────────
+
+        // Umbrales de cobertura -- único lugar del código que decide qué porcentaje
+        // es "alta"/"media"/"baja". No dispersar estos valores en ningún otro lado.
+        //   >= HIGH               → cobertura alta  (verde)
+        //   >= MEDIUM y < HIGH    → cobertura media (ámbar)
+        //   < MEDIUM              → cobertura baja  (rojo)
+        const COVERAGE_THRESHOLDS = { HIGH: 80, MEDIUM: 50 };
+
+        async function loadClassificationCoverage(year, month) {
+            try {
+                const data = await getJson(`${API}/api/metrics/classification-coverage?year=${year}&month=${month}`);
+                renderClassificationCoverage(data);
+            } catch {
+                renderClassificationCoverageError();
+            }
+        }
+
+        function classifyCoverage(pct) {
+            if (pct >= COVERAGE_THRESHOLDS.HIGH) return { label: 'Alta', cls: 'high', color: 'var(--green)' };
+            if (pct >= COVERAGE_THRESHOLDS.MEDIUM) return { label: 'Media', cls: 'medium', color: 'var(--amber)' };
+            return { label: 'Baja', cls: 'low', color: 'var(--red)' };
+        }
+
+        function renderClassificationCoverage(data) {
+            const container = document.getElementById('coverageContent');
+            const total = data.totalMovements ?? 0;
+
+            // Sin movimientos en el período: no hay cobertura que calcular -- mostrar
+            // eso explícitamente en vez de una barra en 0% (que se leería como
+            // "cobertura baja" cuando en realidad no hay nada para cubrir).
+            if (total === 0) {
+                container.innerHTML =
+                    '<div style="color:var(--faint);font-size:12px">Sin movimientos en este período — no hay cobertura para calcular.</div>';
+                return;
+            }
+
+            const pct = Number(data.coveragePercentage ?? 0);
+            const state = classifyCoverage(pct);
+
+            container.innerHTML = `
+                <div class="prog-item">
+                    <div class="prog-header">
+                        <span class="prog-label">
+                            <span class="coverage-badge coverage-badge--${state.cls}">${state.label}</span>
+                        </span>
+                        <span class="prog-value">${pct.toFixed(1)}%</span>
+                    </div>
+                    <div class="prog-track">
+                        <div class="prog-fill" style="width:${Math.min(pct, 100)}%;background:${state.color}"></div>
+                    </div>
+                    <div class="coverage-sub">${data.classifiedMovements} clasificado(s) · ${data.pendingMovements} pendiente(s) de ${total} movimiento(s)</div>
+                </div>`;
+        }
+
+        // Estado degradado (sección "Errores" del patch): el resto del Dashboard sigue
+        // funcionando normalmente, esta tarjeta simplemente informa que no pudo cargar.
+        function renderClassificationCoverageError() {
+            const container = document.getElementById('coverageContent');
+            container.innerHTML =
+                '<div style="color:var(--faint);font-size:12px">⚠ No se pudo cargar la cobertura de clasificación.</div>';
         }
 
         // ─────────────────────────────────────────────────────────────────────────
