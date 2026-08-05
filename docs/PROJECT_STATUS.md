@@ -161,8 +161,11 @@
 - `docs/patch/enriquecimiento-tarjeta-debito.md`.
 
 **Deberían archivarse (obsoletos, superados por otro documento del propio repositorio):**
-- `docs/Architecture/analisisnavegacion.md`, `analisisproximaepicausabilidad.md`, `auditoriasemanticamovimientosreales.md` — contenido ya implementado o absorbido por otro documento.
 - `docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md` — mismo análisis repetido 3 veces, candidatos a fusión en un único documento.
+
+**No deberían archivarse todavía (verificado contra el código en PATCH-027 — corrige la evaluación anterior de esta misma tabla):**
+- `docs/Architecture/analisisnavegacion.md` — propone unificar el shell con sidebar de `dashboard.html` en las pantallas secundarias; siguen usando un topbar aislado con "← Dashboard" (`movements.html`, `accounts.html`, `imports.html`, `counterparties.html`, `audit.html`, `planning.html`) — no implementado.
+- `docs/Architecture/analisisproximaepicausabilidad.md` — de sus 6 ítems de alcance, al menos 3 siguen sin implementar: ruteo de `.xls` por contenido (`BbvaBankStatementImportHandler.CanHandle` sigue siendo por nombre de archivo), pantalla de administración de Categorías (no existe) y checkbox "recordar como default de esta contraparte" en el modal de clasificación (no existe en `movements.html`).
 
 ---
 
