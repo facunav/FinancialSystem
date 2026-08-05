@@ -57,11 +57,11 @@ Ningún otro bug bloqueante encontrado con evidencia de código en esta revisió
 ## 5. Documentación a actualizar
 
 - **`docs/RoadMaps/FinancialMcp-vNext.md`** → Actualizar: es el único documento que debería quedar como fuente de verdad del roadmap; hoy marca la Épica J como no iniciada cuando ya tiene código (M5). Absorber el contenido de este documento y reemplazar las secciones 7-9.
-- **`AuditoriaMVP.md`, `RoadmapMVP.md`, `MVPDefinitivo.md`** (generados en rondas anteriores) → Archivar/descartar, superados por este documento.
 - **`docs/UX/ClassificationUX.md`** → Actualizar §1.2 (describe un `<select>` editable de cuenta que ya es de solo lectura) y §1.5 (dice que "Cuentas" no existe, cuando `accounts.html` ya existe).
 - **`docs/Architecture/analisisproximaepicausabilidad.md`, `analisisnavegacion.md`, `auditoriasemanticamovimientosreales.md`** → Archivar, contenido absorbido por otros documentos ya implementados.
-- **`docs/Architecture/reconstruccionenrichasync.md`** → Eliminar, artefacto de diagnóstico puntual, no documentación de diseño.
 - **`docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md`** → Unificar en un solo documento (misma conclusión repetida tres veces), insumo de la futura Épica N — no se toca hasta que esa épica se retome.
+
+*(`AuditoriaMVP.md`, `RoadmapMVP.md`, `MVPDefinitivo.md` y `reconstruccionenrichasync.md` — las dos entradas que estaban acá — ya se archivaron en `docs/Archive/` en PATCH-025.)*
 - **Series `PRS*`/`PRU*` de `docs/Architecture/`** → Archivar (S1-S11, U1-U4 confirmados implementados); extraer como ítems sueltos de backlog las dos recomendaciones sin confirmar (S12: bug de confianza en sugerencia desactivada; UI1-UI5: extracción de CSS/JS, salvo XSS).
 
 ---

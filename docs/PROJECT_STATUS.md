@@ -161,8 +161,6 @@
 - `docs/patch/enriquecimiento-tarjeta-debito.md`.
 
 **Deberían archivarse (obsoletos, superados por otro documento del propio repositorio):**
-- `docs/Architecture/AuditoriaMVP.md`, `RoadmapMVP.md`, `MVPDefinitivo.md` — reemplazados explícitamente por `EstadoMVP.md`.
-- `docs/Architecture/reconstruccionenrichasync.md` — artefacto de una sesión de diagnóstico puntual.
 - `docs/Architecture/analisisnavegacion.md`, `analisisproximaepicausabilidad.md`, `auditoriasemanticamovimientosreales.md` — contenido ya implementado o absorbido por otro documento.
 - `docs/Architecture/analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md`, `redisenoflujofuncional.md` — mismo análisis repetido 3 veces, candidatos a fusión en un único documento.
 
