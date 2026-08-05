@@ -1,6 +1,8 @@
-# Épica M — Mejoras al flujo de importación
+# Mejoras al flujo de importación (historias M1–M9)
 
-> Estado: 📋 planificada, no implementada. Documento de planificación, no de diseño técnico — traduce los hallazgos de `docs/Analysis/ImportWorkflowReview.md` en historias de usuario chicas e independientes, cada una implementable en uno o pocos PRs. No define implementación técnica (eso queda para el documento de diseño de cada historia, cuando se decida encararla).
+> **Nota de nomenclatura (PATCH-034):** este documento se llamaba "Épica M — Mejoras al flujo de importación", en colisión directa con la Épica M oficial de `docs/RoadMaps/FinancialMcp-vNext.md` (Cuentas de inversión) — colisión ya señalada, sin resolver, en `docs/Archive/AuditoriaMVP.md`. El título cambia para dejar de reclamar el nombre "Épica"; las historias `M1`–`M9` **no se renumeran** (siguen significando exactamente lo mismo, y el archivo no cambió de ruta, así que las referencias existentes desde `EstadoMVP.md`, `PROJECT_STATUS.md` y comentarios de código siguen siendo válidas). Ver `docs/Architecture/NomenclaturaEpicas.md` para el detalle completo de esta y otras colisiones de letra en el repositorio.
+>
+> Estado: 📋 planificada, no implementada. Documento de planificación, no de diseño técnico — traduce los hallazgos de `docs/Architecture/ImportWorkflowReview.md` en historias de usuario chicas e independientes, cada una implementable en uno o pocos PRs. No define implementación técnica (eso queda para el documento de diseño de cada historia, cuando se decida encararla).
 
 Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantiene la separación entre UX y arquitectura salvo en los casos donde el propio hallazgo es, a la vez, un problema de contrato y de visualización — en esos casos se aclara explícitamente por qué no se separan.
 
@@ -172,7 +174,7 @@ Cada historia mapea a uno o más hallazgos prioritarios del análisis. Se mantie
 
 **Alcance de esta historia — solo Parte A (diagnóstico).** Ver "Parte B" más abajo para lo que queda explícitamente fuera.
 
-**Problema que resuelve.** Gap encontrado al investigar por qué, tras M5, una importación con un número de cuenta no registrado "importa correctamente" sin ninguna señal para el usuario. `AssignFinancialAccountAsync` (`BbvaBankStatementImporter`) ya distingue internamente 0 matches / 1 match / >1 matches, pero solo actúa (asigna) en el caso de match único y solo deja rastro — en el log, no en ningún lado visible al usuario — en el caso ambiguo. El caso de 0 matches, que es exactamente "número de cuenta desconocido", no genera ningún registro: ni en log, ni en `ImportBatch`, ni en `ImportBatchLine`. No es un hallazgo del análisis original (`ImportWorkflowReview.md`) — surge de validar M5 contra un caso real donde la cuenta del archivo no estaba dada de alta.
+**Problema que resuelve.** Gap encontrado al investigar por qué, tras M5, una importación con un número de cuenta no registrado "importa correctamente" sin ninguna señal para el usuario. `AssignFinancialAccountAsync` (`BbvaBankStatementImporter`) ya distingue internamente 0 matches / 1 match / >1 matches, pero solo actúa (asigna) en el caso de match único y solo deja rastro — en el log, no en ningún lado visible al usuario — en el caso ambiguo. El caso de 0 matches, que es exactamente "número de cuenta desconocido", no genera ningún registro: ni en log, ni en `ImportBatch`, ni en `ImportBatchLine`. No es un hallazgo del análisis original (`docs/Architecture/ImportWorkflowReview.md`) — surge de validar M5 contra un caso real donde la cuenta del archivo no estaba dada de alta.
 
 **Beneficio para el usuario.** Deja de haber un caso de "importó pero no dice nada": si el sistema vio un número de cuenta y no lo reconoce, el usuario se entera al revisar el historial, en vez de descubrirlo indirectamente mirando movimiento por movimiento en `movements.html`.
 
@@ -238,4 +240,4 @@ Requiere, antes de diseñarse: decidir si la creación debe ser un paso explíci
 
 ---
 
-Este documento no es un compromiso de PRs ni de fechas — es la traducción de `docs/Analysis/ImportWorkflowReview.md` a unidades de trabajo chicas para decidir, historia por historia, cuándo y en qué orden encararlas.
+Este documento no es un compromiso de PRs ni de fechas — es la traducción de `docs/Architecture/ImportWorkflowReview.md` a unidades de trabajo chicas para decidir, historia por historia, cuándo y en qué orden encararlas.

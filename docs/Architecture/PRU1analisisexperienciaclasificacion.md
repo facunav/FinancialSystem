@@ -1,5 +1,7 @@
 # Épica U — Análisis de la experiencia de clasificación de movimientos
 
+> **Nota de nomenclatura (PATCH-034), sin cambios al contenido de abajo.** Este documento usa "Épica L" (§12) para referirse al retiro del backend de matching Legacy — en la numeración vigente de `docs/RoadMaps/FinancialMcp-vNext.md`, ese trabajo se identifica como `PR-L1`–`PR-L5`, parte de la **Épica K**, y "Épica L" designa hoy algo distinto (Visibilidad de cobertura). Ver `docs/Architecture/NomenclaturaEpicas.md` §5 para el detalle completo. Este documento ya está clasificado como histórico en `docs/PROJECT_STATUS.md` §7 ("tiene valor de referencia, no de verdad activa") — no se edita su análisis original.
+
 Análisis puro, sin código, sin patch, sin modificaciones al repositorio. Base:
 `origin/master` en `763b64d` (PR-S12 mergeado, confirmado por `git fetch` + `git log`
 al inicio de este análisis — nada asumido de conversaciones anteriores).

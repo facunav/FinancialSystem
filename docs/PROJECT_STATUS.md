@@ -109,6 +109,8 @@
 
 ## 5. Épicas
 
+> Esta tabla mezcla letras de `vNext.md` (I-O, oficiales) con épicas adicionales (S/U/UI) y sin letra (Planificación Mensual, Centro de Auditoría, Mejoras al flujo de importación) que `vNext.md` no lista. Para el detalle de por qué conviven distintos esquemas, y de las colisiones de letra entre "M" y "L" en particular, ver `docs/Architecture/NomenclaturaEpicas.md` (PATCH-034).
+
 | Épica | Estado | Qué implementó realmente | Qué quedó fuera |
 |---|---|---|---|
 | **Review & Classification Engine v2** | Archivada | Motor de matching original (`IMatchScorer`, `IMatchingRule`) construido y luego retirado por completo al no tener consumidor real tras la Épica K. | — (correctamente archivado en `docs/Archive/`) |
@@ -117,7 +119,7 @@
 | **J — Modelo de Cuentas Financieras** | Terminada (núcleo) | `FinancialAccount` como entidad explícita, CRUD completo (`accounts.html`), asignación automática de cuenta al importar cuando el número resuelve sin ambigüedad (banco y tarjeta). | Asignación manual solo para el caso restante: archivo sin número de cuenta o con ambigüedad. |
 | **L — Visibilidad de cobertura** | Terminada | Badge de pendientes en el nav; endpoint de cobertura de clasificación + indicador visual de 3 estados en el Dashboard (PATCH-019/PATCH-020). | — |
 | **M — Cuentas de inversión** | Pendiente | — no iniciada. | Todo — `InvestmentAccount` no existe en el código. |
-| **Mejoras al flujo de importación** (documento con nombre colisionado con la Épica M de inversión) | Activa | Corrección de desfasaje de fila, autoasignación de cuenta en enriquecimiento de débito. | Mostrar "Enriquecidos" en `imports.html`, limpiar estado "Confirmado" inalcanzable, diagnóstico de cuenta sin match. |
+| **Mejoras al flujo de importación** (historias M1–M9, `docs/Architecture/EpicaMImportWorkflow.md` — retitulado en PATCH-034, ya no se llama "Épica M"; ver `docs/Architecture/NomenclaturaEpicas.md`) | Activa | Corrección de desfasaje de fila, autoasignación de cuenta en enriquecimiento de débito. | Mostrar "Enriquecidos" en `imports.html`, limpiar estado "Confirmado" inalcanzable, diagnóstico de cuenta sin match. |
 | **N — Simplificación del formulario de clasificación** | Pendiente | — no iniciada. | Todo — `MovementType` sigue siendo un campo obligatorio. |
 | **O — Importación Manual e Historial** | Terminada | Endpoint de subida manual, reutilizando el mismo motor que el Worker. | — (la documentación de la épica está desactualizada, no la funcionalidad). |
 | **S — Motor de sugerencias** (sin doc de épica formal) | Terminada | Las dos heurísticas activas (histórica + valores por defecto de contraparte), con múltiples rondas de corrección de bugs. | Mejoras estructurales de bajo riesgo recomendadas y nunca ejecutadas (extraer normalización a su propia clase). |
@@ -155,6 +157,7 @@
 - `docs/UX/ClassificationUX.md` — vigente; actualizado en PATCH-032 (campo de cuenta financiera de solo lectura, resolución automática de Épica J, controles del modal de clasificación no documentados hasta ahora).
 - `docs/UserGuide/McpUserGuide.md` — vigente, catálogo de tools un paso atrás del código.
 - `docs/Architecture/CentroDeAuditoria.md` (PATCH-033, nuevo) — arquitectura, flujo y limitaciones reales del Centro de Auditoría; no tenía documento de diseño propio hasta este patch.
+- `docs/Architecture/NomenclaturaEpicas.md` (PATCH-034, nuevo) — resuelve la numeración/nomenclatura de Épicas (I-O oficial, S/U/UI, épicas sin letra, y las colisiones de las letras "M" y "L" entre distintos documentos del repositorio). Consultar antes de asignarle una letra a trabajo nuevo.
 
 **Históricos (tienen valor de referencia, no de verdad activa):**
 - `docs/Archive/*` — correctamente archivado.

@@ -137,7 +137,7 @@ Detectados por revisión directa del código (no hipótesis) durante la evaluaci
 
 ## 7. Roadmap por épicas
 
-Continúa la numeración de letra usada en Review & Classification Engine v2 (que llegó hasta D).
+Continúa la numeración de letra usada en Review & Classification Engine v2 (que llegó hasta D). Esta tabla (I-O) es la numeración oficial vigente de Épicas — para las adicionales sin letra (Centro de Auditoría, Planificación Mensual), las documentadas solo en `PROJECT_STATUS.md` (S/U/UI) y las colisiones de letra con otros documentos del repositorio ("M" y "L" tienen usos distintos fuera de este documento), ver `docs/Architecture/NomenclaturaEpicas.md` (PATCH-034).
 
 | Épica | Objetivo | Estado |
 |---|---|---|
