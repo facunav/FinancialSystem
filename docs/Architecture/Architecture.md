@@ -25,10 +25,12 @@ Contratos (interfaces), comandos, queries, handlers, y opciones de configuració
 
 Contiene:
 * Contratos de servicios (`IMovementLoader`, `ISuspicionDetector`, `IReviewEngine`, `IApplicationDbContext`, `IDateTimeProvider`, `ITransactionNormalizer`, `IFileParser`, etc.). PR-S2: `IClassificationSuggestionService` (carpeta `Suggestions/`) — contrato del motor de sugerencias de clasificación, ver `docs/Archive/PRS1analisismotorsugerencias.md` (archivado en PATCH-026 — funcionalidad ya implementada). Desacoplado de `IReviewEngine` a propósito (opera por movimiento(s), no por período). PR-S4: `MovementsQueryService` lo consume directamente (no a través de `IReviewEngine`) para completar `MovementView.Suggestions` — todavía sin consumidor en `movements.html`.
-* Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4).
+* Comandos y sus handlers (`ClassifyMovementCommand`/`Handler` — único comando de clasificación desde PR-L4). **Actualización (PATCH-045):** ya no es el único módulo con Command/Handler — `Planning/Commands` (8 handlers), `Investigations/Commands` (4 handlers) y `Audit/Commands` (`ReviewMovementsCommand`/`Handler`) siguen el mismo patrón. Categorías, Contrapartes, Cuentas Financieras, BankStatement y Transaction todavía **no** lo siguen — su lógica de negocio vive directamente en `Endpoints/` (ver `docs/PROJECT_STATUS.md` §11, migración pendiente).
 * Opciones de configuración (`ReviewEngineOptions`, `FileIngestionOptions`, `OllamaOptions`, `OpenAIOptions`, `InsightsWorkerOptions`).
 
 **Convención establecida (sin patrón Repository):** los handlers usan `IApplicationDbContext` directamente. No se reintroduce un `IRepository` intermedio — fue una decisión explícita al reconstruir el motor de revisión (ver `docs/Archive/ReviewClassificationEnginev2ADR.md`, sección 17), y se mantiene para todo lo nuevo.
+
+**Patrón Command/Handler formalizado (PATCH-045):** ver `docs/Decisions/ADR-008-command-handler-sin-mediatr.md` para la decisión completa — Command/Handler invocado directamente (sin MediatR) es el patrón oficial del proyecto para cualquier escritura nueva. Las lecturas no usan un objeto "Query": se resuelven con servicios de solo lectura inyectables (`IMovementsQueryService`, `IPlanningQueryService`, `IFinancialMetricsService`, `IMovementLookupService`), mismo criterio ya documentado en `docs/Archive/PRS1analisismotorsugerencias.md`.
 
 **Qué NO pertenece acá:** implementaciones concretas de EF Core, parsers reales, lógica de HTTP/endpoints.
 

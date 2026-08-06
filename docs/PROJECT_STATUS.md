@@ -141,6 +141,7 @@
 | **ADR-005** | `ImportBatch` como mecanismo de trazabilidad | Vigente (texto corregido en PATCH-030) | La entidad está completamente implementada y en uso; el documento ya refleja esto — antes decía "entidad no implementada". |
 | **ADR-006** | Roadmap del MCP como compañero de investigación | Parcialmente vigente | Fases 1-2 implementadas; Fase 3 (IA local) implementada pero con nombres de herramientas distintos a los que sugería el ADR original. |
 | **ADR-007** | Memoria del MCP (investigaciones) | Vigente (declaración de estado corregida en PATCH-030) | El diseño se respeta y está bien implementado (Fases 2-4: persistencia, tools CRUD, integración con Ollama); el documento ya lo refleja — antes declaraba explícitamente "ninguna fase implementada". Fase 5 sigue pendiente, correctamente marcada como tal. |
+| **ADR-008** | Command/Handler invocado directamente, sin MediatR (PATCH-045) | Vigente (nueva) | Formaliza una decisión que ya existía de hecho en el código: el patrón oficial del proyecto es Command/Handler simple, sin mediador. Documenta también, sin resolverla, la migración pendiente de los módulos que todavía tienen lógica de negocio directamente en Endpoints (Categorías, Contrapartes, Cuentas Financieras, BankStatement, Transaction). |
 
 ---
 
@@ -152,7 +153,7 @@
 - `docs/Architecture/Architecture.md` — arquitectura formal (una línea puntual desactualizada, resto vigente).
 - `docs/Architecture/EstadoMVP.md` — estado del MVP original, reemplaza explícitamente a tres documentos anteriores.
 - `docs/Architecture/SimplificacionModeloClasificacion.md` (PATCH-028) — consolida `analisissimplificacionmodelodominio.md`, `auditoriaflujoclasificacion.md` y `redisenoflujofuncional.md` (archivados), insumo base para la futura Épica N.
-- `docs/Decisions/ADR-001` a `ADR-006`, `docs/Architecture/Decisions/ADR-007` — ver sección 6 para vigencia de cada uno.
+- `docs/Decisions/ADR-001` a `ADR-006`, `ADR-008`; `docs/Architecture/Decisions/ADR-007` — ver sección 6 para vigencia de cada uno.
 - `docs/Epics/EpicaI-Importacion.md`, `EpicaO-ImportacionManual.md`, `Epica-PlanificacionMensual.md` — diseño de épicas concretas (con notas de estado desactualizadas en algunos casos, contenido técnico vigente).
 - `docs/UX/ClassificationUX.md` — vigente; actualizado en PATCH-032 (campo de cuenta financiera de solo lectura, resolución automática de Épica J, controles del modal de clasificación no documentados hasta ahora).
 - `docs/UserGuide/McpUserGuide.md` — vigente, catálogo de tools un paso atrás del código.
@@ -179,7 +180,7 @@
 - **Application** — contiene los contratos (`IApplicationDbContext`, interfaces de servicios) y los Command/Handler de los módulos más nuevos (Planning, Investigations, Review, Audit). **No está aislada del ORM**: referencia `Microsoft.EntityFrameworkCore` completo (no solo abstracciones) y también `ClosedXML`/`PdfPig` directamente, porque los parsers de importación viven acá en vez de en Infrastructure.
 - **Infrastructure** — implementaciones concretas (EF Core, parsers, motor de sugerencias, servicio de auditoría).
 - **Api** — pensada como capa delgada, pero **no lo es de forma uniforme**: los módulos de Cuentas/Categorías/Contrapartes/Transacciones/Extractos tienen su lógica de negocio (validaciones, unicidad, normalización) escrita directamente en los Endpoints, sin pasar por Application.
-- **No hay MediatR real** pese a que el nombre "Command/Handler" lo sugiere — son clases invocadas directamente, no un mediador (`ISender`/`IRequestHandler<T>`). Funciona igual, pero es un nombre engañoso para quien llega esperando MediatR de verdad.
+- **No hay MediatR real** pese a que el nombre "Command/Handler" lo sugiere — son clases invocadas directamente, no un mediador (`ISender`/`IRequestHandler<T>`). **Decisión formalizada en PATCH-045 (`docs/Decisions/ADR-008-command-handler-sin-mediatr.md`)**: Command/Handler invocado directamente es el patrón oficial del proyecto, MediatR queda explícitamente descartado (no solo "no adoptado todavía"), y la migración de los módulos que aún tienen lógica en Endpoints queda documentada como pendiente, no resuelta por esa ADR.
 - Sin patrón Repository (decisión deliberada), sin bus de eventos (decisión deliberada), sugerencias de matching efímeras y recalculadas en cada request (decisión deliberada) — las tres documentadas y razonables para el tamaño actual.
 
 **Flujo de importación:**
@@ -266,7 +267,7 @@ ClassifyMovementCommand — el usuario confirma/ajusta → ClassifiedMovement (�
 - **Seguridad ausente**: sin autenticación en la API, credenciales de base de datos versionadas en el repositorio.
 - **Robustez de importación desigual**: el pipeline catch-all tiene idempotencia sólida por contenido; el de extractos bancarios sigue siendo posicional (nombre de archivo + fila) y el ruteo de PDF Visa/Mastercard tiene un riesgo de colisión conocido y no corregido.
 - **Performance del Centro de Auditoría**: el reporte completo recalcula el mismo resultado varias veces por invocación en vez de reutilizarlo.
-- **Arquitectura declarada vs. real**: "CQRS + MediatR" es más un estilo que un hecho (no hay MediatR real) y no se aplica de forma uniforme (mitad de los módulos con Command/Handler, mitad con lógica de negocio directo en los Endpoints).
+- **Migración de arquitectura pendiente (patrón ya formalizado)**: `ADR-008` (PATCH-045) formaliza que el patrón oficial es Command/Handler invocado directamente, sin MediatR — ya no es una ambigüedad de qué patrón seguir. Sigue pendiente, sin cambios de código todavía, que se aplique de forma uniforme: la mitad de los módulos usa Command/Handler, la otra mitad tiene lógica de negocio directo en los Endpoints (Categorías, Contrapartes, Cuentas Financieras, BankStatement, Transaction).
 - **Frontend sin infraestructura compartida**: 8 páginas HTML con CSS/JS duplicado, con una divergencia de comportamiento ya demostrada entre páginas.
 - **Cobertura de tests desequilibrada**: sólida en el motor de Sugerencias e Importación; prácticamente inexistente en Auditoría e Investigaciones — justo los dos módulos más nuevos y menos maduros.
 - **Documentación que se desactualiza más rápido de lo que se corrige**: varios documentos que se autodeclaran "fuente de verdad" quedaron obsoletos por código escrito el mismo día — riesgo de proceso más que de código, pero ya generó al menos un caso real de scope creep (Planificación Mensual implementó algo que su propia épica excluía).
@@ -295,7 +296,7 @@ Según el plan de implementación priorizado ya elaborado (`FinancialMcp-Plan-Im
 3. **Consistencia y confianza del producto** — ~~indicador de cobertura de clasificación~~ (hecho, Épica L), guía de UX para pago de tarjeta (parcial, ver ADR-003; falta el caso general de Épica N), ~~corrección de los documentos que hoy mienten sobre su propio estado (ADR-007;~~ `vNext.md` corregido en PATCH-029; `PROJECT_STATUS.md` sincronizado en PATCH-0078A; **ADR-005 y ADR-007 corregidos en PATCH-030**).
 4. **Consolidación documental** — archivar lo obsoleto, actualizar lo vigente. ~~documentar el Centro de Auditoría (hoy sin ningún documento de diseño)~~ — Hecho (PATCH-033): `docs/Architecture/CentroDeAuditoria.md`.
 5. **Cobertura de tests en módulos críticos** — Auditoría e Investigaciones antes de seguir construyendo sobre ellos.
-6. **Deuda de arquitectura y performance** — eliminar la recomputación redundante del Centro de Auditoría, homogeneizar el patrón CQRS.
+6. **Deuda de arquitectura y performance** — eliminar la recomputación redundante del Centro de Auditoría, homogeneizar el patrón CQRS. **Decisión formalizada (PATCH-045)**: `ADR-008` establece que el patrón oficial es Command/Handler sin MediatR — falta todavía migrar los módulos que hoy tienen lógica de negocio directo en Endpoints (Categorías, Contrapartes, Cuentas Financieras, BankStatement, Transaction), ejecución explícitamente fuera de alcance de PATCH-045.
 7. **Consolidación de frontend** — infraestructura de CSS/JS compartida entre las 8 páginas.
 8. **Limpieza de código muerto** — bajo riesgo, se intercala en cualquier momento.
 9. **Nuevas funcionalidades** (gastos fijos, presupuestos, multi-banco) — explícitamente al final, recién después de cerrar los ocho puntos anteriores.
