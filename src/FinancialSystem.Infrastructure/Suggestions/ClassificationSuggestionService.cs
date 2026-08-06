@@ -111,7 +111,7 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
             if (suggestions.Count == 0) continue;
 
             results.Add(new ClassificationSuggestionSet(
-                ToSourceEntityType(movement.Source), movement.SourceId, suggestions));
+                movement.Source.ToSourceEntityType(), movement.SourceId, suggestions));
         }
 
         if (results.Count == 0) return results;
@@ -436,13 +436,6 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
 
         return $"{matchCount} clasificaciones históricas con la misma descripción, con {distinctCount} valores distintos y sin mayoría clara ({winnerCount} de {matchCount} para el valor más frecuente).";
     }
-
-    private static SourceEntityType ToSourceEntityType(MovementSource source) => source switch
-    {
-        MovementSource.BankDebit => SourceEntityType.BankStatement,
-        MovementSource.CreditCard => SourceEntityType.Transaction,
-        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "MovementSource sin mapeo a SourceEntityType conocido."),
-    };
 
     // Internal (no private) solo para que FinancialSystem.Infrastructure.Tests pueda
     // construir filas y ejercitar BuildSuggestions directamente (ver PR-S10) — mismo

@@ -207,7 +207,7 @@ public sealed class AuditReportService
             var reviewed = reviews.TryGetValue(m.SourceId, out var reviewedAtUtc);
 
             return new MisclassifiedMovement(
-                ToSourceEntityType(m.Source),
+                m.Source.ToSourceEntityType(),
                 m.SourceId,
                 m.Date,
                 m.Description,
@@ -582,17 +582,6 @@ public sealed class AuditReportService
         FinancialAccountId = m.FinancialAccountId,
         Merchant = m.Merchant,
         MerchantAtUtc = m.MerchantAtUtc,
-    };
-
-    // Mismo mapeo que ClassificationSuggestionService.ToSourceEntityType -- se duplica acá
-    // (privado en ambos archivos) en vez de compartirse porque ninguno de los dos expone
-    // hoy un punto de extensión público para esto, y MovementAuditDecision necesita identificar
-    // el movimiento con SourceEntityType+SourceId igual que el resto del proyecto.
-    private static SourceEntityType ToSourceEntityType(MovementSource source) => source switch
-    {
-        MovementSource.BankDebit => SourceEntityType.BankStatement,
-        MovementSource.CreditCard => SourceEntityType.Transaction,
-        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "MovementSource sin mapeo a SourceEntityType conocido."),
     };
 
     private sealed record CounterpartyDefaults(
