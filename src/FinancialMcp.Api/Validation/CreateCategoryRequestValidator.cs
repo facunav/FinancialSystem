@@ -31,9 +31,10 @@ public sealed class CreateCategoryRequestValidator : AbstractValidator<CreateCat
             .MaximumLength(DisplayNameMaxLength)
                 .WithMessage($"displayName no puede superar los {DisplayNameMaxLength} caracteres");
 
-        // Name es opcional (se deriva de DisplayName si no se provee, ver
-        // CategoryEndpoints.NormalizeName) -- solo se valida su longitud cuando el
-        // caller efectivamente manda un valor.
+        // Name es opcional (se deriva de DisplayName si no se provee -- ver
+        // CreateCategoryHandler.NormalizeName, Application.Categories.Commands, migrado
+        // desde acá en PATCH-046) -- solo se valida su longitud cuando el caller
+        // efectivamente manda un valor.
         RuleFor(r => r.Name)
             .MaximumLength(NameMaxLength)
                 .WithMessage($"name no puede superar los {NameMaxLength} caracteres")

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
+using FinancialSystem.Application;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts;
 using FinancialSystem.Application.Metrics;
@@ -38,6 +39,11 @@ namespace FinancialMcp.Api.Tests.Authentication;
 /// ApiKeyAuthenticationTests/ProtectedEndpointsTests (Patches 0058/0059): Program.cs
 /// requiere una conexión real a PostgreSQL en su arranque, fuera del alcance de este
 /// patch.
+///
+/// Actualización (PATCH-046): CategoryEndpoints ahora delega en los Handlers de
+/// FinancialSystem.Application.Categories -- se registran vía la extensión real
+/// AddApplication(), mismo criterio que PlanningAuditInvestigationsProtectedEndpointsTests
+/// ya usa para Planning/Audit/Investigations.
 /// </summary>
 public class MasterDataProtectedEndpointsTests
 {
@@ -287,6 +293,7 @@ public class MasterDataProtectedEndpointsTests
                 {
                     services.AddRouting();
                     services.AddApiKeyAuthentication(context.Configuration);
+                    services.AddApplication();
 
                     services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
                     services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());

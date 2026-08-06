@@ -1,5 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Audit.Commands;
+using FinancialSystem.Application.Categories.Commands;
+using FinancialSystem.Application.Categories.Queries;
 using FinancialSystem.Application.Investigations.Commands;
 using FinancialSystem.Application.Planning.Commands;
 using FinancialSystem.Application.Review.Commands;
@@ -26,6 +28,10 @@ public static class DependencyInjection
         services.AddScoped<MarkPlanningItemAsPaidHandler>();
         services.AddScoped<UnmarkPlanningItemAsPaidHandler>();
         services.AddScoped<UpdateExpectedIncomeHandler>();
+        services.AddScoped<GetCategoriesHandler>();
+        services.AddScoped<CreateCategoryHandler>();
+        services.AddScoped<UpdateCategoryHandler>();
+        services.AddScoped<DeactivateCategoryHandler>();
         return services;
     }
 

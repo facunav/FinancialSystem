@@ -4,6 +4,7 @@ using System.Text.Json;
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
 using FinancialSystem.Api.Validation;
+using FinancialSystem.Application;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Infrastructure.Persistence;
 using FluentValidation;
@@ -31,6 +32,13 @@ namespace FinancialMcp.Api.Tests.Validation;
 /// mismo criterio que MasterDataProtectedEndpointsTests (Patch 0060): Program.cs
 /// requiere una conexión real a PostgreSQL en su arranque, fuera del alcance de este
 /// patch.
+///
+/// Actualización (PATCH-046): CategoryEndpoints ahora delega en los Handlers de
+/// FinancialSystem.Application.Categories (GetCategoriesHandler/CreateCategoryHandler/
+/// UpdateCategoryHandler/DeactivateCategoryHandler) en vez de tocar
+/// IApplicationDbContext directamente -- se registran vía la extensión real
+/// AddApplication(), mismo criterio que PlanningAuditInvestigationsProtectedEndpointsTests
+/// ya usa para Planning/Audit/Investigations, sin duplicar su wiring a mano.
 /// </summary>
 public class CategoryEndpointsValidationTests
 {
@@ -176,6 +184,7 @@ public class CategoryEndpointsValidationTests
                     services.AddRouting();
                     services.AddApiKeyAuthentication(context.Configuration);
                     services.AddValidatorsFromAssemblyContaining<CreateCategoryRequestValidator>();
+                    services.AddApplication();
 
                     services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
                     services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());

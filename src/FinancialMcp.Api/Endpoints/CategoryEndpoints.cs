@@ -1,12 +1,21 @@
 using FinancialSystem.Api.DTOs;
-using FinancialSystem.Application.Abstractions;
-using FinancialSystem.Domain.Entities;
+using FinancialSystem.Application.Categories.Commands;
+using FinancialSystem.Application.Categories.Queries;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
+/// <summary>
+/// Migrado al patrón Command/Query + Handler en PATCH-046 (ver
+/// docs/Decisions/ADR-008-command-handler-sin-mediatr.md) -- ya no tiene lógica de
+/// negocio propia: cada acción valida la forma del request (FluentValidation, sigue
+/// siendo responsabilidad del endpoint -- validación HTTP, no regla de negocio),
+/// arma el Command/Query correspondiente, lo pasa al Handler de
+/// FinancialSystem.Application.Categories, y traduce el resultado a una respuesta
+/// HTTP. Ninguna decisión (derivación de Name, unicidad, cálculo de SortOrder) vive
+/// acá -- ver los Handlers de Application/Categories para esas reglas.
+/// </summary>
 public static class CategoryEndpoints
 {
     public static IEndpointRouteBuilder MapCategoryEndpoints(
@@ -28,20 +37,14 @@ public static class CategoryEndpoints
     // GET /api/categories — devuelve activas (excluye desactivadas por defecto)
     private static async Task<IResult> GetAll(
         [FromQuery] bool includeDeactivated = false,
-        [FromServices] IApplicationDbContext db = null!,
+        [FromServices] GetCategoriesHandler handler = null!,
         CancellationToken ct = default)
     {
-        var query = db.Categories.AsNoTracking();
-        if (!includeDeactivated)
-            query = query.Where(c => !c.IsDeactivated);
+        var categories = await handler.Handle(new GetCategoriesQuery(includeDeactivated), ct);
 
-        var categories = await query
-            .OrderBy(c => c.SortOrder)
-            .ThenBy(c => c.DisplayName)
+        return Results.Ok(categories
             .Select(c => new CategoryDto(c.Id, c.Name, c.DisplayName, c.SortOrder, c.IsDeactivated))
-            .ToListAsync(ct);
-
-        return Results.Ok(categories);
+            .ToList());
     }
 
     // POST /api/categories
@@ -53,37 +56,19 @@ public static class CategoryEndpoints
     private static async Task<IResult> Create(
         [FromBody] CreateCategoryRequest request,
         [FromServices] IValidator<CreateCategoryRequest> validator,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] CreateCategoryHandler handler,
         CancellationToken ct)
     {
         var validation = await validator.ValidateAsync(request, ct);
         if (!validation.IsValid)
             return Results.BadRequest(string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)));
 
-        // Name se deriva del DisplayName normalizado si no se provee
-        var name = string.IsNullOrWhiteSpace(request.Name)
-            ? NormalizeName(request.DisplayName)
-            : request.Name.Trim();
+        var result = await handler.Handle(new CreateCategoryCommand(request.DisplayName, request.Name), ct);
 
-        var exists = await db.Categories.AnyAsync(c => c.Name == name, ct);
-        if (exists)
-            return Results.Conflict($"Ya existe una categoría con Name='{name}'");
+        if (!result.IsSuccess)
+            return Results.Conflict($"Ya existe una categoría con Name='{result.ConflictingName}'");
 
-        var maxSort = await db.Categories.AsNoTracking()
-            .MaxAsync(c => (int?)c.SortOrder, ct) ?? 0;
-
-        var category = new Category
-        {
-            Name = name,
-            DisplayName = request.DisplayName.Trim(),
-            SortOrder = maxSort + 10,
-            IsSystem = false,
-            IsDeactivated = false,
-        };
-
-        db.Categories.Add(category);
-        await db.SaveChangesAsync(ct);
-
+        var category = result.Category!;
         return Results.Created(
             $"/api/categories/{category.Id}",
             new CategoryDto(category.Id, category.Name, category.DisplayName,
@@ -100,23 +85,17 @@ public static class CategoryEndpoints
         Guid id,
         [FromBody] UpdateCategoryRequest request,
         [FromServices] IValidator<UpdateCategoryRequest> validator,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] UpdateCategoryHandler handler,
         CancellationToken ct)
     {
         var validation = await validator.ValidateAsync(request, ct);
         if (!validation.IsValid)
             return Results.BadRequest(string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)));
 
-        var category = await db.Categories.FindAsync([id], ct);
-        if (category is null) return Results.NotFound();
+        var result = await handler.Handle(new UpdateCategoryCommand(id, request.DisplayName, request.SortOrder), ct);
+        if (!result.IsSuccess) return Results.NotFound();
 
-        if (!string.IsNullOrWhiteSpace(request.DisplayName))
-            category.DisplayName = request.DisplayName.Trim();
-
-        if (request.SortOrder.HasValue)
-            category.SortOrder = request.SortOrder.Value;
-
-        await db.SaveChangesAsync(ct);
+        var category = result.Category!;
         return Results.Ok(new CategoryDto(category.Id, category.Name,
             category.DisplayName, category.SortOrder, category.IsDeactivated));
     }
@@ -124,26 +103,14 @@ public static class CategoryEndpoints
     // DELETE /api/categories/{id} — desactiva, no elimina
     private static async Task<IResult> Deactivate(
         Guid id,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] DeactivateCategoryHandler handler,
         CancellationToken ct)
     {
-        var category = await db.Categories.FindAsync([id], ct);
-        if (category is null) return Results.NotFound();
-        if (category.IsDeactivated)
-            return Results.Ok(new { Message = "Ya estaba desactivada" });
+        var result = await handler.Handle(new DeactivateCategoryCommand(id), ct);
+        if (!result.IsSuccess) return Results.NotFound();
 
-        category.IsDeactivated = true;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new { Message = $"Categoría '{category.DisplayName}' desactivada" });
+        return Results.Ok(new { Message = result.Message });
     }
-
-    private static string NormalizeName(string displayName) =>
-        new string(displayName.Trim()
-            .Normalize(System.Text.NormalizationForm.FormD)
-            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
-                        != System.Globalization.UnicodeCategory.NonSpacingMark)
-            .ToArray())
-            .Replace(" ", "");
 }
 
 public sealed record CreateCategoryRequest(string DisplayName, string? Name);
