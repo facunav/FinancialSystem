@@ -108,7 +108,17 @@ public sealed class AuditReportService
         DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct = default)
     {
         var computed = await ComputeFlaggedMovementsAsync(from, to, financialAccountId, ct);
+        return FormatMisclassifiedMovementsReport(computed, from, to);
+    }
 
+    // Extraído de BuildMisclassifiedMovementsReportAsync (PATCH-041): formateo puro, sin
+    // I/O -- separado para que BuildFullAuditReportAsync pueda reutilizar un
+    // FlaggedMovementsResult ya calculado en vez de volver a llamar a
+    // ComputeFlaggedMovementsAsync (ver comentario en la sobrecarga de ese método que
+    // recibe los movimientos ya cargados).
+    private static string FormatMisclassifiedMovementsReport(
+        FlaggedMovementsResult computed, DateOnly from, DateOnly to)
+    {
         if (computed.ClassifiedCount == 0)
             return $"No hay movimientos clasificados entre {from:dd/MM/yyyy} y " +
                    $"{to:dd/MM/yyyy} para analizar.";
@@ -163,7 +173,8 @@ public sealed class AuditReportService
 
     /// <summary>
     /// Versión estructurada de <see cref="BuildMisclassifiedMovementsReportAsync"/>, para
-    /// audit.html (Centro de Auditoría) -- mismo cálculo exacto (<see cref="ComputeFlaggedMovementsAsync"/>,
+    /// audit.html (Centro de Auditoría) -- mismo cálculo exacto
+    /// (<see cref="ComputeFlaggedMovementsAsync(DateOnly, DateOnly, Guid?, CancellationToken)"/>,
     /// compartido con la versión de texto que sigue usando la tool MCP AuditDatabase), sin
     /// reformatear nada a texto. Agrega el estado de revisión humana (MovementAuditDecision) por
     /// movimiento -- no filtra a los revisados, los sigue devolviendo (ver MovementAuditDecision:
@@ -173,6 +184,15 @@ public sealed class AuditReportService
         DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct = default)
     {
         var computed = await ComputeFlaggedMovementsAsync(from, to, financialAccountId, ct);
+        return await BuildMisclassifiedMovementsAsync(computed, ct);
+    }
+
+    // Extraído de GetMisclassifiedMovementsAsync (PATCH-041) por el mismo motivo que
+    // FormatMisclassifiedMovementsReport: permitir que BuildFullAuditReportAsync
+    // reutilice un FlaggedMovementsResult ya calculado en vez de recalcularlo.
+    private async Task<IReadOnlyList<MisclassifiedMovement>> BuildMisclassifiedMovementsAsync(
+        FlaggedMovementsResult computed, CancellationToken ct)
+    {
         if (computed.Flagged.Count == 0) return [];
 
         var sourceIds = computed.Flagged.Select(f => f.Movement.SourceId).ToList();
@@ -213,6 +233,28 @@ public sealed class AuditReportService
         DateOnly from, DateOnly to, Guid? financialAccountId, CancellationToken ct)
     {
         var movements = await _movementsQuery.GetAsync(from, to, financialAccountId, search: null, ct);
+        return await ComputeFlaggedMovementsAsync(movements, ct);
+    }
+
+    // Sobrecarga (PATCH-041) que recibe los movimientos ya cargados, para
+    // BuildFullAuditReportAsync: antes, ese método llamaba a
+    // BuildMisclassifiedMovementsReportAsync y a GetMisclassifiedMovementsAsync, y cada
+    // uno de los dos volvía a pedirle los movimientos a IMovementsQueryService (mismo
+    // from/to, financialAccountId siempre null en ese método) y a recorrer todo este
+    // cálculo desde cero -- sugerencias vía IClassificationSuggestionService, defaults
+    // de contraparte, nombres de categoría/contraparte/cuenta -- dos veces por
+    // auditoría completa, sobre exactamente los mismos datos. Ahora
+    // BuildFullAuditReportAsync llama a esta sobrecarga una sola vez, con los
+    // movimientos que ya cargó para su propio resumen, y reutiliza el resultado tanto
+    // para el texto (FormatMisclassifiedMovementsReport) como para la lista
+    // estructurada (BuildMisclassifiedMovementsAsync). La sobrecarga de arriba (con
+    // from/to/financialAccountId) se mantiene intacta para cuando
+    // BuildMisclassifiedMovementsReportAsync/GetMisclassifiedMovementsAsync se llaman
+    // de forma independiente (ej. desde AuditTools/AuditDatabaseTools, con su propio
+    // financialAccountId) -- ningún llamador externo ni comportamiento público cambia.
+    private async Task<FlaggedMovementsResult> ComputeFlaggedMovementsAsync(
+        IReadOnlyList<MovementView> movements, CancellationToken ct)
+    {
         var classified = movements.Where(m => m.Status is not null).ToList();
 
         if (classified.Count == 0)
@@ -318,15 +360,23 @@ public sealed class AuditReportService
         var classifiedCount = movements.Count - pending.Count;
 
         var suspiciousText = await BuildSuspiciousMovementsReportAsync(from, to, null, ct);
-        var misclassifiedText = await BuildMisclassifiedMovementsReportAsync(from, to, null, ct);
         var suspiciousGroupsCount = ParseLeadingCount(suspiciousText);
+
+        // PATCH-041: antes acá se llamaba a BuildMisclassifiedMovementsReportAsync y a
+        // GetMisclassifiedMovementsAsync por separado -- cada uno volvía a pedir los
+        // movimientos y a recalcular sugerencias/nombres desde cero (ver el comentario
+        // en la sobrecarga de ComputeFlaggedMovementsAsync que recibe `movements`).
+        // Ahora se calcula una sola vez, reutilizando los `movements` ya cargados
+        // arriba, y se deriva de ahí tanto el texto como la lista estructurada.
+        var flaggedMovements = await ComputeFlaggedMovementsAsync(movements, ct);
+        var misclassifiedText = FormatMisclassifiedMovementsReport(flaggedMovements, from, to);
 
         // Misclassified* separa lo detectado por el sistema de lo que sigue pendiente de
         // revisión humana (MovementAuditDecision) -- ver GetMisclassifiedMovementsAsync. El
         // conteo que participa de "Problemas encontrados"/Conclusión/Estado de la
         // auditoría es el pendiente, no el detectado: un movimiento revisado deja de
         // sumar como problema activo, pero sigue existiendo (misclassifiedDetectedCount).
-        var misclassifiedMovements = await GetMisclassifiedMovementsAsync(from, to, null, ct);
+        var misclassifiedMovements = await BuildMisclassifiedMovementsAsync(flaggedMovements, ct);
         var misclassifiedDetectedCount = misclassifiedMovements.Count;
         var misclassifiedReviewedCount = misclassifiedMovements.Count(m => m.Reviewed);
         var misclassifiedCount = misclassifiedDetectedCount - misclassifiedReviewedCount;
