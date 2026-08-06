@@ -1,6 +1,7 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts.Commands;
 using FinancialSystem.Application.Audit.Commands;
+using FinancialSystem.Application.BankStatements.Commands;
 using FinancialSystem.Application.Categories.Commands;
 using FinancialSystem.Application.Categories.Queries;
 using FinancialSystem.Application.Counterparties.Commands;
@@ -8,6 +9,7 @@ using FinancialSystem.Application.Counterparties.Queries;
 using FinancialSystem.Application.Investigations.Commands;
 using FinancialSystem.Application.Planning.Commands;
 using FinancialSystem.Application.Review.Commands;
+using FinancialSystem.Application.Transactions.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FinancialSystem.Application;
@@ -44,6 +46,8 @@ public static class DependencyInjection
         services.AddScoped<UpdateFinancialAccountHandler>();
         services.AddScoped<DeactivateFinancialAccountHandler>();
         services.AddScoped<ReactivateFinancialAccountHandler>();
+        services.AddScoped<AssignTransactionFinancialAccountHandler>();
+        services.AddScoped<AssignBankStatementFinancialAccountHandler>();
         return services;
     }
 

@@ -1,10 +1,17 @@
 using FinancialSystem.Api.DTOs;
-using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Transactions.Commands;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
+/// <summary>
+/// Migrado al patrón Command/Query + Handler en PATCH-049 (ver
+/// docs/Decisions/ADR-008-command-handler-sin-mediatr.md) -- ya no tiene lógica de
+/// negocio propia: arma el Command, lo pasa al Handler de
+/// FinancialSystem.Application.Transactions.Commands, y traduce el resultado a una
+/// respuesta HTTP. La validación de que el FinancialAccountId informado exista es una
+/// regla de negocio (requiere acceso a datos) y vive en el Handler, no acá.
+/// </summary>
 public static class TransactionEndpoints
 {
     public static IEndpointRouteBuilder MapTransactionEndpoints(this IEndpointRouteBuilder app)
@@ -22,22 +29,23 @@ public static class TransactionEndpoints
     private static async Task<IResult> AssignFinancialAccount(
         Guid id,
         [FromBody] AssignFinancialAccountRequest request,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] AssignTransactionFinancialAccountHandler handler,
         CancellationToken ct)
     {
-        var transaction = await db.Transactions.FindAsync([id], ct);
-        if (transaction is null) return Results.NotFound();
+        var result = await handler.Handle(
+            new AssignTransactionFinancialAccountCommand(id, request.FinancialAccountId), ct);
 
-        if (request.FinancialAccountId is { } accountId)
+        if (!result.IsSuccess)
         {
-            var exists = await db.FinancialAccounts.AnyAsync(a => a.Id == accountId, ct);
-            if (!exists)
-                return Results.BadRequest($"financialAccountId inválido: no existe una cuenta con id '{accountId}'");
+            return result.FailureReason switch
+            {
+                AssignTransactionFinancialAccountFailureReason.InvalidFinancialAccountId =>
+                    Results.BadRequest(
+                        $"financialAccountId inválido: no existe una cuenta con id '{result.InvalidFinancialAccountId}'"),
+                _ => Results.NotFound(),
+            };
         }
 
-        transaction.FinancialAccountId = request.FinancialAccountId;
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(new { TransactionId = transaction.Id, transaction.FinancialAccountId });
+        return Results.Ok(new { TransactionId = result.TransactionId, FinancialAccountId = result.AssignedFinancialAccountId });
     }
 }

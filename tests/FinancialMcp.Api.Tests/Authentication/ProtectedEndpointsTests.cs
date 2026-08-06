@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.DTOs;
 using FinancialSystem.Api.Endpoints;
+using FinancialSystem.Application;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Movements;
@@ -31,6 +32,11 @@ namespace FinancialMcp.Api.Tests.Authentication;
 /// mínimo propio con dependencias fake/InMemory, por el mismo motivo que
 /// ApiKeyAuthenticationTests (Patch 0058): Program.cs requiere una conexión real a
 /// PostgreSQL en su arranque, fuera del alcance de este patch.
+///
+/// Actualización (PATCH-049): TransactionEndpoints/BankStatementEndpoints ahora
+/// delegan en los Handlers de FinancialSystem.Application.Transactions/
+/// BankStatements -- se registran vía la extensión real AddApplication(), mismo
+/// criterio que MasterDataProtectedEndpointsTests ya usa desde PATCH-046.
 /// </summary>
 public class ProtectedEndpointsTests
 {
@@ -181,6 +187,7 @@ public class ProtectedEndpointsTests
                 {
                     services.AddRouting();
                     services.AddApiKeyAuthentication(context.Configuration);
+                    services.AddApplication();
 
                     services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
                     services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
