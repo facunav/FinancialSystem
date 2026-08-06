@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard · FinancialMcp</title>
     <script src="/auth-guard.js"></script>
+    <script src="/shared/ui-common.js"></script>
     <style>
         /* ── Design tokens ── */
         :root {
@@ -1575,7 +1576,7 @@
         // ─────────────────────────────────────────────────────────────────────────
         const NUM = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        // esc() se movió a /shared/ui-common.js (Patch 0102, Épica UI).
 
         function ars(val) { return `$${NUM.format(Math.round(val ?? 0))}` }
         function arsShort(val) {

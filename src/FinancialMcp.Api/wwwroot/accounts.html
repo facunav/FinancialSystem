@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cuentas · FinancialMcp</title>
     <script src="/auth-guard.js"></script>
+    <script src="/shared/ui-common.js"></script>
     <style>
         /* ── Design tokens (mismos valores que imports.html) ── */
         :root {
@@ -568,13 +569,7 @@
             return d;
         }
 
-        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-        function showToast(elId, msg, type, ms = 3500) {
-            const el = document.getElementById(elId);
-            el.innerHTML = `<span class="toast ${type}">${esc(msg)}</span>`;
-            setTimeout(() => { if (el) el.innerHTML = ''; }, ms);
-        }
+        // esc() y showToast() se movieron a /shared/ui-common.js (Patch 0102, Épica UI).
 
         loadAccounts();
     </script>

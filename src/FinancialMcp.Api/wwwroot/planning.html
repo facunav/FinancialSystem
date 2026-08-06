@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planificación Mensual · FinancialMcp</title>
     <script src="/auth-guard.js"></script>
+    <script src="/shared/ui-common.js"></script>
     <style>
         /* ── Design tokens (mismos valores que dashboard.html/accounts.html) ── */
         :root {
@@ -707,7 +708,7 @@
             return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
         }
 
-        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        // esc() se movió a /shared/ui-common.js (Patch 0102, Épica UI).
 
         // Ordena por DueDate ascendente; los ítems sin DueDate quedan al final.
         // Comparación estable por índice explícito -- ante fechas iguales (o
