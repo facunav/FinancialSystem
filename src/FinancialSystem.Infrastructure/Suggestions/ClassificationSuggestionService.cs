@@ -1,6 +1,6 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Helpers;
 using FinancialSystem.Application.Suggestions;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
@@ -280,31 +280,23 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     /// Internal (no private) solo para exponerse a
     /// FinancialSystem.Infrastructure.Tests vía InternalsVisibleTo — sigue sin ser parte
     /// del contrato público, <see cref="IClassificationSuggestionService"/> no cambia.
+    ///
+    /// PATCH-043: el colapso de espacios/mayúsculas final (todo lo que sigue después de
+    /// quitar el monto USD/contador de cuotas embebidos) se delega a
+    /// <see cref="TextNormalization.Normalize"/>, compartido con
+    /// PlanningMatchSuggestionService -- antes era una copia local idéntica en espíritu.
+    /// El chequeo de null/blank sobre <paramref name="description"/> se mantiene acá,
+    /// antes de <see cref="StripEmbeddedUsdAmount"/>/<see cref="StripInstallmentCounter"/>
+    /// (que no aceptan null), en vez de delegarse también -- TextNormalization.Normalize
+    /// hace su propio chequeo de null/blank, pero sobre el string ya despojado, no sobre
+    /// el original.
     /// </summary>
     internal static string Normalize(string description)
     {
         if (string.IsNullOrWhiteSpace(description)) return string.Empty;
 
         var withoutEmbeddedValues = StripInstallmentCounter(StripEmbeddedUsdAmount(description));
-
-        var trimmed = withoutEmbeddedValues.Trim();
-        var collapsed = new StringBuilder(trimmed.Length);
-        var lastWasSpace = false;
-        foreach (var c in trimmed)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                if (!lastWasSpace) collapsed.Append(' ');
-                lastWasSpace = true;
-            }
-            else
-            {
-                collapsed.Append(c);
-                lastWasSpace = false;
-            }
-        }
-
-        return collapsed.ToString().ToUpperInvariant();
+        return TextNormalization.Normalize(withoutEmbeddedValues);
     }
 
     /// <summary>

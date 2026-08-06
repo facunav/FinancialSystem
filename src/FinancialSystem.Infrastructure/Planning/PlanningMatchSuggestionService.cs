@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Helpers;
 using FinancialSystem.Application.Planning;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,12 +40,12 @@ internal sealed class PlanningMatchSuggestionService : IPlanningMatchSuggestionS
         var suggestions = new List<PlanningItemMatchSuggestion>();
         foreach (var item in pendingItems)
         {
-            var normalizedTitle = Normalize(item.Title);
+            var normalizedTitle = TextNormalization.Normalize(item.Title);
             if (normalizedTitle.Length == 0) continue;
 
             foreach (var movement in movements)
             {
-                var normalizedDescription = Normalize(movement.Description);
+                var normalizedDescription = TextNormalization.Normalize(movement.Description);
                 if (normalizedDescription.Length == 0) continue;
 
                 var matches = normalizedDescription.Contains(normalizedTitle, StringComparison.Ordinal)
@@ -58,13 +59,4 @@ internal sealed class PlanningMatchSuggestionService : IPlanningMatchSuggestionS
 
         return suggestions;
     }
-
-    // Deliberadamente ingenuo -- mayúsculas + trim + colapso de espacios, sin fuzzy
-    // matching ni distancia de edición. Mismo espíritu que
-    // ClassificationSuggestionService.Normalize (Infrastructure/Suggestions), pero
-    // sin reutilizarlo: ese módulo no se toca en este patch.
-    private static string Normalize(string text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? string.Empty
-            : string.Join(' ', text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 }
