@@ -1,12 +1,25 @@
 using FinancialSystem.Api.DTOs;
-using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts;
+using FinancialSystem.Application.Accounts.Commands;
 using FinancialSystem.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
+/// <summary>
+/// Migrado al patrón Command/Query + Handler en PATCH-048 (ver
+/// docs/Decisions/ADR-008-command-handler-sin-mediatr.md) -- ya no tiene lógica de
+/// negocio propia. GetAll/GetById ya eran delgados desde antes (delegan en
+/// IFinancialAccountQueryService, el patrón de servicio de solo lectura que ADR-008
+/// reconoce como válido para módulos multi-método, sin cambios en este patch). Create/
+/// Update/Deactivate/Reactivate ahora arman el Command correspondiente, lo pasan al
+/// Handler de FinancialSystem.Application.Accounts.Commands, y traducen el resultado a
+/// una respuesta HTTP -- cada uno sigue validando los mismos parámetros HTTP mínimos
+/// que ya validaba antes (Name requerido y Type parseable en Create). Ninguna decisión
+/// (unicidad de Name entre cuentas activas, default de Currency, actualización
+/// parcial, desactivación/reactivación idempotente) vive acá -- ver los Handlers de
+/// Application/Accounts/Commands para esas reglas.
+/// </summary>
 public static class FinancialAccountEndpoints
 {
     public static IEndpointRouteBuilder MapFinancialAccountEndpoints(
@@ -54,7 +67,7 @@ public static class FinancialAccountEndpoints
     // POST /api/accounts
     private static async Task<IResult> Create(
         [FromBody] CreateFinancialAccountRequest request,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] CreateFinancialAccountHandler handler,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -63,116 +76,75 @@ public static class FinancialAccountEndpoints
         if (!Enum.TryParse<FinancialAccountType>(request.Type, ignoreCase: true, out var type))
             return Results.BadRequest($"type inválido: '{request.Type}'");
 
-        var name = request.Name.Trim();
-        if (await NameIsTakenByActiveAccount(db, name, excludeId: null, ct))
-            return Results.Conflict($"Ya existe una cuenta activa con Name='{name}'");
+        var result = await handler.Handle(
+            new CreateFinancialAccountCommand(request.Name, type, request.AccountNumber, request.Currency, request.Notes),
+            ct);
 
-        var account = new FinancialAccount
-        {
-            Name = name,
-            Type = type,
-            AccountNumber = string.IsNullOrWhiteSpace(request.AccountNumber) ? null : request.AccountNumber.Trim(),
-            Currency = string.IsNullOrWhiteSpace(request.Currency) ? "ARS" : request.Currency.Trim().ToUpperInvariant(),
-            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
-            IsDeactivated = false,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
+        if (!result.IsSuccess)
+            return Results.Conflict($"Ya existe una cuenta activa con Name='{result.ConflictingName}'");
 
-        db.FinancialAccounts.Add(account);
-        await db.SaveChangesAsync(ct);
-
-        return Results.Created($"/api/accounts/{account.Id}", ToDto(account));
+        return Results.Created($"/api/accounts/{result.Account!.Id}", FinancialAccountDto.Create(result.Account));
     }
 
     // PUT /api/accounts/{id}
     private static async Task<IResult> Update(
         Guid id,
         [FromBody] UpdateFinancialAccountRequest request,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] UpdateFinancialAccountHandler handler,
         CancellationToken ct)
     {
-        var account = await db.FinancialAccounts.FindAsync([id], ct);
-        if (account is null) return Results.NotFound();
+        var result = await handler.Handle(
+            new UpdateFinancialAccountCommand(id, request.Name, request.Type, request.AccountNumber, request.Currency, request.Notes),
+            ct);
 
-        if (!string.IsNullOrWhiteSpace(request.Name))
+        if (!result.IsSuccess)
         {
-            var name = request.Name.Trim();
-            if (await NameIsTakenByActiveAccount(db, name, excludeId: id, ct))
-                return Results.Conflict($"Ya existe una cuenta activa con Name='{name}'");
-            account.Name = name;
+            return result.FailureReason switch
+            {
+                UpdateFinancialAccountFailureReason.NotFound => Results.NotFound(),
+                UpdateFinancialAccountFailureReason.NameConflict =>
+                    Results.Conflict($"Ya existe una cuenta activa con Name='{result.ConflictingName}'"),
+                UpdateFinancialAccountFailureReason.InvalidType =>
+                    Results.BadRequest($"type inválido: '{result.InvalidTypeValue}'"),
+                _ => Results.NotFound(),
+            };
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Type))
-        {
-            if (!Enum.TryParse<FinancialAccountType>(request.Type, ignoreCase: true, out var type))
-                return Results.BadRequest($"type inválido: '{request.Type}'");
-            account.Type = type;
-        }
-
-        if (request.AccountNumber is not null)
-            account.AccountNumber = string.IsNullOrWhiteSpace(request.AccountNumber) ? null : request.AccountNumber.Trim();
-
-        if (!string.IsNullOrWhiteSpace(request.Currency))
-            account.Currency = request.Currency.Trim().ToUpperInvariant();
-
-        if (request.Notes is not null)
-            account.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-
-        account.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(ToDto(account));
+        return Results.Ok(FinancialAccountDto.Create(result.Account!));
     }
 
     // DELETE /api/accounts/{id} — desactiva, no elimina
     private static async Task<IResult> Deactivate(
         Guid id,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] DeactivateFinancialAccountHandler handler,
         CancellationToken ct)
     {
-        var account = await db.FinancialAccounts.FindAsync([id], ct);
-        if (account is null) return Results.NotFound();
-        if (account.IsDeactivated) return Results.Ok(new { Message = "Ya estaba desactivada" });
+        var result = await handler.Handle(new DeactivateFinancialAccountCommand(id), ct);
+        if (!result.IsSuccess) return Results.NotFound();
 
-        account.IsDeactivated = true;
-        account.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new { Message = $"Cuenta '{account.Name}' desactivada" });
+        return Results.Ok(new { Message = result.Message });
     }
 
     // POST /api/accounts/{id}/reactivate
     private static async Task<IResult> Reactivate(
         Guid id,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] ReactivateFinancialAccountHandler handler,
         CancellationToken ct)
     {
-        var account = await db.FinancialAccounts.FindAsync([id], ct);
-        if (account is null) return Results.NotFound();
-        if (!account.IsDeactivated) return Results.Ok(new { Message = "Ya estaba activa" });
+        var result = await handler.Handle(new ReactivateFinancialAccountCommand(id), ct);
 
-        // Reactivar no debe romper la invariante de nombre único entre cuentas
-        // activas que este mismo PR introduce en Create/Update.
-        if (await NameIsTakenByActiveAccount(db, account.Name, excludeId: id, ct))
-            return Results.Conflict(
-                $"No se puede reactivar: ya existe una cuenta activa con Name='{account.Name}'");
+        if (!result.IsSuccess)
+        {
+            return result.FailureReason switch
+            {
+                ReactivateFinancialAccountFailureReason.NotFound => Results.NotFound(),
+                ReactivateFinancialAccountFailureReason.NameConflict => Results.Conflict(result.Message),
+                _ => Results.NotFound(),
+            };
+        }
 
-        account.IsDeactivated = false;
-        account.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new { Message = $"Cuenta '{account.Name}' reactivada" });
+        return Results.Ok(new { Message = result.Message });
     }
-
-    private static Task<bool> NameIsTakenByActiveAccount(
-        IApplicationDbContext db, string name, Guid? excludeId, CancellationToken ct)
-    {
-        var normalized = name.ToLower();
-        return db.FinancialAccounts.AnyAsync(
-            a => !a.IsDeactivated && a.Id != excludeId && a.Name.ToLower() == normalized, ct);
-    }
-
-    private static FinancialAccountDto ToDto(FinancialAccount a) => new(
-        a.Id, a.Name, a.Type.ToString(), a.AccountNumber, a.Currency, a.Notes, a.IsDeactivated);
 }
 
 public sealed record CreateFinancialAccountRequest(

@@ -5,8 +5,10 @@ namespace FinancialSystem.Application.Accounts;
 // ── Modelo de resultado ────────────────────────────────────────────────────────
 // Neutro: no es FinancialAccount (entidad EF), ni DTO de HTTP. Existe para que el
 // modelo interno pueda evolucionar sin romper el contrato público de la API — el
-// mapeo entidad → este modelo vive en FinancialAccountQueryService (Infrastructure);
-// el mapeo modelo → DTO de HTTP vive en FinancialSystem.Api.DTOs (ver PR J2).
+// mapeo entidad → este modelo vive en FinancialAccountQueryService (Infrastructure)
+// para las lecturas, y en los Handlers de Application.Accounts.Commands (PATCH-048)
+// para Create/Update, que también lo devuelven como resultado; el mapeo modelo →
+// DTO de HTTP vive en FinancialSystem.Api.DTOs (ver PR J2).
 
 public sealed record FinancialAccountSummary(
     Guid Id,
@@ -23,9 +25,10 @@ public sealed record FinancialAccountSummary(
 
 /// <summary>
 /// Queries de solo lectura sobre el catálogo de FinancialAccount. Nunca persiste
-/// nada — la creación/edición/desactivación se maneja directamente en los
-/// endpoints (mismo criterio que Category/Counterparty). Consumida por los
-/// endpoints de /api/accounts (ver PR J2).
+/// nada — la creación/edición/desactivación/reactivación se manejan en los
+/// Handlers de FinancialSystem.Application.Accounts.Commands (PATCH-048; antes,
+/// directamente en los endpoints). Consumida por los endpoints de /api/accounts
+/// (ver PR J2).
 /// </summary>
 public interface IFinancialAccountQueryService
 {

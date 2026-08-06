@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Accounts.Commands;
 using FinancialSystem.Application.Audit.Commands;
 using FinancialSystem.Application.Categories.Commands;
 using FinancialSystem.Application.Categories.Queries;
@@ -39,6 +40,10 @@ public static class DependencyInjection
         services.AddScoped<CreateCounterpartyHandler>();
         services.AddScoped<UpdateCounterpartyHandler>();
         services.AddScoped<DeactivateCounterpartyHandler>();
+        services.AddScoped<CreateFinancialAccountHandler>();
+        services.AddScoped<UpdateFinancialAccountHandler>();
+        services.AddScoped<DeactivateFinancialAccountHandler>();
+        services.AddScoped<ReactivateFinancialAccountHandler>();
         return services;
     }
 
