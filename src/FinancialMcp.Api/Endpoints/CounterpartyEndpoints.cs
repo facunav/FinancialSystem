@@ -1,12 +1,24 @@
 using FinancialSystem.Api.DTOs;
-using FinancialSystem.Application.Abstractions;
-using FinancialSystem.Domain.Entities;
+using FinancialSystem.Application.Counterparties;
+using FinancialSystem.Application.Counterparties.Commands;
+using FinancialSystem.Application.Counterparties.Queries;
 using FinancialSystem.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FinancialSystem.Api.Endpoints;
 
+/// <summary>
+/// Migrado al patrón Command/Query + Handler en PATCH-047 (ver
+/// docs/Decisions/ADR-008-command-handler-sin-mediatr.md) -- ya no tiene lógica de
+/// negocio propia: cada acción valida parámetros HTTP mínimos (Name requerido y Type
+/// parseable en Create -- las dos únicas validaciones de forma que existían), arma el
+/// Command/Query correspondiente, lo pasa al Handler de
+/// FinancialSystem.Application.Counterparties, y traduce el resultado a una respuesta
+/// HTTP. Ninguna decisión (default de Type a Other, parseo best-effort de
+/// DefaultMovementType/DefaultFinancialImpact, actualización parcial, desactivación
+/// idempotente) vive acá -- ver los Handlers de Application/Counterparties para esas
+/// reglas.
+/// </summary>
 public static class CounterpartyEndpoints
 {
     public static IEndpointRouteBuilder MapCounterpartyEndpoints(
@@ -30,86 +42,50 @@ public static class CounterpartyEndpoints
     private static async Task<IResult> GetAll(
         [FromQuery] bool includeDeactivated = false,
         [FromQuery] string? search = null,
-        [FromServices] IApplicationDbContext db = null!,
+        [FromServices] GetCounterpartiesHandler handler = null!,
         CancellationToken ct = default)
     {
-        var query = db.Counterparties
-            .AsNoTracking()
-            .Include(c => c.DefaultCategory);
+        var counterparties = await handler.Handle(new GetCounterpartiesQuery(includeDeactivated, search), ct);
 
-        var filtered = includeDeactivated
-            ? query.AsQueryable()
-            : query.Where(c => !c.IsDeactivated);
-
-        if (!string.IsNullOrWhiteSpace(search))
-            filtered = filtered.Where(c => c.Name.ToLower().Contains(search.ToLower()));
-
-        var results = await filtered
-            .OrderBy(c => c.Name)
-            .Select(c => ToDto(c))
-            .ToListAsync(ct);
-
-        return Results.Ok(results);
+        return Results.Ok(counterparties.Select(ToDto).ToList());
     }
 
     // GET /api/counterparties/{id}
     private static async Task<IResult> GetById(
         Guid id,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] GetCounterpartyByIdHandler handler,
         CancellationToken ct)
     {
-        var c = await db.Counterparties
-            .AsNoTracking()
-            .Include(x => x.DefaultCategory)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        var counterparty = await handler.Handle(new GetCounterpartyByIdQuery(id), ct);
 
-        return c is null ? Results.NotFound() : Results.Ok(ToDto(c));
+        return counterparty is null ? Results.NotFound() : Results.Ok(ToDto(counterparty));
     }
 
     // POST /api/counterparties
     private static async Task<IResult> Create(
         [FromBody] CreateCounterpartyRequest request,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] CreateCounterpartyHandler handler,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             return Results.BadRequest("name es requerido");
 
         // Type ya no es obligatorio en el alta (ver análisis de la entidad Counterparty):
-        // no tiene ningún consumidor hoy fuera de esta validación. Si no viene informado,
-        // se usa Other — el único valor del enum documentado como "no encaja en ninguna
-        // categoría anterior", el más cercano a "sin especificar" sin agregar un valor
-        // nuevo al enum. Si viene informado, se sigue validando igual que antes.
-        var type = CounterpartyType.Other;
-        if (!string.IsNullOrWhiteSpace(request.Type) &&
-            !Enum.TryParse<CounterpartyType>(request.Type, ignoreCase: true, out type))
-            return Results.BadRequest($"type inválido: '{request.Type}'");
-
-        MovementType? defaultMovementType = null;
-        if (!string.IsNullOrWhiteSpace(request.DefaultMovementType) &&
-            Enum.TryParse<MovementType>(request.DefaultMovementType, ignoreCase: true, out var mt))
-            defaultMovementType = mt;
-
-        FinancialImpact? defaultImpact = null;
-        if (!string.IsNullOrWhiteSpace(request.DefaultFinancialImpact) &&
-            Enum.TryParse<FinancialImpact>(request.DefaultFinancialImpact, ignoreCase: true, out var fi))
-            defaultImpact = fi;
-
-        var counterparty = new Counterparty
+        // no tiene ningún consumidor hoy fuera de esta validación. El default a Other
+        // cuando no se informa es una decisión de negocio -- se resuelve en el Handler.
+        CounterpartyType? type = null;
+        if (!string.IsNullOrWhiteSpace(request.Type))
         {
-            Name = request.Name.Trim(),
-            Type = type,
-            Notes = request.Notes?.Trim(),
-            DefaultCategoryId = request.DefaultCategoryId,
-            DefaultMovementType = defaultMovementType,
-            DefaultFinancialImpact = defaultImpact,
-            IsDeactivated = false,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
+            if (!Enum.TryParse<CounterpartyType>(request.Type, ignoreCase: true, out var parsedType))
+                return Results.BadRequest($"type inválido: '{request.Type}'");
+            type = parsedType;
+        }
 
-        db.Counterparties.Add(counterparty);
-        await db.SaveChangesAsync(ct);
+        var counterparty = await handler.Handle(
+            new CreateCounterpartyCommand(
+                request.Name, type, request.Notes, request.DefaultCategoryId,
+                request.DefaultMovementType, request.DefaultFinancialImpact),
+            ct);
 
         return Results.Created(
             $"/api/counterparties/{counterparty.Id}",
@@ -120,58 +96,36 @@ public static class CounterpartyEndpoints
     private static async Task<IResult> Update(
         Guid id,
         [FromBody] UpdateCounterpartyRequest request,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] UpdateCounterpartyHandler handler,
         CancellationToken ct)
     {
-        var c = await db.Counterparties.FindAsync([id], ct);
-        if (c is null) return Results.NotFound();
+        var result = await handler.Handle(
+            new UpdateCounterpartyCommand(
+                id, request.Name, request.Notes, request.DefaultCategoryId,
+                request.DefaultMovementType, request.DefaultFinancialImpact),
+            ct);
 
-        if (!string.IsNullOrWhiteSpace(request.Name))
-            c.Name = request.Name.Trim();
-        if (request.Notes is not null)
-            c.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        if (request.DefaultCategoryId is not null)
-            c.DefaultCategoryId = request.DefaultCategoryId;
-        if (!string.IsNullOrWhiteSpace(request.DefaultMovementType) &&
-            Enum.TryParse<MovementType>(request.DefaultMovementType, ignoreCase: true, out var mt))
-            c.DefaultMovementType = mt;
-        if (!string.IsNullOrWhiteSpace(request.DefaultFinancialImpact) &&
-            Enum.TryParse<FinancialImpact>(request.DefaultFinancialImpact, ignoreCase: true, out var fi))
-            c.DefaultFinancialImpact = fi;
+        if (!result.IsSuccess) return Results.NotFound();
 
-        c.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-
-        var updated = await db.Counterparties
-            .AsNoTracking()
-            .Include(x => x.DefaultCategory)
-            .FirstAsync(x => x.Id == id, ct);
-
-        return Results.Ok(ToDto(updated));
+        return Results.Ok(ToDto(result.Counterparty!));
     }
 
     // DELETE /api/counterparties/{id} — desactiva, no elimina
     private static async Task<IResult> Deactivate(
         Guid id,
-        [FromServices] IApplicationDbContext db,
+        [FromServices] DeactivateCounterpartyHandler handler,
         CancellationToken ct)
     {
-        var c = await db.Counterparties.FindAsync([id], ct);
-        if (c is null) return Results.NotFound();
-        if (c.IsDeactivated) return Results.Ok(new { Message = "Ya estaba desactivada" });
+        var result = await handler.Handle(new DeactivateCounterpartyCommand(id), ct);
+        if (!result.IsSuccess) return Results.NotFound();
 
-        c.IsDeactivated = true;
-        c.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new { Message = $"Contraparte '{c.Name}' desactivada" });
+        return Results.Ok(new { Message = result.Message });
     }
 
-    private static CounterpartyDto ToDto(Counterparty c) => new(
-        c.Id, c.Name, c.Type.ToString(),
-        c.DefaultCategoryId,
-        c.DefaultCategory?.DisplayName,
-        c.DefaultMovementType?.ToString(),
-        c.DefaultFinancialImpact?.ToString(),
+    private static CounterpartyDto ToDto(CounterpartySummary c) => new(
+        c.Id, c.Name, c.Type,
+        c.DefaultCategoryId, c.DefaultCategoryName,
+        c.DefaultMovementType, c.DefaultFinancialImpact,
         c.IsDeactivated);
 }
 
