@@ -89,4 +89,23 @@ public interface IMovementLookupService
         SourceEntityType sourceEntityType,
         Guid sourceId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Versión en lote de <see cref="GetBySourceAsync"/> (PATCH-044): resuelve varios
+    /// movimientos de una sola vez, con una cantidad fija de consultas a la base --
+    /// no una tanda de consultas por cada elemento de <paramref name="sources"/>. Pensada
+    /// para consumidores que hoy resuelven varios orígenes en un
+    /// <c>foreach</c> + <c>await</c> individual (ver
+    /// <c>InvestigationTools.BuildInvestigationContextAsync</c>).
+    ///
+    /// Elementos inexistentes (un <c>SourceId</c> que no resuelve ninguna fila real,
+    /// sea porque nunca existió o porque fue eliminado) simplemente no aparecen como
+    /// clave en el diccionario devuelto -- mismo criterio que <see cref="GetBySourceAsync"/>,
+    /// que devuelve <c>null</c> para esos casos; acá "ausente del diccionario" reemplaza
+    /// a "null". Duplicados en <paramref name="sources"/> (mismo
+    /// SourceEntityType+SourceId repetido) se resuelven una sola vez.
+    /// </summary>
+    Task<IReadOnlyDictionary<(SourceEntityType SourceEntityType, Guid SourceId), MovementDetail>> GetManyBySourceAsync(
+        IReadOnlyList<(SourceEntityType SourceEntityType, Guid SourceId)> sources,
+        CancellationToken cancellationToken = default);
 }

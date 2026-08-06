@@ -411,14 +411,23 @@ public sealed class InvestigationTools
             return sb.ToString();
         }
 
+        // PATCH-044: antes cada referencia se resolvía con su propio GetBySourceAsync
+        // (foreach + await individual, hasta 5 consultas por referencia -- ver
+        // MovementLookupService.GetBySourceAsync). Ahora se resuelven todas de una sola
+        // vez con GetManyBySourceAsync, y el foreach de abajo solo arma el texto a
+        // partir del resultado ya calculado -- mismo orden (el de
+        // investigation.References), mismo formato por referencia, mismo mensaje para
+        // lo no encontrado.
+        var sources = investigation.References
+            .Select(r => (r.SourceEntityType, r.SourceId))
+            .ToList();
+        var detailsBySource = await _movementLookup.GetManyBySourceAsync(sources, ct);
+
         foreach (var reference in investigation.References)
         {
             sb.AppendLine($"  - {reference.SourceEntityType} {reference.SourceId}:");
 
-            var detail = await _movementLookup.GetBySourceAsync(
-                reference.SourceEntityType, reference.SourceId, ct);
-
-            if (detail is null)
+            if (!detailsBySource.TryGetValue((reference.SourceEntityType, reference.SourceId), out var detail))
             {
                 sb.AppendLine("      (no se encontró el movimiento -- puede haber sido eliminado)");
                 continue;
