@@ -1,4 +1,4 @@
-using FinancialSystem.Domain.Enums;
+using FinancialSystem.Domain.Entities;
 
 namespace FinancialSystem.Application.Counterparties.Commands;
 
