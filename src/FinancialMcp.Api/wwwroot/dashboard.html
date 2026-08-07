@@ -1599,17 +1599,9 @@
             return el;
         }
 
-        // ─────────────────────────────────────────────────────────────────────────
-        // FETCH
-        // ─────────────────────────────────────────────────────────────────────────
-        async function getJson(url) {
-            const r = await fetch(url);
-            if (!r.ok) {
-                const text = await r.text().catch(() => r.statusText);
-                throw new Error(`${r.status}: ${text}`);
-            }
-            return r.json();
-        }
+        // getJson() se movió a /shared/ui-common.js (Patch 0103, Épica UI). La
+        // versión de esta página no parseaba ProblemDetails (mostraba el body
+        // crudo); la unificada sí -- ver Resumen de cambios del patch 0103.
     </script>
 </body>
 </html>

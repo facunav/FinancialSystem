@@ -603,58 +603,11 @@
             loadToken: 0,            // descarta respuestas de loadPeriod() fuera de orden
         };
 
-        // ─────────────────────────────────────────────────────────────────────────
-        // HTTP — helpers de bajo nivel (fetch + manejo de error), sin saber nada de
-        // Planificación en particular
-        // ─────────────────────────────────────────────────────────────────────────
-        async function getJson(url) {
-            const r = await fetch(url);
-            if (!r.ok) throw new Error(await extractErrorMessage(r));
-            return r.json();
-        }
-
-        // Como getJson, pero null en vez de excepción para 404 -- usado para
-        // "puede no existir" (GET por período, GET /latest), a diferencia de un
-        // 404 real de error.
-        async function getJsonOrNull(url) {
-            const r = await fetch(url);
-            if (r.status === 404) return null;
-            if (!r.ok) throw new Error(await extractErrorMessage(r));
-            return r.json();
-        }
-
-        async function postJson(url, body) {
-            const opts = { method: 'POST' };
-            if (body !== undefined) {
-                opts.headers = { 'Content-Type': 'application/json' };
-                opts.body = JSON.stringify(body);
-            }
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function putJson(url, body) {
-            const opts = {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            };
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function deleteJson(url) {
-            return handleWriteResponse(await fetch(url, { method: 'DELETE' }));
-        }
-
-        async function handleWriteResponse(r) {
-            if (r.status === 204) return null;
-            if (!r.ok) throw new Error(await extractErrorMessage(r));
-            return r.json().catch(() => null);
-        }
-
-        async function extractErrorMessage(r) {
-            const d = await r.json().catch(() => null);
-            return typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-        }
+        // esc(), showToast() y las utilidades HTTP (getJson/getJsonOrNull/postJson/
+        // putJson/deleteJson/extractErrorMessage) se movieron a
+        // /shared/ui-common.js (Patches 0102 y 0103, Épica UI). Esta página fue la
+        // fuente de la implementación unificada de getJson() -- ver Resumen de
+        // cambios del patch 0103.
 
         // ─────────────────────────────────────────────────────────────────────────
         // API — una función por endpoint de /api/planning-months y /api/planning-items

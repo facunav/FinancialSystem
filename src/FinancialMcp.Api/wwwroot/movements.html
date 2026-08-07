@@ -1786,46 +1786,8 @@
             showToast('listToast', msg, fail === 0 ? 'ok' : 'err', 5000);
         }
 
-        // ── Utils ────────────────────────────────────────────────────────────────
-
-        async function getJson(url) {
-            const r = await fetch(url);
-            if (!r.ok) {
-                const d = await r.json().catch(() => null);
-                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-                throw new Error(msg);
-            }
-            return r.json();
-        }
-
-        async function postJson(url, body) {
-            const opts = { method: 'POST' };
-            if (body !== undefined) {
-                opts.headers = { 'Content-Type': 'application/json' };
-                opts.body = JSON.stringify(body);
-            }
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function putJson(url, body) {
-            const opts = {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            };
-            return handleWriteResponse(await fetch(url, opts));
-        }
-
-        async function handleWriteResponse(r) {
-            const d = await r.json().catch(() => null);
-            if (!r.ok) {
-                const msg = typeof d === 'string' ? d : (d?.detail ?? d?.title ?? `${r.status} ${r.statusText}`);
-                throw new Error(msg);
-            }
-            return d;
-        }
-
-        // esc() y showToast() se movieron a /shared/ui-common.js (Patch 0102, Épica UI).
+        // esc(), showToast() y las utilidades HTTP (getJson/postJson/putJson) se
+        // movieron a /shared/ui-common.js (Patches 0102 y 0103, Épica UI).
 
         // Deep link opcional desde el Centro de Auditoría (audit.html):
         // ?from=&to=&movementId= (abrir el modal de clasificación de un movimiento
