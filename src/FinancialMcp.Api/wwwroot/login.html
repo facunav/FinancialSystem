@@ -4,27 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingresar · FinancialMcp</title>
+    <link rel="stylesheet" href="/shared/design-tokens.css">
     <style>
-        /* Patch 0067A: mismos design tokens que el resto de la UI (dashboard.html,
-           movements.html, etc.) -- no se rediseña nada, solo se reutiliza la misma
-           paleta para que esta pantalla no desentone. */
-        :root {
-            --bg: #0f1117;
-            --surface: #161b25;
-            --surface2: #1e2535;
-            --border: #2a3347;
-            --text: #e2e8f4;
-            --dim: #8b98b0;
-            --faint: #4a5568;
-            --green: #4ade80;
-            --green-dim: #166534;
-            --green-bg: #052e16;
-            --red: #f87171;
-            --red-bg: #2d0a0a;
-            --sans: -apple-system, system-ui, 'Segoe UI', sans-serif;
-            --radius: 10px;
-            --shadow: 0 2px 12px rgba(0,0,0,.4);
-        }
+        /* Patch 0104: design tokens movidos a /shared/design-tokens.css -- login.html
+           no incluye auth-guard.js/ui-common.js (es la pantalla previa a
+           autenticarse), pero sí design-tokens.css: es CSS puro, sin dependencia de
+           sesión, para no desentonar del resto de la UI (mismo criterio del
+           comentario original de Patch 0067A). */
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
 
