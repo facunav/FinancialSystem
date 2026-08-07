@@ -2,6 +2,7 @@ using FinancialSystem.Api.DTOs;
 using FinancialSystem.Application.Counterparties;
 using FinancialSystem.Application.Counterparties.Commands;
 using FinancialSystem.Application.Counterparties.Queries;
+using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
 
