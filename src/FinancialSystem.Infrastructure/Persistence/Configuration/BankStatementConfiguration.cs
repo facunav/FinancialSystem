@@ -79,5 +79,12 @@ internal sealed class BankStatementConfiguration : IEntityTypeConfiguration<Bank
 
         builder.Property(e => e.MerchantAtUtc)
             .HasColumnType("timestamp with time zone");
+
+        // ── Trazabilidad de importación (referencia blanda, Patch 0105) ────
+        // Deliberadamente sin HasOne/HasForeignKey/WithMany/OnDelete ni índice: es una
+        // referencia por convención, mismo criterio que ClassifiedMovementItem.SourceId
+        // (ver doc-comment de BankStatement.ImportBatchId y el análisis de trazabilidad de
+        // importación previo a este patch). No agregar navegación ni FK acá.
+        builder.Property(e => e.ImportBatchId);
     }
 }

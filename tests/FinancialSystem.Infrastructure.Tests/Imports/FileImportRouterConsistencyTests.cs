@@ -250,7 +250,7 @@ public class FileImportRouterConsistencyTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             InvocationCount++;
             return Task.FromResult(new ImportRunResult(insertedPerRun, 0, 0, 0, []));
@@ -265,7 +265,7 @@ public class FileImportRouterConsistencyTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             InvocationCount++;
             throw new InvalidOperationException("Fallo simulado dentro del handler.");
@@ -283,7 +283,7 @@ public class FileImportRouterConsistencyTests
 
         public bool CanHandle(string filePath) => true;
 
-        public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public async Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();

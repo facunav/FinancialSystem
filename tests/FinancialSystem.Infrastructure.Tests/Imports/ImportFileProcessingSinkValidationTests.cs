@@ -32,7 +32,7 @@ public class ImportFileProcessingSinkValidationTests
         {
             var sink = CreateSink(dbName, new ExcelWorkbookParser(NullLogger<ExcelWorkbookParser>.Instance));
 
-            var result = await sink.HandleFileAsync(path);
+            var result = await sink.HandleFileAsync(path, Guid.NewGuid());
 
             Assert.Equal(0, result.Inserted);
             Assert.True(result.Failed > 0);
@@ -56,7 +56,7 @@ public class ImportFileProcessingSinkValidationTests
         {
             var sink = CreateSink(dbName, new CsvFileParser(NullLogger<CsvFileParser>.Instance));
 
-            var result = await sink.HandleFileAsync(path);
+            var result = await sink.HandleFileAsync(path, Guid.NewGuid());
 
             Assert.Equal(0, result.Inserted);
             Assert.True(result.Failed > 0);

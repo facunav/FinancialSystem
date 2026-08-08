@@ -120,7 +120,7 @@ public class FileImportRouterValidationTests
 
         public bool CanHandle(string filePath) => canHandle;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             WasInvoked = true;
             return Task.FromResult(result ?? new ImportRunResult(0, 0, 0, 0, []));

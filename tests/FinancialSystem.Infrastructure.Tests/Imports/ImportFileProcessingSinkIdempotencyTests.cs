@@ -29,21 +29,51 @@ public class ImportFileProcessingSinkIdempotencyTests
         var transaccion = new ExtractedTransaction(
             new DateTime(2026, 3, 28), "DLO*PEDIDOSYA MCDONALD", 32725.00m, "ARS", "003842");
 
+        var primerBatchId = Guid.NewGuid();
         var primeraCorrida = CreateSink(dbName, [transaccion]);
-        var primerResultado = await primeraCorrida.HandleFileAsync("resumen.pdf");
+        var primerResultado = await primeraCorrida.HandleFileAsync("resumen.pdf", primerBatchId);
 
         Assert.Equal(1, primerResultado.Inserted);
         Assert.Equal(0, primerResultado.Duplicates);
 
         // Segunda corrida: mismo archivo, mismas transacciones -- ExternalId ya existente.
+        var segundoBatchId = Guid.NewGuid();
         var segundaCorrida = CreateSink(dbName, [transaccion]);
-        var segundoResultado = await segundaCorrida.HandleFileAsync("resumen.pdf");
+        var segundoResultado = await segundaCorrida.HandleFileAsync("resumen.pdf", segundoBatchId);
 
         Assert.Equal(0, segundoResultado.Inserted);
         Assert.Equal(1, segundoResultado.Duplicates);
 
         await using var db = OpenDb(dbName);
         Assert.Equal(1, await db.Transactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task HandleFileAsync_ReimportarElMismoArchivo_ConservaElImportBatchIdDeLaPrimeraCorrida()
+    {
+        // Patch 0105: un movimiento omitido por idempotencia (ExternalId ya existente)
+        // nunca se vuelve a cargar como candidato a escritura -- por lo tanto su
+        // ImportBatchId nunca se toca en la segunda corrida, sin importar qué Guid reciba
+        // esa segunda corrida.
+        var dbName = Guid.NewGuid().ToString();
+        var transaccion = new ExtractedTransaction(
+            new DateTime(2026, 3, 28), "DLO*PEDIDOSYA MCDONALD", 32725.00m, "ARS", "003842");
+
+        var primerBatchId = Guid.NewGuid();
+        var primeraCorrida = CreateSink(dbName, [transaccion]);
+        await primeraCorrida.HandleFileAsync("resumen.pdf", primerBatchId);
+
+        var segundoBatchId = Guid.NewGuid();
+        var segundaCorrida = CreateSink(dbName, [transaccion]);
+        var segundoResultado = await segundaCorrida.HandleFileAsync("resumen.pdf", segundoBatchId);
+
+        Assert.Equal(0, segundoResultado.Inserted);
+        Assert.Equal(1, segundoResultado.Duplicates);
+
+        await using var db = OpenDb(dbName);
+        var transaction = await db.Transactions.SingleAsync();
+        Assert.Equal(primerBatchId, transaction.ImportBatchId);
+        Assert.NotEqual(segundoBatchId, transaction.ImportBatchId);
     }
 
     [Fact]
@@ -56,12 +86,12 @@ public class ImportFileProcessingSinkIdempotencyTests
             new DateTime(2026, 3, 29), "FARMACITY", 5000.00m, "ARS", "003843");
 
         var primeraCorrida = CreateSink(dbName, [yaImportada]);
-        await primeraCorrida.HandleFileAsync("resumen.pdf");
+        await primeraCorrida.HandleFileAsync("resumen.pdf", Guid.NewGuid());
 
         // Segunda corrida: el resumen actualizado trae la operación ya importada
         // más una nueva -- ambas en el mismo archivo.
         var segundaCorrida = CreateSink(dbName, [yaImportada, nueva]);
-        var resultado = await segundaCorrida.HandleFileAsync("resumen_actualizado.pdf");
+        var resultado = await segundaCorrida.HandleFileAsync("resumen_actualizado.pdf", Guid.NewGuid());
 
         Assert.Equal(1, resultado.Inserted);
         Assert.Equal(1, resultado.Duplicates);
@@ -83,7 +113,7 @@ public class ImportFileProcessingSinkIdempotencyTests
             null, null, "1278896210");
 
         var sink = CreateSink(dbName, [transaccion]);
-        await sink.HandleFileAsync("Visa_Junio.pdf");
+        await sink.HandleFileAsync("Visa_Junio.pdf", Guid.NewGuid());
 
         await using var db = OpenDb(dbName);
         var transaction = await db.Transactions.SingleAsync();
@@ -101,7 +131,7 @@ public class ImportFileProcessingSinkIdempotencyTests
             null, null, "1278896210");
 
         var sink = CreateSink(dbName, [transaccion]);
-        await sink.HandleFileAsync("Visa_Junio.pdf");
+        await sink.HandleFileAsync("Visa_Junio.pdf", Guid.NewGuid());
 
         await using var db = OpenDb(dbName);
         var transaction = await db.Transactions.SingleAsync();

@@ -231,7 +231,7 @@ public class ImportPipelineDiagnosticsTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default) =>
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default) =>
             Task.FromResult(new ImportRunResult(inserted, duplicates, failed, skipped, []));
     }
 
@@ -241,7 +241,7 @@ public class ImportPipelineDiagnosticsTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default) =>
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default) =>
             throw new InvalidOperationException("Fallo simulado dentro del handler.");
     }
 
@@ -252,7 +252,7 @@ public class ImportPipelineDiagnosticsTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             try
             {

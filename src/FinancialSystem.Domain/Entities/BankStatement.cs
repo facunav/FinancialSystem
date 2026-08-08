@@ -81,4 +81,19 @@ public class BankStatement
 
     /// <summary>Fecha/hora exacta de la compra según el extracto de Tarjeta de Débito. Null junto con Merchant.</summary>
     public DateTime? MerchantAtUtc { get; set; }
+
+    // ── Trazabilidad de importación (referencia blanda, Patch 0105) ────
+
+    /// <summary>
+    /// Id del ImportBatch de la corrida que insertó este movimiento. Referencia blanda,
+    /// deliberadamente sin FK ni navegación (mismo criterio ya usado por SourceEntityType+
+    /// SourceId en ClassifiedMovementItem/MovementAuditDecision/InvestigationReference: la
+    /// integridad se sostiene por convención de negocio, no por constraint de base -- ver
+    /// ADR-005 y el análisis de trazabilidad de importación previo a este patch).
+    /// Nullable: filas insertadas antes de este patch quedan sin valor (mismo criterio que
+    /// ExternalId/ParserUsed al agregarse en su momento). BbvaDebitCardEnrichmentHandler no
+    /// lo toca -- enriquecer un movimiento (Merchant/MerchantAtUtc) nunca cambia su
+    /// procedencia original.
+    /// </summary>
+    public Guid? ImportBatchId { get; set; }
 }

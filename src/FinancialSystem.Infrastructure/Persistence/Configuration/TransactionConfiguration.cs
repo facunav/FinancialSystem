@@ -58,5 +58,10 @@ internal sealed class TransactionConfiguration : IEntityTypeConfiguration<Transa
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(t => t.FinancialAccountId);
+
+        // ── Trazabilidad de importación (referencia blanda, Patch 0105) ────
+        // Deliberadamente sin HasOne/HasForeignKey/WithMany/OnDelete ni índice -- ver el
+        // mismo criterio documentado en BankStatementConfiguration.
+        builder.Property(t => t.ImportBatchId);
     }
 }

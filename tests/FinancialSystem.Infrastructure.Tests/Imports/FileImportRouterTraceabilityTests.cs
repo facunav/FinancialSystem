@@ -283,7 +283,7 @@ public class FileImportRouterTraceabilityTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             InvocationCount++;
             return Task.FromResult(new ImportRunResult(inserted, duplicates, failed, skipped, [], ParserUsed: parserUsed));
@@ -296,7 +296,7 @@ public class FileImportRouterTraceabilityTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default) =>
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default) =>
             throw new InvalidOperationException("Fallo simulado dentro del handler.");
     }
 

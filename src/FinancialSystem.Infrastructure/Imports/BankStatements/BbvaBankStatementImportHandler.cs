@@ -42,12 +42,12 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
                 .Any(pattern => MatchesGlob(fileName, pattern));
         }
 
-        public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public async Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             BbvaBankStatementImporter.ImportResult result;
             try
             {
-                result = await _importer.ImportAsync(filePath, ct);
+                result = await _importer.ImportAsync(filePath, importBatchId, ct);
             }
             catch (Exception ex)
             {

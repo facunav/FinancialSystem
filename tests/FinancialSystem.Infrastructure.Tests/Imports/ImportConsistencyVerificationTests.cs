@@ -326,7 +326,7 @@ public class ImportConsistencyVerificationTests
 
         public bool CanHandle(string filePath) => true;
 
-        public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public async Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             if (actuallyPersist)
             {

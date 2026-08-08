@@ -58,6 +58,7 @@ public sealed class BbvaBankStatementImporter
 
     public async Task<ImportResult> ImportAsync(
         string filePath,
+        Guid importBatchId,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -95,7 +96,7 @@ public sealed class BbvaBankStatementImporter
         }
 
         // ── Paso 3: Persistir con idempotencia ────────────────────
-        var (inserted, duplicates) = await PersistAsync(parseResult.Statements, ct);
+        var (inserted, duplicates) = await PersistAsync(parseResult.Statements, importBatchId, ct);
 
         sw.Stop();
         var allDiagnostics = parseResult.Diagnostics.ToList();
@@ -115,6 +116,7 @@ public sealed class BbvaBankStatementImporter
 
     private async Task<(int Inserted, int Duplicates)> PersistAsync(
         IReadOnlyList<BankStatement> statements,
+        Guid importBatchId,
         CancellationToken ct)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
@@ -140,6 +142,14 @@ public sealed class BbvaBankStatementImporter
             return (0, duplicates);
 
         await AssignFinancialAccountAsync(db, toInsert, ct);
+
+        // Patch 0105 (vínculo ImportBatchId): se estampa acá, sobre los objetos que
+        // efectivamente van a insertarse -- después de excluir los duplicados por
+        // ExternalId (toInsert), así que un movimiento ya existente de una corrida
+        // anterior nunca se toca. Mismo punto y mismo criterio que AssignFinancialAccountAsync,
+        // sin necesidad de consulta porque el valor ya se conoce.
+        foreach (var statement in toInsert)
+            statement.ImportBatchId = importBatchId;
 
         db.BankStatements.AddRange(toInsert);
         await db.SaveChangesAsync(ct);

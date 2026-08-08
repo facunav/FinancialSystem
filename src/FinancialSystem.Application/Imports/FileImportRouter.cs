@@ -217,12 +217,22 @@ public class FileImportRouter : IFileImportRouter
                     fileName,
                     handler.HandlerName);
 
+                // Patch 0105 (vínculo ImportBatchId): se genera acá, una única vez por
+                // corrida que llega a un handler -- antes de invocarlo, no dentro de
+                // PersistImportBatchAsync como hasta ahora. El mismo valor viaja hacia
+                // abajo (handler -> importador/sink -> movimientos insertados) y hacia
+                // PersistImportBatchAsync más abajo, que lo reutiliza como Id del
+                // ImportBatch en vez de generar uno propio. No cambia cuándo se persiste
+                // el ImportBatch (sigue siendo después del handler, en su propio scope) --
+                // solo de dónde sale el valor de su Id.
+                var importBatchId = Guid.NewGuid();
+
                 currentStage = ImportPipelineStage.Extraction;
                 var extractionSw = Stopwatch.StartNew();
                 ImportRunResult result;
                 try
                 {
-                    result = await handler.HandleAsync(filePath, ct);
+                    result = await handler.HandleAsync(filePath, importBatchId, ct);
                     // Centralizado acá (Patch 0054, sección 4 del patch): "Exitosa" vs.
                     // "Exitosa con advertencias" se decide en un único lugar para los tres
                     // handlers, en vez de que cada uno lo calcule por su cuenta.
@@ -246,7 +256,8 @@ public class FileImportRouter : IFileImportRouter
                 var persistenceSw = Stopwatch.StartNew();
                 var completedAtUtc = _dateTimeProvider.UtcNow;
                 var batchId = await PersistImportBatchAsync(
-                    filePath, persistedHash, handler.HandlerName, startedAtUtc, completedAtUtc, fileSizeBytes, result, ct);
+                    filePath, persistedHash, handler.HandlerName, startedAtUtc, completedAtUtc, fileSizeBytes, result, ct,
+                    importBatchId);
                 stageDurations[ImportPipelineStage.Persistence] = persistenceSw.Elapsed;
 
                 // Patch 0056: solo tiene sentido verificar una corrida que efectivamente
@@ -450,6 +461,16 @@ public class FileImportRouter : IFileImportRouter
     /// financiera). Si esto falla, se loguea pero no se relanza — los datos del handler
     /// ya quedaron guardados y no tiene sentido tratar la corrida completa como fallida
     /// por un problema al escribir el registro de auditoría.
+    ///
+    /// Patch 0105 (vínculo ImportBatchId): <paramref name="importBatchId"/> es opcional y
+    /// solo lo pasa el único call site que corresponde a una corrida real (handler
+    /// aceptado, ver RouteAsync) -- ahí trae el mismo Guid que ya viajó hacia los
+    /// movimientos insertados por ese handler, y se usa como Id de este ImportBatch en vez
+    /// de dejar que el default de dominio genere uno distinto (ImportBatch.Id ya
+    /// inicializa Guid.NewGuid() por defecto). Los otros 4 call sites (rechazo por
+    /// validación, ya-importado, ningún handler aceptó, catch de nivel superior) no pasan
+    /// nada -- ahí no hay ningún movimiento involucrado, y el comportamiento es idéntico al
+    /// que ya existía antes de este patch (el Id se genera acá mismo, como siempre).
     /// </summary>
     private async Task<Guid> PersistImportBatchAsync(
         string filePath,
@@ -459,10 +480,12 @@ public class FileImportRouter : IFileImportRouter
         DateTime completedAtUtc,
         long? fileSizeBytes,
         ImportRunResult result,
-        CancellationToken ct)
+        CancellationToken ct,
+        Guid? importBatchId = null)
     {
         var batch = new ImportBatch
         {
+            Id = importBatchId ?? Guid.NewGuid(),
             SourceFile = filePath,
             ContentHash = contentHash,
             HandlerName = handlerName,

@@ -39,12 +39,12 @@ internal sealed class TransactionImportHandler : IFileImportHandler
         return SupportedExtensions.Contains(ext);
     }
 
-    public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+    public async Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
     {
         _logger.LogDebug(
             "[Transaction] Procesando {File}",
             Path.GetFileName(filePath));
 
-        return await _sink.HandleFileAsync(filePath, ct);
+        return await _sink.HandleFileAsync(filePath, importBatchId, ct);
     }
 }

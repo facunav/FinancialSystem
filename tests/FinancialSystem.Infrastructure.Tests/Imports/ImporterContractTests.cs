@@ -275,7 +275,7 @@ public class ImporterContractTests
 
         public bool CanHandle(string filePath) => Path.GetExtension(filePath).Equals(".ofx", StringComparison.OrdinalIgnoreCase);
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default) =>
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default) =>
             Task.FromResult(new ImportRunResult(
                 inserted, duplicates, failed, skipped, [], ParserUsed: "HypotheticalOfxParser"));
     }
@@ -286,7 +286,7 @@ public class ImporterContractTests
 
         public bool CanHandle(string filePath) => Path.GetExtension(filePath).Equals(".ofx", StringComparison.OrdinalIgnoreCase);
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default) =>
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default) =>
             throw new InvalidOperationException("Fallo simulado de un importador nuevo.");
     }
 }

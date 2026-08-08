@@ -39,8 +39,18 @@ public interface IFileImportHandler
     /// Devuelve el resultado de la corrida (insertados/duplicados/fallidos/omitidos +
     /// diagnóstico) para que el router pueda persistir un ImportBatch — el handler no
     /// administra ImportBatch directamente (ver PR I4).
+    ///
+    /// Patch 0105 (vínculo ImportBatchId): <paramref name="importBatchId"/> es el Id ya
+    /// generado por FileImportRouter para esta corrida, antes de invocar este método --
+    /// el mismo valor que el router va a usar después para persistir el ImportBatch (ver
+    /// FileImportRouter.PersistImportBatchAsync). Un handler que inserta movimientos nuevos
+    /// debe propagarlo hasta el punto donde los construye, para estampar
+    /// BankStatement.ImportBatchId/Transaction.ImportBatchId (referencia blanda, sin FK ni
+    /// navegación). Un handler que no inserta movimientos (ver
+    /// BbvaDebitCardEnrichmentHandler) recibe el parámetro por uniformidad del contrato,
+    /// pero no tiene ninguna obligación de usarlo.
     /// </summary>
-    Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default);
+    Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default);
 }
 
 /// <summary>

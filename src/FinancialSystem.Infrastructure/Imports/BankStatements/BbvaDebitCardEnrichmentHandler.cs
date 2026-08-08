@@ -60,7 +60,16 @@ namespace FinancialSystem.Infrastructure.Imports.BankStatements
                 .Any(pattern => MatchesGlob(fileName, pattern));
         }
 
-        public async Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        // Patch 0105: recibe importBatchId únicamente porque IFileImportHandler lo exige
+        // por igual para los tres handlers -- este en particular NUNCA inserta movimientos
+        // nuevos, solo enriquece BankStatement ya existentes (Merchant/MerchantAtUtc, ver
+        // EnrichAsync). El parámetro se nombra "unusedImportBatchId" y deliberadamente no
+        // se reenvía a EnrichAsync ni se usa en ningún punto del cuerpo: estampar
+        // ImportBatchId acá reescribiría la procedencia original de un movimiento ya
+        // insertado por otra corrida, algo que este patch prohíbe explícitamente. (No se
+        // usa "_" para nombrarlo: este método ya usa "_" como discard en la deconstrucción
+        // de tupla de la línea siguiente, y un parámetro llamado "_" colisionaría con eso.)
+        public async Task<ImportRunResult> HandleAsync(string filePath, Guid unusedImportBatchId, CancellationToken ct = default)
         {
             string?[][] rawRows;
             try

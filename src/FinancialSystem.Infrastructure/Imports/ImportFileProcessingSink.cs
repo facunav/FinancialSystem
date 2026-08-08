@@ -16,7 +16,7 @@ internal sealed class ImportFileProcessingSink(
     IDateTimeProvider dateTimeProvider,
     ILogger<ImportFileProcessingSink> logger) : IImportFileSink
 {
-    public async Task<ImportRunResult> HandleFileAsync(string filePath, CancellationToken cancellationToken = default)
+    public async Task<ImportRunResult> HandleFileAsync(string filePath, Guid importBatchId, CancellationToken cancellationToken = default)
     {
         var totalSw = Stopwatch.StartNew();
         logger.LogInformation("Import file detected: {FilePath}", filePath);
@@ -191,7 +191,11 @@ internal sealed class ImportFileProcessingSink(
                 RawLine = parsed.RawLine,
                 SourceFile = filePath,
                 ExternalId = externalId,
-                FinancialAccountId = financialAccountId
+                FinancialAccountId = financialAccountId,
+                // Patch 0105: mismo Guid ya generado por FileImportRouter para esta
+                // corrida -- solo se estampa acá, sobre filas nuevas (candidates ya
+                // excluyó los ExternalId duplicados más arriba).
+                ImportBatchId = importBatchId
             });
             inserted++;
 

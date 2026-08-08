@@ -189,7 +189,7 @@ public class FileImportRouterIdempotencyTests
 
         public bool CanHandle(string filePath) => true;
 
-        public Task<ImportRunResult> HandleAsync(string filePath, CancellationToken ct = default)
+        public Task<ImportRunResult> HandleAsync(string filePath, Guid importBatchId, CancellationToken ct = default)
         {
             InvocationCount++;
             return Task.FromResult(new ImportRunResult(insertedPerRun, 0, 0, 0, []));
