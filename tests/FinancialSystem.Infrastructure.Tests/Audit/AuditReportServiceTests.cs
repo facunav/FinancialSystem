@@ -902,4 +902,158 @@ public class AuditReportServiceTests
         Assert.Equal(2, report.MovementsAnalyzed);
         Assert.Equal(2, report.Pending);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ExplainCurrentClassificationAsync (Patch 0106)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_SinHistorialNiDefaultDeContraparte_HasSuggestionFalse()
+    {
+        // Escenario "Sin sugerencia": ni IClassificationSuggestionService devuelve nada
+        // para este movimiento, ni tiene una Counterparty con Default* configurado --
+        // no hay nada con qué comparar. Esto NO implica que la clasificación actual sea
+        // correcta ni incorrecta, solo que no hay base de comparación.
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, categoryId, "Alimentacion");
+        var movement = ClassifiedMovementView(categoryId);
+        var service = CreateService(dbName);
+
+        var result = await service.ExplainCurrentClassificationAsync(movement);
+
+        Assert.False(result.HasSuggestion);
+        Assert.Empty(result.Motivos);
+    }
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_LaSugerenciaCoincideConElValorActual_HasSuggestionTrueYMotivosVacio()
+    {
+        // Escenario "Coincidencia": hay sugerencia (HasSuggestion=true) pero no difiere
+        // de la clasificación actual -- Motivos queda vacío, distinto del caso "sin
+        // sugerencia" (que también tiene Motivos vacío pero HasSuggestion=false).
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, categoryId, "Alimentacion");
+        var movement = ClassifiedMovementView(categoryId);
+        var suggestion = new ClassificationSuggestion(
+            SuggestionDimension.Category, categoryId, SuggestionConfidence.High, "Misma categoria");
+        var service = CreateService(dbName, suggestions: [SuggestionSet(movement.SourceId, suggestion)]);
+
+        var result = await service.ExplainCurrentClassificationAsync(movement);
+
+        Assert.True(result.HasSuggestion);
+        Assert.Empty(result.Motivos);
+    }
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_SugerenciaDeCategoriaDistinta_DevuelveUnMotivoConDatosCompletos()
+    {
+        // Escenario "Diferencia": una única dimensión diverge -- se verifican los 5
+        // campos que MovementTools.ExplainClassification expone por motivo (dimensión,
+        // valor actual, valor sugerido, origen, confianza).
+        var dbName = Guid.NewGuid().ToString();
+        var currentCategoryId = Guid.NewGuid();
+        var suggestedCategoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, currentCategoryId, "Alimentacion");
+        await SeedCategoryAsync(dbName, suggestedCategoryId, "Salud");
+        var movement = ClassifiedMovementView(currentCategoryId);
+        var suggestion = new ClassificationSuggestion(
+            SuggestionDimension.Category, suggestedCategoryId, SuggestionConfidence.High, "m", MatchCount: 5, WinnerCount: 4);
+        var service = CreateService(dbName, suggestions: [SuggestionSet(movement.SourceId, suggestion)]);
+
+        var result = await service.ExplainCurrentClassificationAsync(movement);
+
+        Assert.True(result.HasSuggestion);
+        var motivo = Assert.Single(result.Motivos);
+        Assert.Equal("Categoría", motivo.Dimension);
+        Assert.Equal("Alimentacion", motivo.ValorActual);
+        Assert.Equal("Salud", motivo.ValorSugerido);
+        Assert.Equal("High", motivo.Confianza);
+        Assert.Contains("Historial de descripción idéntica", motivo.Origen);
+    }
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_MultiplesDimensionesDivergentes_DevuelveUnMotivoPorDimension()
+    {
+        // Escenario "Varias diferencias": categoría y tipo divergen a la vez -- 2 motivos,
+        // uno por dimensión, cada uno con su propio origen/confianza.
+        var dbName = Guid.NewGuid().ToString();
+        var currentCategoryId = Guid.NewGuid();
+        var suggestedCategoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, currentCategoryId, "Alimentacion");
+        await SeedCategoryAsync(dbName, suggestedCategoryId, "Salud");
+        var movement = ClassifiedMovementView(currentCategoryId, movementType: MovementType.Purchase);
+        var categorySuggestion = new ClassificationSuggestion(
+            SuggestionDimension.Category, suggestedCategoryId, SuggestionConfidence.High, "m");
+        var typeSuggestion = new ClassificationSuggestion(
+            SuggestionDimension.MovementType, MovementType.Transfer, SuggestionConfidence.Medium, "m");
+        var service = CreateService(
+            dbName, suggestions: [SuggestionSet(movement.SourceId, categorySuggestion, typeSuggestion)]);
+
+        var result = await service.ExplainCurrentClassificationAsync(movement);
+
+        Assert.True(result.HasSuggestion);
+        Assert.Equal(2, result.Motivos.Count);
+        Assert.Contains(result.Motivos, m => m.Dimension == "Categoría");
+        Assert.Contains(result.Motivos, m => m.Dimension == "Tipo");
+    }
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_MismoMotivoQueGetMisclassifiedMovementsAsync_ParaElMismoMovimiento()
+    {
+        // Escenario "Comparación MCP vs Auditoría": ExplainCurrentClassificationAsync
+        // reutiliza BuildSuggestionMotivos/BuildDefaultMotivos -- el mismo cálculo que
+        // ya usa Auditoría vía GetMisclassifiedMovementsAsync. Este test comprueba que,
+        // para el mismo movimiento, ambos caminos producen el mismo motivo (Dimension/
+        // valor actual/valor sugerido), sin duplicar la lógica de interpretación.
+        var dbName = Guid.NewGuid().ToString();
+        var currentCategoryId = Guid.NewGuid();
+        var suggestedCategoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, currentCategoryId, "Alimentacion");
+        await SeedCategoryAsync(dbName, suggestedCategoryId, "Salud");
+        var movement = ClassifiedMovementView(currentCategoryId);
+        var suggestion = new ClassificationSuggestion(
+            SuggestionDimension.Category, suggestedCategoryId, SuggestionConfidence.High, "m", MatchCount: 8, WinnerCount: 6);
+        var service = CreateService(
+            dbName, movements: [movement], suggestions: [SuggestionSet(movement.SourceId, suggestion)]);
+
+        var auditoriaResult = await service.GetMisclassifiedMovementsAsync(From, To, null);
+        var mcpResult = await service.ExplainCurrentClassificationAsync(movement);
+
+        var auditoriaMotivo = Assert.Single(Assert.Single(auditoriaResult).Motivos);
+        var mcpMotivo = Assert.Single(mcpResult.Motivos);
+        Assert.Equal(auditoriaMotivo.Dimension, mcpMotivo.Dimension);
+        Assert.Equal(auditoriaMotivo.CurrentValue, mcpMotivo.ValorActual);
+        Assert.Equal(auditoriaMotivo.SuggestedValue, mcpMotivo.ValorSugerido);
+        Assert.Equal(auditoriaMotivo.MatchCount, mcpMotivo.MatchCount);
+        Assert.Equal(auditoriaMotivo.WinnerCount, mcpMotivo.WinnerCount);
+    }
+
+    [Fact]
+    public async Task ExplainCurrentClassificationAsync_DefaultDeContraparteDistinto_HasSuggestionTrueConMotivoSinConfianza()
+    {
+        // Igual que BuildMisclassifiedMovementsReportAsync_DefaultDeContraparteDistinto_IncluyeElMotivo,
+        // pero por el camino de un único movimiento: BuildDefaultMotivos nunca informa
+        // Confianza/MatchCount/WinnerCount (no hay conteo de historial detrás de un
+        // default de Counterparty) -- se preserva ese comportamiento sin cambios.
+        var dbName = Guid.NewGuid().ToString();
+        var currentCategoryId = Guid.NewGuid();
+        var defaultCategoryId = Guid.NewGuid();
+        var counterpartyId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, currentCategoryId, "Alimentacion");
+        await SeedCategoryAsync(dbName, defaultCategoryId, "Salud");
+        await SeedCounterpartyAsync(dbName, counterpartyId, "Farmacia Amancay", defaultCategoryId: defaultCategoryId);
+        var movement = ClassifiedMovementView(currentCategoryId, counterpartyId: counterpartyId);
+        var service = CreateService(dbName);
+
+        var result = await service.ExplainCurrentClassificationAsync(movement);
+
+        Assert.True(result.HasSuggestion);
+        var motivo = Assert.Single(result.Motivos);
+        Assert.Equal("Categoría", motivo.Dimension);
+        Assert.Equal("Salud", motivo.ValorSugerido);
+        Assert.Null(motivo.Confianza);
+        Assert.Contains("Default configurado en la contraparte", motivo.Origen);
+    }
 }

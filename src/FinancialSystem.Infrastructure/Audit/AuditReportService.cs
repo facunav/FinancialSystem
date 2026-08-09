@@ -336,6 +336,112 @@ public sealed class AuditReportService
         return new FlaggedMovementsResult(classified.Count, flagged, categoryNames, counterpartyNames, accountNames);
     }
 
+    // ── Comparación de un único movimiento contra la sugerencia vigente (PATCH-0106) ──
+    // Reutiliza exactamente el mismo cálculo que ComputeFlaggedMovementsAsync
+    // (ToFinancialMovement, IClassificationSuggestionService.SuggestAsync,
+    // Counterparty.Default*, BuildSuggestionMotivos, BuildDefaultMotivos) -- sin
+    // copiar ninguno de esos métodos -- pero sin cargar un rango de fechas completo:
+    // SuggestAsync se llama con una lista de un único movimiento, y los defaults de
+    // contraparte se resuelven con una consulta puntual (una fila) en vez del
+    // diccionario por lote que usa el camino de auditoría por rango.
+    //
+    // Consumido por MovementTools.ExplainClassification (hosts/FinancialSystem.McpServer) --
+    // ComputeFlaggedMovementsAsync/BuildMisclassifiedMovementsReportAsync/
+    // GetMisclassifiedMovementsAsync/BuildFullAuditReportAsync no se tocan, mismo
+    // comportamiento exacto que antes de este método.
+
+    /// <summary>
+    /// Compara la clasificación actual de un único movimiento (<paramref name="movement"/>)
+    /// contra lo que <see cref="IClassificationSuggestionService"/> sugeriría hoy para esa
+    /// misma descripción, más los valores por defecto de su <c>Counterparty</c> si tiene
+    /// una asignada -- la misma interpretación que ya usa Auditoría
+    /// (<see cref="ComputeFlaggedMovementsAsync(IReadOnlyList{MovementView}, CancellationToken)"/>),
+    /// aplicada a un solo movimiento en vez de un lote por rango de fechas.
+    ///
+    /// Precondición: <paramref name="movement"/> debe representar un movimiento ya
+    /// clasificado (<c>Status</c>/<c>CategoryId</c>/<c>MovementType</c>/<c>FinancialImpact</c>
+    /// no nulos) -- mismo requisito que <c>ComputeFlaggedMovementsAsync</c> ya exige
+    /// internamente antes de tocar las 4 dimensiones (ahí filtrando
+    /// <c>movements.Where(m =&gt; m.Status is not null)</c> antes de llegar a este cálculo).
+    /// El llamador es responsable de no invocar este método para un movimiento pendiente.
+    /// </summary>
+    public async Task<ClassificationComparisonResult> ExplainCurrentClassificationAsync(
+        MovementView movement, CancellationToken ct = default)
+    {
+        var financialMovement = ToFinancialMovement(movement);
+        var suggestionSets = await _suggestionService.SuggestAsync([financialMovement], ct);
+        var suggestions = suggestionSets.Count > 0
+            ? suggestionSets[0].Suggestions
+            : (IReadOnlyList<ClassificationSuggestion>)[];
+
+        CounterpartyDefaults? defaults = null;
+        if (movement.CounterpartyId is { } counterpartyId)
+        {
+            defaults = await _db.Counterparties
+                .AsNoTracking()
+                .Where(c => c.Id == counterpartyId)
+                .Select(c => new CounterpartyDefaults(
+                    c.Id, c.DefaultCategoryId, c.DefaultMovementType, c.DefaultFinancialImpact))
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var (categoryNames, counterpartyNames) = await ResolveComparisonNamesAsync(movement, suggestions, defaults, ct);
+
+        var motivos = new List<Motivo>();
+        if (suggestions.Count > 0)
+            motivos.AddRange(BuildSuggestionMotivos(movement, suggestions, categoryNames, counterpartyNames));
+
+        if (defaults is not null)
+            motivos.AddRange(BuildDefaultMotivos(movement, defaults, categoryNames));
+
+        var hasSuggestion = suggestions.Count > 0 || HasAnyDefault(defaults);
+
+        return new ClassificationComparisonResult(hasSuggestion, motivos);
+    }
+
+    private static bool HasAnyDefault(CounterpartyDefaults? defaults) =>
+        defaults is not null &&
+        (defaults.DefaultCategoryId is not null
+            || defaults.DefaultMovementType is not null
+            || defaults.DefaultFinancialImpact is not null);
+
+    // Mismo criterio que ComputeFlaggedMovementsAsync (categoryIds/counterpartyIdsForNames),
+    // acotado a los Ids que puede necesitar UN movimiento en vez de un lote completo:
+    // valor actual, valor(es) sugerido(s) por historial, valor por defecto de contraparte.
+    private async Task<(Dictionary<Guid, string> CategoryNames, Dictionary<Guid, string> CounterpartyNames)> ResolveComparisonNamesAsync(
+        MovementView movement,
+        IReadOnlyList<ClassificationSuggestion> suggestions,
+        CounterpartyDefaults? defaults,
+        CancellationToken ct)
+    {
+        var categoryIds = new List<Guid>();
+        if (movement.CategoryId is { } currentCategoryId) categoryIds.Add(currentCategoryId);
+        categoryIds.AddRange(suggestions
+            .Where(s => s.Dimension == SuggestionDimension.Category)
+            .Select(s => (Guid)s.Value));
+        if (defaults?.DefaultCategoryId is { } defaultCategoryId) categoryIds.Add(defaultCategoryId);
+
+        var counterpartyIds = new List<Guid>();
+        if (movement.CounterpartyId is { } currentCounterpartyId) counterpartyIds.Add(currentCounterpartyId);
+        counterpartyIds.AddRange(suggestions
+            .Where(s => s.Dimension == SuggestionDimension.Counterparty)
+            .Select(s => (Guid)s.Value));
+
+        var categoryNames = categoryIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Categories.AsNoTracking()
+                .Where(c => categoryIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.DisplayName, ct);
+
+        var counterpartyNames = counterpartyIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Counterparties.AsNoTracking()
+                .Where(c => counterpartyIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+
+        return (categoryNames, counterpartyNames);
+    }
+
     // ── Reporte completo (ex AuditDatabaseTools.AuditDatabase) ───────────────────
     // from/to ya vienen resueltos (AuditDatabaseTools/el endpoint de la Api calculan
     // el período por defecto -- mes en curso -- antes de llamar acá; ninguno de los
@@ -450,7 +556,12 @@ public sealed class AuditReportService
 
     // ── Helpers (idénticos a los que tenía AuditTools.cs) ────────────────────────
 
-    private sealed record Motivo(
+    // PATCH-0106: pasa de private a public -- único cambio de visibilidad de este patch
+    // -- para que sea el tipo de retorno de ClassificationComparisonResult.Motivos,
+    // consumido desde hosts/FinancialSystem.McpServer (MovementTools.ExplainClassification).
+    // Se mantiene anidado dentro de AuditReportService (no se mueve a nivel de namespace)
+    // para minimizar el diff: ningún otro cambio de forma ni de contenido.
+    public sealed record Motivo(
         string Origen,
         string Dimension,
         string ValorActual,
@@ -458,6 +569,18 @@ public sealed class AuditReportService
         string? Confianza,
         int? MatchCount = null,
         int? WinnerCount = null);
+
+    /// <summary>
+    /// Resultado de <see cref="ExplainCurrentClassificationAsync"/> (PATCH-0106).
+    /// <c>HasSuggestion</c> distingue "no hay nada con qué comparar" (ni historial ni
+    /// default de contraparte -- <c>Motivos</c> vacío no dice por sí solo cuál de los
+    /// dos casos es) de "hay sugerencia y coincide" (<c>HasSuggestion=true</c>,
+    /// <c>Motivos</c> vacío) de "hay sugerencia y difiere en una o más dimensiones"
+    /// (<c>HasSuggestion=true</c>, <c>Motivos</c> con uno o más elementos).
+    /// </summary>
+    public sealed record ClassificationComparisonResult(
+        bool HasSuggestion,
+        IReadOnlyList<Motivo> Motivos);
 
     private const string SuggestionOrigen = "Historial de descripción idéntica (IClassificationSuggestionService)";
 

@@ -3,6 +3,8 @@ using System.Text;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Domain.Enums;
+using FinancialSystem.Domain.Review;
+using FinancialSystem.Infrastructure.Audit;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 
@@ -37,12 +39,21 @@ public sealed class MovementTools
     private readonly IMovementLookupService _movementLookup;
     private readonly IApplicationDbContext _db;
 
+    // PATCH-0106: mismo patrón de inyección directa que ya usan AuditTools/
+    // AuditDatabaseTools -- AuditReportService está registrado en DI como clase
+    // concreta, sin interfaz propia (ver DependencyInjection.cs).
+    private readonly AuditReportService _auditReportService;
+
     public MovementTools(
-        IMovementsQueryService movementsQuery, IMovementLookupService movementLookup, IApplicationDbContext db)
+        IMovementsQueryService movementsQuery,
+        IMovementLookupService movementLookup,
+        IApplicationDbContext db,
+        AuditReportService auditReportService)
     {
         _movementsQuery = movementsQuery;
         _movementLookup = movementLookup;
         _db = db;
+        _auditReportService = auditReportService;
     }
 
     [McpServerTool]
@@ -349,9 +360,12 @@ public sealed class MovementTools
         "estado actual, cómo se obtuvo (ProcessingSource, sin inventar el origen si el sistema " +
         "no lo registra), información de procesamiento, grupo de matching y observaciones, todo " +
         "en formato estructurado. Reutiliza el mismo lookup que GetMovement/ExplainMovement (una " +
-        "sola consulta) -- no agrega IA, no compara contra IClassificationSuggestionService ni " +
-        "Counterparty.Default* (eso es auditoría, ver FindMisclassifiedMovements; acá solo se lee " +
-        "lo que ClassifiedMovement ya persiste sobre sí mismo).")]
+        "sola consulta). PATCH-0106: además, para un movimiento ya clasificado, incluye una " +
+        "sección 'Comparación con la sugerencia actual' -- si la clasificación vigente coincide " +
+        "con lo que IClassificationSuggestionService/Counterparty.Default* sugerirían hoy, " +
+        "reutilizando exactamente la misma interpretación que ya usa el Centro de Auditoría " +
+        "(AuditReportService, ver FindMisclassifiedMovements) -- sin duplicarla ni recalcularla " +
+        "con un criterio propio.")]
     public async Task<string> ExplainClassification(
         [Description("Tipo de origen: Transaction (tarjeta) o BankStatement (banco).")]
         string sourceEntityType,
@@ -397,6 +411,50 @@ public sealed class MovementTools
         sb.AppendLine("Cómo se obtuvo esa clasificación");
         foreach (var line in ExplainClassificationOrigin(c))
             sb.AppendLine($"- {line}");
+        sb.AppendLine();
+
+        // PATCH-0106: la tool no compara nada por su cuenta -- arma un MovementView con
+        // los mismos campos que ya tiene (ninguno nuevo) y le pide la comparación a
+        // AuditReportService, que reutiliza exactamente el mismo cálculo que ya usa el
+        // Centro de Auditoría (BuildSuggestionMotivos/BuildDefaultMotivos). Para un
+        // movimiento pendiente (c is null) no se llama al servicio -- mismo criterio
+        // que el resto de las secciones de este método ("- (sin clasificar, no aplica)").
+        sb.AppendLine("Comparación con la sugerencia actual");
+        if (c is null)
+        {
+            sb.AppendLine("- (sin clasificar, no aplica)");
+        }
+        else
+        {
+            var comparisonView = ToComparisonMovementView(detail, c);
+            var comparison = await _auditReportService.ExplainCurrentClassificationAsync(comparisonView, ct);
+
+            if (!comparison.HasSuggestion)
+            {
+                sb.AppendLine(
+                    "- Sin sugerencia disponible: no hay historial de descripciones idénticas ni " +
+                    "valores por defecto de contraparte suficientes para comparar. Esto NO significa " +
+                    "que la clasificación actual sea correcta ni incorrecta.");
+            }
+            else if (comparison.Motivos.Count == 0)
+            {
+                sb.AppendLine(
+                    "- Coincide: la clasificación actual coincide con la sugerencia vigente del " +
+                    "motor de clasificación.");
+            }
+            else
+            {
+                sb.AppendLine($"- No coincide ({comparison.Motivos.Count} dimensión(es) divergente(s)):");
+                foreach (var motivo in comparison.Motivos)
+                {
+                    sb.AppendLine($"  - Dimensión: {motivo.Dimension}");
+                    sb.AppendLine($"    Valor actual: {motivo.ValorActual}");
+                    sb.AppendLine($"    Valor sugerido: {motivo.ValorSugerido}");
+                    sb.AppendLine($"    Origen: {motivo.Origen}");
+                    sb.AppendLine($"    Confianza: {motivo.Confianza ?? "-"}");
+                }
+            }
+        }
         sb.AppendLine();
 
         sb.AppendLine("Matching");
@@ -446,7 +504,8 @@ public sealed class MovementTools
     // relación causal en ningún lado. Afirmarla acá sería inventar el origen, exactamente
     // lo que esta tool tiene prohibido hacer (esa comparación sí es legítima, pero como
     // señal de auditoría -- "¿la clasificación actual coincide con lo que el motor sugeriría
-    // hoy?" -- no como afirmación de procedencia; ver FindMisclassifiedMovements).
+    // hoy?" -- no como afirmación de procedencia; ver la sección "Comparación con la
+    // sugerencia actual" más abajo, PATCH-0106, y FindMisclassifiedMovements).
     private static List<string> ExplainClassificationOrigin(MovementClassificationDetail? c)
     {
         if (c is null)
@@ -484,6 +543,33 @@ public sealed class MovementTools
 
         return lines;
     }
+
+    // PATCH-0106: arma el MovementView que AuditReportService.ExplainCurrentClassificationAsync
+    // necesita -- ningún campo nuevo, todos ya vienen de MovementDetail/MovementClassificationDetail
+    // (ya resueltos por IMovementLookupService.GetBySourceAsync, misma consulta que ya usa
+    // el resto del método). Warning/Suggestions quedan vacíos: son campos de MovementView
+    // pensados para movimientos PENDIENTES (avisos de ISuspicionDetector, sugerencias de
+    // IClassificationSuggestionService para clasificar) -- no aplican a un movimiento que ya
+    // tiene clasificación, y ExplainCurrentClassificationAsync no los lee. Mapeo
+    // SourceEntityType -> MovementSource idéntico al que ya usa MovementsQueryService.LoadClassifiedAsync.
+    private static MovementView ToComparisonMovementView(MovementDetail detail, MovementClassificationDetail c) => new(
+        detail.SourceId,
+        detail.Date,
+        detail.Description,
+        detail.Amount,
+        detail.Currency,
+        detail.SourceEntityType == SourceEntityType.BankStatement ? MovementSource.BankDebit : MovementSource.CreditCard,
+        detail.FinancialAccountId,
+        Status: c.Status,
+        CategoryId: c.CategoryId,
+        CounterpartyId: c.CounterpartyId,
+        MovementType: c.MovementType,
+        FinancialImpact: c.FinancialImpact,
+        Warning: null,
+        Suggestions: [],
+        Merchant: detail.Merchant,
+        MerchantAtUtc: detail.MerchantAtUtc,
+        EffectiveDate: c.EffectiveDate);
 
     // Mismas 5 observaciones que pide la tool, cada una una comparación directa sobre
     // campos que MovementDetail/MovementClassificationDetail ya exponen -- ninguna
