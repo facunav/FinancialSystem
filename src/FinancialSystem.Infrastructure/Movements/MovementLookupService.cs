@@ -85,6 +85,24 @@ internal sealed class MovementLookupService : IMovementLookupService
                 .Where(a => accountIds.Contains(a.Id))
                 .ToDictionaryAsync(a => a.Id, a => a.Name, cancellationToken);
 
+        // Patch 0107: mismo criterio que accountNames -- UNA consulta IN para todo el lote
+        // (nunca una por movimiento), contra IApplicationDbContext.ImportBatches. Los
+        // ImportBatchId ausentes del diccionario resultante (porque importBatchId era null,
+        // o porque el ImportBatch referenciado no existe) se resuelven a null más abajo,
+        // igual que ResolveImportOriginAsync en el camino individual.
+        var importBatchIds = transactions
+            .Where(t => t.ImportBatchId is not null)
+            .Select(t => t.ImportBatchId!.Value)
+            .Concat(bankStatements.Where(b => b.ImportBatchId is not null).Select(b => b.ImportBatchId!.Value))
+            .Distinct()
+            .ToList();
+        var importOrigins = importBatchIds.Count == 0
+            ? new Dictionary<Guid, MovementImportOrigin>()
+            : await _db.ImportBatches.AsNoTracking()
+                .Where(b => importBatchIds.Contains(b.Id))
+                .Select(b => new MovementImportOrigin(b.Id, b.SourceFile, b.HandlerName, b.ParserUsed, b.StartedAtUtc, b.Outcome))
+                .ToDictionaryAsync(o => o.ImportBatchId, cancellationToken);
+
         // Mismo predicado que LoadClassificationAsync (SourceEntityType + SourceId),
         // acotado a los dos lotes de Ids ya resueltos arriba -- no trae toda la tabla.
         var classificationItems = transactionIds.Count == 0 && bankStatementIds.Count == 0
@@ -129,17 +147,19 @@ internal sealed class MovementLookupService : IMovementLookupService
         foreach (var t in transactions)
         {
             var accountName = t.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId) : null;
+            var importOrigin = t.ImportBatchId is { } batchId ? importOrigins.GetValueOrDefault(batchId) : null;
             var classification = ResolveClassification(
                 classificationsBySource, SourceEntityType.Transaction, t.Id, categoryNames, counterpartyNames);
-            results[(SourceEntityType.Transaction, t.Id)] = ToMovementDetail(t, accountName) with { Classification = classification };
+            results[(SourceEntityType.Transaction, t.Id)] = ToMovementDetail(t, accountName, importOrigin) with { Classification = classification };
         }
 
         foreach (var b in bankStatements)
         {
             var accountName = b.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId) : null;
+            var importOrigin = b.ImportBatchId is { } batchId ? importOrigins.GetValueOrDefault(batchId) : null;
             var classification = ResolveClassification(
                 classificationsBySource, SourceEntityType.BankStatement, b.Id, categoryNames, counterpartyNames);
-            results[(SourceEntityType.BankStatement, b.Id)] = ToMovementDetail(b, accountName) with { Classification = classification };
+            results[(SourceEntityType.BankStatement, b.Id)] = ToMovementDetail(b, accountName, importOrigin) with { Classification = classification };
         }
 
         return results;
@@ -151,7 +171,8 @@ internal sealed class MovementLookupService : IMovementLookupService
         if (t is null) return null;
 
         var accountName = await ResolveFinancialAccountNameAsync(t.FinancialAccountId, ct);
-        return ToMovementDetail(t, accountName);
+        var importOrigin = await ResolveImportOriginAsync(t.ImportBatchId, ct);
+        return ToMovementDetail(t, accountName, importOrigin);
     }
 
     private async Task<MovementDetail?> LoadBankStatementAsync(Guid id, CancellationToken ct)
@@ -160,10 +181,11 @@ internal sealed class MovementLookupService : IMovementLookupService
         if (b is null) return null;
 
         var accountName = await ResolveFinancialAccountNameAsync(b.FinancialAccountId, ct);
-        return ToMovementDetail(b, accountName);
+        var importOrigin = await ResolveImportOriginAsync(b.ImportBatchId, ct);
+        return ToMovementDetail(b, accountName, importOrigin);
     }
 
-    private static MovementDetail ToMovementDetail(Transaction t, string? accountName) => new(
+    private static MovementDetail ToMovementDetail(Transaction t, string? accountName, MovementImportOrigin? importOrigin) => new(
         SourceEntityType.Transaction, t.Id, t.Date, t.Description, t.Amount, t.Currency,
         SourceFile: t.SourceFile,
         FinancialAccountId: t.FinancialAccountId,
@@ -180,9 +202,11 @@ internal sealed class MovementLookupService : IMovementLookupService
         Merchant: null,
         MerchantAtUtc: null,
         SourceRecordedAtUtc: t.CreatedAtUtc,
-        Classification: null);
+        Classification: null,
+        ImportBatchId: t.ImportBatchId,
+        ImportOrigin: importOrigin);
 
-    private static MovementDetail ToMovementDetail(BankStatement b, string? accountName) => new(
+    private static MovementDetail ToMovementDetail(BankStatement b, string? accountName, MovementImportOrigin? importOrigin) => new(
         SourceEntityType.BankStatement, b.Id, b.Date, b.Concept, b.Amount, b.Currency,
         SourceFile: b.SourceFile,
         FinancialAccountId: b.FinancialAccountId,
@@ -199,7 +223,9 @@ internal sealed class MovementLookupService : IMovementLookupService
         Merchant: b.Merchant,
         MerchantAtUtc: b.MerchantAtUtc,
         SourceRecordedAtUtc: b.ImportedAtUtc,
-        Classification: null);
+        Classification: null,
+        ImportBatchId: b.ImportBatchId,
+        ImportOrigin: importOrigin);
 
     private async Task<string?> ResolveFinancialAccountNameAsync(Guid? accountId, CancellationToken ct)
     {
@@ -209,6 +235,24 @@ internal sealed class MovementLookupService : IMovementLookupService
             .AsNoTracking()
             .Where(a => a.Id == id)
             .Select(a => a.Name)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    // Patch 0107: mismo criterio que ResolveFinancialAccountNameAsync -- una consulta puntual
+    // por Id contra IApplicationDbContext.ImportBatches (ya expuesto, sin cambios de
+    // interfaz), sin FK/navegación (ImportBatchId sigue siendo referencia blanda, Patch 0105).
+    // Null tanto si importBatchId es null (movimiento sin corrida registrada) como si el
+    // ImportBatch referenciado no existe (referencia blanda colgante) -- el llamador
+    // distingue esos dos casos comparando contra el ImportBatchId crudo que ya tiene
+    // (MovementDetail.ImportBatchId), no responsabilidad de este método.
+    private async Task<MovementImportOrigin?> ResolveImportOriginAsync(Guid? importBatchId, CancellationToken ct)
+    {
+        if (importBatchId is not { } id) return null;
+
+        return await _db.ImportBatches
+            .AsNoTracking()
+            .Where(b => b.Id == id)
+            .Select(b => new MovementImportOrigin(b.Id, b.SourceFile, b.HandlerName, b.ParserUsed, b.StartedAtUtc, b.Outcome))
             .FirstOrDefaultAsync(ct);
     }
 

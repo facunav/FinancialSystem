@@ -37,7 +37,38 @@ public sealed record MovementDetail(
     string? Merchant,
     DateTime? MerchantAtUtc,
     DateTime SourceRecordedAtUtc,
-    MovementClassificationDetail? Classification);
+    MovementClassificationDetail? Classification,
+    // ── Origen de importación (Patch 0107) ──────────────────────────────────
+    // ImportBatchId es el valor crudo de BankStatement.ImportBatchId/Transaction.ImportBatchId
+    // (referencia blanda, Patch 0105) -- separado de ImportOrigin a propósito, para poder
+    // distinguir los 3 casos posibles sin ambigüedad:
+    //   1) ImportBatchId null           -> movimiento anterior a Patch 0105, sin corrida registrada.
+    //   2) ImportBatchId != null, ImportOrigin != null -> corrida resuelta, con todos sus datos.
+    //   3) ImportBatchId != null, ImportOrigin null    -> referencia guardada, pero el ImportBatch
+    //      referenciado ya no existe (posible porque la referencia es deliberadamente blanda,
+    //      sin FK -- ver ADR-005). Si solo existiera ImportOrigin, los casos 1 y 3 serían
+    //      indistinguibles (ambos con ImportOrigin null) -- por eso este campo adicional.
+    // Ambos son aditivos y opcionales (default null) para que ningún consumidor existente de
+    // MovementDetail (GetMovement, ExplainClassification, InvestigationTools, tests) necesite
+    // cambios para seguir compilando.
+    Guid? ImportBatchId = null,
+    MovementImportOrigin? ImportOrigin = null);
+
+/// <summary>
+/// Origen de importación de un movimiento (Patch 0107), resuelto contra <c>ImportBatch</c>
+/// a partir de <c>BankStatement.ImportBatchId</c>/<c>Transaction.ImportBatchId</c> (referencia
+/// blanda, Patch 0105) -- exactamente los mismos datos que <c>ImportBatch</c> ya persiste, sin
+/// derivar ni inventar ninguno nuevo. Solo se construye cuando el <c>ImportBatch</c>
+/// referenciado efectivamente resuelve (ver <see cref="MovementDetail.ImportBatchId"/> para el
+/// caso en que el vínculo existe pero no resuelve).
+/// </summary>
+public sealed record MovementImportOrigin(
+    Guid ImportBatchId,
+    string? SourceFile,
+    string HandlerName,
+    string? ParserUsed,
+    DateTime StartedAtUtc,
+    ImportBatchOutcome? Outcome);
 
 /// <summary>
 /// Clasificación (ClassifiedMovement) de un movimiento, junto con el grupo de

@@ -285,10 +285,14 @@ public sealed class MovementTools
     [McpServerTool]
     [Description(
         "Devuelve una explicación estructurada y estable de un movimiento -- mismas secciones " +
-        "siempre (Movimiento, Clasificación, Procesamiento, Matching, Observaciones), sin lenguaje " +
-        "natural. Reutiliza el mismo lookup que GetMovement (una sola consulta) pero organizado " +
-        "por tema, con una sección de Observaciones derivada exclusivamente de datos ya existentes " +
-        "-- no evalúa nada nuevo, no usa IA. Pensada para que un LLM la use como base de " +
+        "siempre (Movimiento, Origen de importación, Clasificación, Procesamiento, Matching, " +
+        "Observaciones), sin lenguaje natural. Reutiliza el mismo lookup que GetMovement (una " +
+        "sola consulta) pero organizado por tema, con una sección de Observaciones derivada " +
+        "exclusivamente de datos ya existentes -- no evalúa nada nuevo, no usa IA. PATCH-0107: " +
+        "'Origen de importación' responde de dónde vino el movimiento (ImportBatchId, archivo, " +
+        "handler, parser, corrida) a partir de ImportBatch (Patch 0105) -- ausente para " +
+        "movimientos anteriores a ese patch, y mostrado como referencia sin resolver cuando el " +
+        "ImportBatch vinculado ya no existe. Pensada para que un LLM la use como base de " +
         "razonamiento sin tener que interpretar prosa.")]
     public async Task<string> ExplainMovement(
         [Description("Tipo de origen: Transaction (tarjeta) o BankStatement (banco).")]
@@ -321,6 +325,37 @@ public sealed class MovementTools
         sb.AppendLine($"- EffectiveDate: {(c is not null ? c.EffectiveDate.ToString("yyyy-MM-dd") : "(sin clasificar)")}");
         sb.AppendLine($"- Importe: {detail.Amount:N2}");
         sb.AppendLine($"- Moneda: {detail.Currency}");
+        sb.AppendLine();
+
+        // PATCH-0107: responde "¿de dónde vino este movimiento?" -- MovementTools no
+        // consulta la base para esto, solo consume MovementDetail.ImportBatchId/ImportOrigin,
+        // ya resueltos por MovementLookupService (mismo criterio que ResolveFinancialAccountNameAsync,
+        // sin N+1). Distingue explícitamente los 3 casos posibles (ver doc-comment de
+        // MovementDetail.ImportBatchId): sin corrida registrada (movimiento anterior a
+        // Patch 0105), corrida resuelta, o referencia guardada que ya no resuelve (referencia
+        // blanda, sin FK -- no se oculta como excepción).
+        sb.AppendLine("Origen de importación");
+        if (detail.ImportBatchId is null)
+        {
+            sb.AppendLine("- Sin corrida de importación registrada (movimiento anterior a Patch 0105).");
+        }
+        else if (detail.ImportOrigin is null)
+        {
+            sb.AppendLine($"- ImportBatchId: {detail.ImportBatchId}");
+            sb.AppendLine(
+                "- ImportBatch: (no resuelve) -- el vínculo está guardado pero no existe actualmente " +
+                "el registro de esa corrida (referencia blanda, sin FK; ver Patch 0105).");
+        }
+        else
+        {
+            var origin = detail.ImportOrigin;
+            sb.AppendLine($"- ImportBatchId: {origin.ImportBatchId}");
+            sb.AppendLine($"- Archivo: {origin.SourceFile ?? "-"}");
+            sb.AppendLine($"- Handler: {origin.HandlerName}");
+            sb.AppendLine($"- Parser: {origin.ParserUsed ?? "-"}");
+            sb.AppendLine($"- Inicio de la corrida (UTC): {origin.StartedAtUtc:O}");
+            sb.AppendLine($"- Resultado de la corrida: {(origin.Outcome is { } outcome ? outcome.ToString() : "-")}");
+        }
         sb.AppendLine();
 
         sb.AppendLine("Clasificación");
