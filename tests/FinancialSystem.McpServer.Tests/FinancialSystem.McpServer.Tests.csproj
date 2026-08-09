@@ -14,6 +14,12 @@
          Necesaria acá solo para los tipos de atributo (McpServerToolTypeAttribute/
          McpServerToolAttribute) que ToolRegistrySyncTests lee por reflexión. -->
     <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
+    <!-- Patch 0108: misma versión que FinancialSystem.Infrastructure.Tests, necesaria para
+         que MovementLookupServiceRealEfRegressionTests ejercite MovementTools con la
+         implementación real de MovementLookupService (AppDbContext InMemory), no un fake,
+         reproduciendo el comportamiento real de EF Core para GetMovement, ExplainMovement
+         y ExplainClassification. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <PrivateAssets>all</PrivateAssets>

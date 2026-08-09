@@ -105,12 +105,16 @@ internal sealed class MovementLookupService : IMovementLookupService
 
         // Mismo predicado que LoadClassificationAsync (SourceEntityType + SourceId),
         // acotado a los dos lotes de Ids ya resueltos arriba -- no trae toda la tabla.
+        //
+        // Patch 0108: sin ThenInclude(cm => cm!.Items) -- ver el mismo comentario en
+        // LoadClassificationAsync. El grupo de matching de cada ClassifiedMovement se
+        // resuelve aparte, en una única consulta batched (groupItemsByMovement, abajo),
+        // en vez de por la navegación cíclica.
         var classificationItems = transactionIds.Count == 0 && bankStatementIds.Count == 0
             ? new List<ClassifiedMovementItem>()
             : await _db.ClassifiedMovementItems
                 .AsNoTracking()
                 .Include(i => i.ClassifiedMovement)
-                .ThenInclude(cm => cm!.Items)
                 .Where(i =>
                     (i.SourceEntityType == SourceEntityType.Transaction && transactionIds.Contains(i.SourceId)) ||
                     (i.SourceEntityType == SourceEntityType.BankStatement && bankStatementIds.Contains(i.SourceId)))
@@ -125,6 +129,23 @@ internal sealed class MovementLookupService : IMovementLookupService
         var classificationsBySource = classificationItems
             .GroupBy(i => (i.SourceEntityType, i.SourceId))
             .ToDictionary(g => g.Key, g => g.First());
+
+        // Patch 0108: grupo de matching de cada ClassifiedMovement (ClassifiedMovementItem.Role
+        // por cada ítem hermano) resuelto en UNA consulta batched más -- sigue siendo una
+        // cantidad fija de consultas para todo el lote, sin importar cuántos `sources` haya,
+        // igual que accountNames/importOrigins/categoryNames/counterpartyNames arriba.
+        var classifiedMovementIds = classificationItems
+            .Select(i => i.ClassifiedMovementId)
+            .Distinct()
+            .ToList();
+        var groupItemsByMovement = classifiedMovementIds.Count == 0
+            ? new Dictionary<Guid, List<ClassifiedMovementItem>>()
+            : (await _db.ClassifiedMovementItems
+                .AsNoTracking()
+                .Where(i => classifiedMovementIds.Contains(i.ClassifiedMovementId))
+                .ToListAsync(cancellationToken))
+                .GroupBy(i => i.ClassifiedMovementId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
         var categoryIds = classificationItems.Select(i => i.ClassifiedMovement!.CategoryId).Distinct().ToList();
         var categoryNames = categoryIds.Count == 0
@@ -149,7 +170,7 @@ internal sealed class MovementLookupService : IMovementLookupService
             var accountName = t.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId) : null;
             var importOrigin = t.ImportBatchId is { } batchId ? importOrigins.GetValueOrDefault(batchId) : null;
             var classification = ResolveClassification(
-                classificationsBySource, SourceEntityType.Transaction, t.Id, categoryNames, counterpartyNames);
+                classificationsBySource, SourceEntityType.Transaction, t.Id, categoryNames, counterpartyNames, groupItemsByMovement);
             results[(SourceEntityType.Transaction, t.Id)] = ToMovementDetail(t, accountName, importOrigin) with { Classification = classification };
         }
 
@@ -158,7 +179,7 @@ internal sealed class MovementLookupService : IMovementLookupService
             var accountName = b.FinancialAccountId is { } accId ? accountNames.GetValueOrDefault(accId) : null;
             var importOrigin = b.ImportBatchId is { } batchId ? importOrigins.GetValueOrDefault(batchId) : null;
             var classification = ResolveClassification(
-                classificationsBySource, SourceEntityType.BankStatement, b.Id, categoryNames, counterpartyNames);
+                classificationsBySource, SourceEntityType.BankStatement, b.Id, categoryNames, counterpartyNames, groupItemsByMovement);
             results[(SourceEntityType.BankStatement, b.Id)] = ToMovementDetail(b, accountName, importOrigin) with { Classification = classification };
         }
 
@@ -256,21 +277,51 @@ internal sealed class MovementLookupService : IMovementLookupService
             .FirstOrDefaultAsync(ct);
     }
 
-    // Mismo predicado y mismos Include que ya usa ClassifyMovementHandler.Handle para
-    // encontrar la clasificación (si existe) de un origen -- ver ese archivo.
+    // Patch 0108 -- FIX EF Core "Cycles are not allowed in no-tracking queries":
+    //
+    // Antes, esta consulta hacía .Include(i => i.ClassifiedMovement).ThenInclude(cm =>
+    // cm!.Items) -- Item -> ClassifiedMovement -> Items vuelve a incluir el propio tipo
+    // ClassifiedMovementItem (cm.Items contiene, entre otros, al mismo `item` del que
+    // partimos). Para no-tracking, EF Core exige poder resolver esa identidad repetida
+    // sin un change tracker, y lo rechaza con InvalidOperationException ("Cycles are not
+    // allowed in no-tracking queries") -- no es un problema de datos (pasa incluso con
+    // ClassifiedMovementItems vacía): es la FORMA del Include, siempre. No es
+    // particular del proveedor InMemory: la verificación vive en
+    // Microsoft.EntityFrameworkCore.Query.Internal (ensamblado core), no en
+    // Microsoft.EntityFrameworkCore.InMemory -- reproduce igual contra Postgres.
+    //
+    // Se evaluó AsNoTrackingWithIdentityResolution() (resolvería el ciclo manteniendo un
+    // mapa de identidad efímero) pero se descartó: cambia el costo de memoria por
+    // consulta de forma menos predecible que separar la consulta, y no está probado en
+    // ningún otro punto del proyecto (grep sin resultados) -- se prefirió no introducir
+    // un modo de tracking nuevo para todo el proyecto por este único caso.
+    //
+    // FIX: se elimina el ThenInclude (Include(i => i.ClassifiedMovement) solo, sin
+    // ciclo -- Item -> Movement es una línea recta) y el grupo de matching (antes
+    // cm.Items) se resuelve en una segunda consulta explícita, sin Include, filtrando
+    // por ClassifiedMovementId -- mismo criterio que ya usa esta clase para
+    // FinancialAccountName/ImportOrigin (una consulta puntual más, no una por
+    // movimiento). Mismos datos exactos que antes: BuildClassificationDetail sigue
+    // devolviendo el mismo MatchGroupItem por cada ítem del grupo -- ningún consumidor
+    // (GetMovement/ExplainMovement/ExplainClassification/InvestigationTools) ve un
+    // MovementClassificationDetail distinto al de antes del fix.
     private async Task<MovementClassificationDetail?> LoadClassificationAsync(
         SourceEntityType sourceEntityType, Guid sourceId, CancellationToken ct)
     {
         var item = await _db.ClassifiedMovementItems
             .AsNoTracking()
             .Include(i => i.ClassifiedMovement)
-            .ThenInclude(cm => cm!.Items)
             .FirstOrDefaultAsync(
                 i => i.SourceEntityType == sourceEntityType && i.SourceId == sourceId, ct);
 
         if (item is null) return null;
 
         var cm = item.ClassifiedMovement!;
+
+        var groupItemEntities = await _db.ClassifiedMovementItems
+            .AsNoTracking()
+            .Where(i => i.ClassifiedMovementId == cm.Id)
+            .ToListAsync(ct);
 
         var categoryName = await _db.Categories
             .AsNoTracking()
@@ -286,7 +337,7 @@ internal sealed class MovementLookupService : IMovementLookupService
                 .FirstOrDefaultAsync(ct)
             : null;
 
-        return BuildClassificationDetail(item, categoryName, counterpartyName);
+        return BuildClassificationDetail(item, categoryName, counterpartyName, groupItemEntities);
     }
 
     private static MovementClassificationDetail? ResolveClassification(
@@ -294,23 +345,28 @@ internal sealed class MovementLookupService : IMovementLookupService
         SourceEntityType sourceEntityType,
         Guid sourceId,
         IReadOnlyDictionary<Guid, string> categoryNames,
-        IReadOnlyDictionary<Guid, string> counterpartyNames)
+        IReadOnlyDictionary<Guid, string> counterpartyNames,
+        IReadOnlyDictionary<Guid, List<ClassifiedMovementItem>> groupItemsByMovement)
     {
         if (!classificationsBySource.TryGetValue((sourceEntityType, sourceId), out var item)) return null;
 
         var cm = item.ClassifiedMovement!;
         var categoryName = categoryNames.GetValueOrDefault(cm.CategoryId);
         var counterpartyName = cm.CounterpartyId is { } cpId ? counterpartyNames.GetValueOrDefault(cpId) : null;
+        var groupItemEntities = groupItemsByMovement.GetValueOrDefault(cm.Id) ?? [];
 
-        return BuildClassificationDetail(item, categoryName, counterpartyName);
+        return BuildClassificationDetail(item, categoryName, counterpartyName, groupItemEntities);
     }
 
+    // Patch 0108: groupItemEntities reemplaza a cm.Items (ver LoadClassificationAsync) --
+    // mismo mapeo a MatchGroupItem, ninguna otra diferencia.
     private static MovementClassificationDetail BuildClassificationDetail(
-        ClassifiedMovementItem item, string? categoryName, string? counterpartyName)
+        ClassifiedMovementItem item, string? categoryName, string? counterpartyName,
+        IReadOnlyList<ClassifiedMovementItem> groupItemEntities)
     {
         var cm = item.ClassifiedMovement!;
 
-        var groupItems = cm.Items
+        var groupItems = groupItemEntities
             .Select(i => new MatchGroupItem(i.SourceEntityType, i.SourceId, i.Role))
             .ToList();
 
