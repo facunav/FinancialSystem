@@ -62,7 +62,10 @@ public sealed class MovementTools
         "de un período, con filtros opcionales. Reutiliza el mismo servicio que la pantalla " +
         "Movimientos -- no recalcula nada por su cuenta. Usar para investigar qué movimientos " +
         "componen un total, por qué uno no aparece, o para buscar por texto, categoría, " +
-        "contraparte, tipo, impacto financiero, estado, moneda o rango de importe.")]
+        "contraparte, tipo, impacto financiero, estado, moneda o rango de importe. Cada " +
+        "resultado incluye SourceEntityType además de SourceId (Patch 0109) -- los dos " +
+        "identificadores exactos que piden GetMovement/ExplainMovement/ExplainClassification, " +
+        "sin necesidad de adivinar entre 'Transaction' y 'BankStatement'.")]
     public async Task<string> SearchMovements(
         [Description("Fecha de inicio (yyyy-MM-dd). Por defecto, el primer día del mes de 'to'.")]
         string? from,
@@ -170,7 +173,15 @@ public sealed class MovementTools
 
         foreach (var m in results)
         {
-            sb.AppendLine($"Id: {m.SourceId}");
+            // Patch 0109: SourceEntityType explícito -- sin esto, un consumidor que
+            // encuentra un movimiento acá no tiene forma de saber qué pasarle a
+            // GetMovement/ExplainMovement/ExplainClassification (los 3 exigen
+            // SourceEntityType) salvo adivinar o probar los dos valores. Reutiliza
+            // MovementSourceExtensions.ToSourceEntityType() (Domain.Review, PATCH-042) --
+            // la misma conversión que ya usan AuditReportService/ClassificationSuggestionService,
+            // no un mapeo nuevo.
+            sb.AppendLine($"SourceEntityType: {m.Source.ToSourceEntityType()}");
+            sb.AppendLine($"SourceId: {m.SourceId}");
             sb.AppendLine($"  Fecha bancaria:      {m.Date:dd/MM/yyyy}");
             sb.AppendLine($"  Período financiero:  {(m.EffectiveDate is { } eff ? eff.ToString("dd/MM/yyyy") : "(sin clasificar)")}");
             sb.AppendLine($"  Descripción:         {m.Description}");
