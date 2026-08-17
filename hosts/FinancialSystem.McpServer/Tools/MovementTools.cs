@@ -72,27 +72,27 @@ public sealed class MovementTools
         [Description("Fecha de fin (yyyy-MM-dd). Por defecto, hoy (UTC). El rango máximo es de 90 días.")]
         string? to,
         [Description("Texto a buscar en la descripción del movimiento (contiene, sin distinguir mayúsculas).")]
-        string? text,
+        string? text = null,
         [Description("Id de Category (Category.Id) para filtrar. Solo aplica a movimientos ya clasificados.")]
-        Guid? categoryId,
+        Guid? categoryId = null,
         [Description("Id de Counterparty (Counterparty.Id) para filtrar. Solo aplica a movimientos ya clasificados.")]
-        Guid? counterpartyId,
+        Guid? counterpartyId = null,
         [Description("FinancialImpact: Expense, Income, InternalMovement o DebtPayment. Solo aplica a clasificados.")]
-        string? financialImpact,
+        string? financialImpact = null,
         [Description(
             "MovementType: Purchase, Transfer, Payment, Receipt, Fee, Interest, Refund, Adjustment " +
             "u Other. Solo aplica a movimientos ya clasificados.")]
-        string? movementType,
+        string? movementType = null,
         [Description("Estado: Pending (sin clasificar todavía), Reviewed o Confirmed.")]
-        string? status,
+        string? status = null,
         [Description("Moneda exacta, ej. ARS o USD.")]
-        string? currency,
+        string? currency = null,
         [Description(
             "Importe mínimo. Convención de signo igual que el resto del sistema: positivo = " +
             "débito/gasto, negativo = crédito/ingreso.")]
-        decimal? minAmount,
+        decimal? minAmount = null,
         [Description("Importe máximo, misma convención de signo que minAmount.")]
-        decimal? maxAmount,
+        decimal? maxAmount = null,
         CancellationToken ct = default)
     {
         if (!TryParseDate(to, DateOnly.FromDateTime(DateTime.UtcNow), out var effectiveTo))

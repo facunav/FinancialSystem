@@ -43,13 +43,13 @@ public sealed class AuditTools
         "sin ninguna regla nueva. Usar para auditar un período antes de confiar en sus totales.")]
     public async Task<string> FindSuspiciousMovements(
         [Description("Fecha de inicio (yyyy-MM-dd). Por defecto, el primer día del mes de 'to'.")]
-        string? from,
+        string? from = null,
         [Description("Fecha de fin (yyyy-MM-dd). Por defecto, hoy (UTC). El rango máximo es de 90 días.")]
-        string? to,
+        string? to = null,
         [Description(
             "Id de FinancialAccount para filtrar. Un grupo se incluye si al menos un " +
             "movimiento del grupo pertenece a esta cuenta.")]
-        Guid? financialAccountId,
+        Guid? financialAccountId = null,
         CancellationToken ct = default)
     {
         if (!TryParseDate(to, DateOnly.FromDateTime(DateTime.UtcNow), out var effectiveTo))
@@ -79,11 +79,11 @@ public sealed class AuditTools
         "métricas de un período.")]
     public async Task<string> FindMisclassifiedMovements(
         [Description("Fecha de inicio (yyyy-MM-dd). Por defecto, el primer día del mes de 'to'.")]
-        string? from,
+        string? from = null,
         [Description("Fecha de fin (yyyy-MM-dd). Por defecto, hoy (UTC). El rango máximo es de 90 días.")]
-        string? to,
+        string? to = null,
         [Description("Id de FinancialAccount para filtrar. Mismo parámetro que ya usa SearchMovements.")]
-        Guid? financialAccountId,
+        Guid? financialAccountId = null,
         CancellationToken ct = default)
     {
         if (!TryParseDate(to, DateOnly.FromDateTime(DateTime.UtcNow), out var effectiveTo))
