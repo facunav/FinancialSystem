@@ -3,7 +3,8 @@
 > Documento de trabajo. No contiene código ni implementación — es el mapa para decidir, tarea por tarea, qué investigar y en qué orden. Cada hallazgo distingue explícitamente **hecho verificado en el código** (con archivo y línea) de **hipótesis a confirmar**. Fuentes cruzadas: lectura directa del código en `claude/financialmcp-audit-roadmap-sgzqqi` (commit `dede331`) + `docs/PROJECT_STATUS.md`, `docs/RoadMaps/FinancialMcp-vNext.md`, `docs/Decisions/ADR-001` a `ADR-008`, `docs/Architecture/CentroDeAuditoria.md`, `docs/Epics/Epica-PlanificacionMensual.md`.
 >
 > **Estado de las investigaciones (actualizado a medida que avanzan):**
-> - **DATA-001 / IMPORT-001** (identidad e idempotencia de movimientos bancarios) — en curso. Dos informes de investigación publicados como Artifact: reconstrucción completa del flujo de importación y confirmación de la causa raíz (`ExternalId` posicional), y una segunda entrega sobre qué hace único a un movimiento bancario real (estabilidad de campos, casos ambiguos, límites de los datos disponibles en el repo). Todavía no se decidió ninguna solución — sigue en fase de investigación, según las reglas de este roadmap (sección "Muy importante: separar 'arreglar' de 'investigar'").
+> - **DATA-001 / IMPORT-001** (identidad e idempotencia de movimientos bancarios) — investigación cerrada. Dos informes de investigación publicados como Artifact: reconstrucción completa del flujo de importación y confirmación de la causa raíz (`ExternalId` posicional), y una segunda entrega sobre qué hace único a un movimiento bancario real (estabilidad de campos, casos ambiguos, límites de los datos disponibles en el repo). Todavía no se decidió ninguna solución — sigue sin implementarse, según las reglas de este roadmap (sección "Muy importante: separar 'arreglar' de 'investigar'").
+> - **IMPORT-003** (auditoría de duplicados existentes) — herramienta construida y validada contra un dataset sintético, **pendiente de ejecución contra la base real**. Ver `docs/imports/IMPORT-003-auditoria-duplicados.md` y `docs/imports/import-003-auditoria-duplicados.sql` — script de solo lectura, cuatro niveles de clasificación (PROBABLE/POSIBLE/AMBIGUO/NO DUPLICADO), sin ningún borrado ni modificación de datos.
 
 ---
 
@@ -72,7 +73,7 @@ El proyecto ya tiene una base de documentación inusualmente honesta sobre su pr
 #### IMPORT-003 — Cuantificar los duplicados ya producidos por IMPORT-001
 - **Prioridad:** HIGH
 - **Tipo:** Investigación
-- **Estado:** pendiente de iniciar. Es el siguiente paso recomendado por la investigación de continuación de IMPORT-001.
+- **Estado:** herramienta de auditoría de solo lectura construida (`docs/imports/import-003-auditoria-duplicados.sql`) y validada contra un dataset sintético que reproduce el escenario de IMPORT-001 (dos archivos con período solapado, casos ambiguos deliberados) — el script clasificó correctamente los tres casos de prueba. **Pendiente:** ejecutarlo contra la base real y volcar los números reales acá. Ver `docs/imports/IMPORT-003-auditoria-duplicados.md` para metodología completa, criterios de clasificación (PROBABLE/POSIBLE/AMBIGUO/NO DUPLICADO) y limitaciones.
 
 ---
 
@@ -157,7 +158,7 @@ Sin cambios respecto a la versión anterior de este documento.
 | 1 | DATA-001 | Auditoría de integridad de la base actual | 0 | CRITICAL | Pendiente de iniciar (distinto de la investigación de identidad, que usa el mismo ID de forma informal en la conversación de trabajo — ver nota) |
 | 2 | IMPORT-001 | Identidad inestable de `BankStatement.ExternalId` | 1 | CRITICAL | **Investigación cerrada** — causa raíz confirmada, alternativas evaluadas sin elegir ninguna |
 | 3 | IMPORT-002 | Robustez real de `Transaction.ExternalId` | 1 | MEDIUM | Pendiente de iniciar |
-| 4 | IMPORT-003 | Cuantificar duplicados ya producidos | 1 | HIGH | Pendiente de iniciar — siguiente paso recomendado |
+| 4 | IMPORT-003 | Cuantificar duplicados ya producidos | 1 | HIGH | Herramienta construida y validada (sintético) — pendiente ejecutar contra base real |
 | 5 | DEDUPE-001 | Taxonomía de confianza para duplicados | 2 | HIGH | Pendiente de iniciar (insumo parcial ya generado) |
 | 6 | DEDUPE-002 | Señales disponibles para identidad de alta confianza | 2 | HIGH | Parcialmente adelantada |
 | 7 | DEDUPE-003 | Mecanismo seguro de borrado histórico | 2 | CRITICAL | Pendiente de iniciar |
