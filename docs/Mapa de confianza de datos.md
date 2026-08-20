@@ -4,7 +4,7 @@
 >
 > **Estado de las investigaciones (actualizado a medida que avanzan):**
 > - **DATA-001 / IMPORT-001** (identidad e idempotencia de movimientos bancarios) — investigación cerrada. Dos informes de investigación publicados como Artifact: reconstrucción completa del flujo de importación y confirmación de la causa raíz (`ExternalId` posicional), y una segunda entrega sobre qué hace único a un movimiento bancario real (estabilidad de campos, casos ambiguos, límites de los datos disponibles en el repo). Todavía no se decidió ninguna solución — sigue sin implementarse, según las reglas de este roadmap (sección "Muy importante: separar 'arreglar' de 'investigar'").
-> - **IMPORT-003** (auditoría de duplicados existentes) — herramienta construida y validada contra un dataset sintético, **pendiente de ejecución contra la base real**. Ver `docs/imports/IMPORT-003-auditoria-duplicados.md` y `docs/imports/import-003-auditoria-duplicados.sql` — script de solo lectura, cuatro niveles de clasificación (PROBABLE/POSIBLE/AMBIGUO/NO DUPLICADO), sin ningún borrado ni modificación de datos.
+> - **IMPORT-003** (auditoría de duplicados existentes) — **cerrada.** Ejecutada dos veces contra la base real (auditoría principal + segunda pasada de impacto económico/validación). Resultados reales, evidencia de solapamiento de `ImportBatch`, impacto económico y conclusión en `docs/imports/IMPORT-003-auditoria-duplicados-resultados.md`. Habilita el inicio de **DEDUPE-001**, acotado a los 43 grupos PROBABLE — no a POSIBLE ni AMBIGUO, y sin borrar ni modificar ningún dato todavía.
 
 ---
 
@@ -72,8 +72,8 @@ El proyecto ya tiene una base de documentación inusualmente honesta sobre su pr
 
 #### IMPORT-003 — Cuantificar los duplicados ya producidos por IMPORT-001
 - **Prioridad:** HIGH
-- **Tipo:** Investigación
-- **Estado:** herramienta de auditoría de solo lectura construida (`docs/imports/import-003-auditoria-duplicados.sql`) y validada contra un dataset sintético que reproduce el escenario de IMPORT-001 (dos archivos con período solapado, casos ambiguos deliberados) — el script clasificó correctamente los tres casos de prueba. **Pendiente:** ejecutarlo contra la base real y volcar los números reales acá. Ver `docs/imports/IMPORT-003-auditoria-duplicados.md` para metodología completa, criterios de clasificación (PROBABLE/POSIBLE/AMBIGUO/NO DUPLICADO) y limitaciones.
+- **Tipo:** Investigación — **CERRADA**
+- **Estado:** ejecutada contra la base real (500 `BankStatements`, 213 `Transactions`). Resultado: 43 grupos PROBABLE / 86 movimientos, 15 POSIBLE / 30, 37 AMBIGUO / 111, 3 NO_DUPLICADO_MISMO_ARCHIVO / 6 — 233 de 500 `BankStatements` (46,6%) en algún grupo, sin solapamiento entre categorías (verificado). Evidencia directa de solapamiento de `ImportBatch` en los 43 grupos PROBABLE, concentrada en julio/agosto 2026. Impacto económico cuantificado: $8.390.592,84 (valor absoluto) / $3.312.989,16 (neto) potencialmente duplicados. Las 86 filas de los 43 grupos PROBABLE ya tienen `ClassifiedMovementItem` propio (verificado dos veces, sin excepción) — existe riesgo de doble contabilización en métricas agregadas, no confirmado como materializado en ninguna métrica concreta. Detalle completo, metodología y limitaciones en `docs/imports/IMPORT-003-auditoria-duplicados-resultados.md` (resultados) y `docs/imports/IMPORT-003-auditoria-duplicados.md` (metodología/script original). **Habilita el inicio de DEDUPE-001**, acotado a los 43 grupos PROBABLE.
 
 ---
 
@@ -83,8 +83,8 @@ El proyecto ya tiene una base de documentación inusualmente honesta sobre su pr
 - **Prioridad:** HIGH
 - **Tipo:** Investigación / Diseño
 - **Problema:** hoy no existe ninguna clasificación de "qué tan seguro estoy de que esto es un duplicado" — el único mecanismo (`SuspicionDetector`) da un sí/no binario basado en un solo criterio débil (monto ± tolerancia, fecha ± ventana — `src/FinancialSystem.Infrastructure/Review/SuspicionDetector.cs:75-82`).
-- **Dependencias:** IMPORT-001 (para saber qué campo de identidad usar en el nivel "Confirmado").
-- **Estado:** pendiente de iniciar — insumo directo ya generado por la investigación de continuación de IMPORT-001 (estabilidad de campos, casos ambiguos reales con `fecha+importe+concepto`).
+- **Dependencias:** IMPORT-001 (para saber qué campo de identidad usar en el nivel "Confirmado") — **cumplida**. IMPORT-003 (cuantificación real) — **cumplida**.
+- **Estado:** habilitada para iniciar, con alcance inicial acotado por decisión explícita (ver `docs/imports/IMPORT-003-auditoria-duplicados-resultados.md`, sección 13): investigar cómo demostrar identidad de los 43 grupos PROBABLE ya encontrados y diseñar un criterio seguro de identidad/saneamiento para ese conjunto — no para POSIBLE ni AMBIGUO todavía, y sin borrar ni modificar ningún dato en esta etapa.
 
 #### DEDUPE-002 — Señales disponibles para identidad de alta confianza
 - **Prioridad:** HIGH
@@ -158,8 +158,8 @@ Sin cambios respecto a la versión anterior de este documento.
 | 1 | DATA-001 | Auditoría de integridad de la base actual | 0 | CRITICAL | Pendiente de iniciar (distinto de la investigación de identidad, que usa el mismo ID de forma informal en la conversación de trabajo — ver nota) |
 | 2 | IMPORT-001 | Identidad inestable de `BankStatement.ExternalId` | 1 | CRITICAL | **Investigación cerrada** — causa raíz confirmada, alternativas evaluadas sin elegir ninguna |
 | 3 | IMPORT-002 | Robustez real de `Transaction.ExternalId` | 1 | MEDIUM | Pendiente de iniciar |
-| 4 | IMPORT-003 | Cuantificar duplicados ya producidos | 1 | HIGH | Herramienta construida y validada (sintético) — pendiente ejecutar contra base real |
-| 5 | DEDUPE-001 | Taxonomía de confianza para duplicados | 2 | HIGH | Pendiente de iniciar (insumo parcial ya generado) |
+| 4 | IMPORT-003 | Cuantificar duplicados ya producidos | 1 | HIGH | **Cerrada** — ejecutada contra base real, resultados en `docs/imports/IMPORT-003-auditoria-duplicados-resultados.md`, habilita DEDUPE-001 |
+| 5 | DEDUPE-001 | Taxonomía de confianza para duplicados | 2 | HIGH | **Habilitada para iniciar** — acotada a los 43 grupos PROBABLE de IMPORT-003 |
 | 6 | DEDUPE-002 | Señales disponibles para identidad de alta confianza | 2 | HIGH | Parcialmente adelantada |
 | 7 | DEDUPE-003 | Mecanismo seguro de borrado histórico | 2 | CRITICAL | Pendiente de iniciar |
 | 8 | DEDUPE-004 | Inventario cuantitativo de duplicados/incoherencias | 2 | HIGH | Pendiente de iniciar |
