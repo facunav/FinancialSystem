@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Application.Dedupe;
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -155,7 +157,48 @@ public sealed class BbvaBankStatementImporter
         await db.SaveChangesAsync(ct);
 
         _logger.LogInformation("BBVA importer: {Count} movimientos persistidos", toInsert.Count);
+
+        // DEDUPE-004-CONV: segunda capa de identidad (pendiente<->liquidado), corre
+        // DESPUÉS de la persistencia -- nunca reemplaza ni bloquea la idempotencia por
+        // ExternalId de arriba. No bloqueante a propósito: un fallo acá nunca debe hacer
+        // fallar la importación en sí (ver PRE-FLIGHT sección E).
+        await RunDedupeEngineAsync(toInsert, ct);
+
         return (toInsert.Count, duplicates);
+    }
+
+    /// <summary>
+    /// Solo evalúa (PreviewAsync) y loguea -- NUNCA llama ApplyAsync automáticamente.
+    /// Decisión deliberada de esta etapa: incluso en el import en vivo, persistir un
+    /// MovementIdentityLink requiere una corrida explícita separada (mismo criterio que
+    /// el backfill histórico), no un efecto colateral silencioso de importar un archivo.
+    /// Abre su propio scope/DbContext -- igual que AssignFinancialAccountAsync usa el
+    /// mismo `db` del scope de PersistAsync, pero acá se prefiere uno nuevo para que un
+    /// fallo del motor nunca deje el DbContext de la importación en un estado raro.
+    /// </summary>
+    private async Task RunDedupeEngineAsync(IReadOnlyList<BankStatement> toInsert, CancellationToken ct)
+    {
+        if (toInsert.Count == 0)
+            return;
+
+        try
+        {
+            await using var dedupeScope = _scopeFactory.CreateAsyncScope();
+            var dedupeEngine = dedupeScope.ServiceProvider.GetRequiredService<IDedupeEngine>();
+
+            var focusIds = toInsert.Select(s => s.Id).ToList();
+            var candidates = await dedupeEngine.PreviewAsync(focusIds, ct);
+            var fuertes = candidates.Count(c => c.Classification == IdentityClassification.Fuerte);
+
+            if (fuertes > 0)
+                _logger.LogInformation(
+                    "DedupeEngine: {Count} candidatos FUERTE detectados en el import en vivo " +
+                    "(sin persistir -- requiere ApplyAsync explícito)", fuertes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "DedupeEngine: fallo al evaluar identidad post-import -- no afecta el resultado de la importación");
+        }
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts;
+using FinancialSystem.Application.Dedupe;
 using FinancialSystem.Application.Imports;
 using FinancialSystem.Application.Insights;
 using FinancialSystem.Application.Metrics;
@@ -105,6 +106,7 @@ public static class DependencyInjection
         services.AddScoped<IMovementLookupService, MovementLookupService>();
         services.AddSingleton<ISuspicionDetector, Review.SuspicionDetector>();
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
+        services.AddScoped<IDedupeEngine, Dedupe.DedupeEngine>();
 
         // PR-S3: primera implementación real (ver docs/Architecture/PRS1analisismotorsugerencias.md
         // para el diseño y PR-S3 para la heurística — exact match de descripción normalizada

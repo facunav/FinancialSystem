@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Memory;
 using FinancialSystem.Domain.Planning;
@@ -25,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<MovementAuditDecision> MovementAuditDecisions => Set<MovementAuditDecision>();
     public DbSet<PlanningMonth> PlanningMonths => Set<PlanningMonth>();
     public DbSet<PlanningItem> PlanningItems => Set<PlanningItem>();
+    public DbSet<MovementIdentityLink> MovementIdentityLinks => Set<MovementIdentityLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,5 +45,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new MovementAuditDecisionConfiguration());
         modelBuilder.ApplyConfiguration(new PlanningMonthConfiguration());
         modelBuilder.ApplyConfiguration(new PlanningItemConfiguration());
+        modelBuilder.ApplyConfiguration(new MovementIdentityLinkConfiguration());
     }
 }

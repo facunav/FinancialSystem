@@ -1,3 +1,4 @@
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Memory;
 using FinancialSystem.Domain.Planning;
@@ -23,6 +24,7 @@ public interface IApplicationDbContext
     DbSet<MovementAuditDecision> MovementAuditDecisions { get; }
     DbSet<PlanningMonth> PlanningMonths { get; }
     DbSet<PlanningItem> PlanningItems { get; }
+    DbSet<MovementIdentityLink> MovementIdentityLinks { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
