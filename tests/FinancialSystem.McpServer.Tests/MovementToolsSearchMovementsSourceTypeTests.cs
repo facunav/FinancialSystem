@@ -2,6 +2,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Application.Review;
 using FinancialSystem.Application.Suggestions;
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Memory;
@@ -207,6 +208,7 @@ public class MovementToolsSearchMovementsSourceTypeTests
         public DbSet<MovementAuditDecision> MovementAuditDecisions => throw NotExpected();
         public DbSet<PlanningMonth> PlanningMonths => throw NotExpected();
         public DbSet<PlanningItem> PlanningItems => throw NotExpected();
+        public DbSet<MovementIdentityLink> MovementIdentityLinks => throw NotExpected();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             throw NotExpected();
