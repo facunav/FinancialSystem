@@ -393,7 +393,107 @@ internal sealed class DedupeEngine : IDedupeEngine
                 extras));
         }
 
+        DegradarConflictosDeIdentidadFisica(results);
+
         return results;
+    }
+
+    // ── Invariante de cardinalidad (auditoría DEDUPE-004-CONV, red -17401) ─────────
+    // MovementIdentityLink.cs documenta la precondición que sostiene el índice único
+    // (SourceEntityType, SourceId): "esto es seguro ÚNICAMENTE porque solo se persisten
+    // relaciones FUERTE, y FUERTE exige... CANDIDATO_ÚNICO -- cero competidores en toda
+    // la cuenta". Demostrado con datos reales (cuenta financialsystem, importe -17401,
+    // 5 filas físicas: 2 "Transferencia inmediata" + 3 "DEBITO DIRECTO") que esa
+    // precondición puede violarse: 3 filas del mismo importe, sin ningún lado con Nro
+    // que las distinga, generan 3 resultados FUERTE independientes (uno por cada
+    // "pendiente" del bucle principal) que terminan compartiendo filas físicas entre sí
+    // -- el mismo Statement.Id aparece como rol de más de un resultado FUERTE.
+    //
+    // Esta función hace cumplir la invariante EXACTA de esa precondición: ningún
+    // Statement.Id puede pertenecer a más de un resultado Classification==Fuerte. No
+    // elige un ganador ni usa el orden de iteración -- agrupa todos los resultados
+    // FUERTE que comparten cualquier fila física en componentes conexas (unión de
+    // conjuntos, no solo pares: si R1 comparte fila con R2 y R2 con R3, los tres entran
+    // al mismo componente aunque R1 y R3 no compartan nada directamente) y degrada TODO
+    // el componente a Indeterminado cuando tiene 2+ resultados -- igual que ya hace la
+    // señal L para "candidatos igualmente plausibles", mismo lenguaje, misma filosofía
+    // conservadora: sin evidencia para desempatar, no se inventa un ganador.
+    //
+    // No toca IsCandidatePair, F, K, L, M ni el resto del pipeline -- corre una sola vez,
+    // al final, sobre el resultado ya construido (incluida la vía de duplicado exacto).
+    private static void DegradarConflictosDeIdentidadFisica(List<DedupeCandidateResult> results)
+    {
+        var indicesFuerte = new List<int>();
+        for (var i = 0; i < results.Count; i++)
+            if (results[i].Classification == IdentityClassification.Fuerte)
+                indicesFuerte.Add(i);
+
+        if (indicesFuerte.Count < 2)
+            return;
+
+        // Union-Find simple sobre los índices de resultados FUERTE.
+        var parent = new Dictionary<int, int>();
+        foreach (var i in indicesFuerte) parent[i] = i;
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+
+        void Union(int a, int b)
+        {
+            var ra = Find(a);
+            var rb = Find(b);
+            if (ra != rb) parent[ra] = rb;
+        }
+
+        // Agrupar índices por cada Statement.Id que referencian (deduplicado POR
+        // RESULTADO con HashSet -- un mismo Id repetido dentro de un único resultado,
+        // si alguna vez ocurriera, no debe contarse como conflicto entre resultados) y
+        // unir entre sí todos los índices que comparten cualquier Id.
+        var indicesPorStatementId = new Dictionary<Guid, List<int>>();
+        foreach (var i in indicesFuerte)
+        {
+            var r = results[i];
+            var idsDeEsteResultado = new HashSet<Guid> { r.PendienteId, r.LiquidadoId };
+            foreach (var cf in r.CarryForwardMemberIds) idsDeEsteResultado.Add(cf);
+
+            foreach (var id in idsDeEsteResultado)
+            {
+                if (!indicesPorStatementId.TryGetValue(id, out var lista))
+                    indicesPorStatementId[id] = lista = new List<int>();
+                lista.Add(i);
+            }
+        }
+
+        foreach (var grupo in indicesPorStatementId.Values)
+            for (var k = 1; k < grupo.Count; k++)
+                Union(grupo[0], grupo[k]);
+
+        foreach (var componente in indicesFuerte.GroupBy(Find))
+        {
+            var indicesEnConflicto = componente.ToList();
+            if (indicesEnConflicto.Count < 2)
+                continue; // sin conflicto -- no se toca ningún resultado FUERTE aislado
+
+            foreach (var idx in indicesEnConflicto)
+            {
+                var original = results[idx];
+                results[idx] = original with
+                {
+                    Classification = IdentityClassification.Indeterminado,
+                    Evidence = $"CONFLICTO: fila física compartida con otro(s) " +
+                        $"{indicesEnConflicto.Count - 1} resultado(s) FUERTE -- sin desempate " +
+                        $"válido entre representaciones que compiten por la misma identidad " +
+                        $"física (evidencia original: {original.Evidence})"
+                };
+            }
+        }
     }
 
     private static bool IsCandidatePair(Row a, Row b, HashSet<decimal> amountsWithAnchor)

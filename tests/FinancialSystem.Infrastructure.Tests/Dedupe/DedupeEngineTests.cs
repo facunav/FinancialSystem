@@ -556,6 +556,103 @@ public class DedupeEngineTests
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
     }
 
+    // ── Fix DEDUPE-004-CONV: invariante de cardinalidad (auditoría real, red -17401) ─
+    // Bug real, confirmado con datos de financialsystem: 5 filas físicas del mismo
+    // importe, sin ningún lado con Nro, generaban 3 resultados FUERTE independientes
+    // que compartían filas físicas entre sí -- violando la precondición documentada en
+    // MovementIdentityLink.cs ("FUERTE exige candidato único, cero competidores").
+
+    [Fact]
+    public async Task RedDeCandidatosSinNumero_ConflictoDeIdentidadFisica_DegradaAIndeterminado()
+    {
+        // Reproduce exactamente la topología real de -17401: A y B comparten Fecha+
+        // Concepto (excluidos como par por IsCandidatePair, vía duplicado exacto);
+        // C, D y E comparten OTRA Fecha+Concepto entre sí (también excluidos entre
+        // ellos); A y D comparten SourceFile (excluidos); B y C comparten SourceFile
+        // (excluidos). Las únicas parejas válidas que quedan son (A,C), (A,E), (B,D),
+        // (B,E) -- una red que conecta a las 5 filas sin importar el orden de Guid.
+        var dbName = nameof(RedDeCandidatosSinNumero_ConflictoDeIdentidadFisica_DegradaAIndeterminado);
+        var a = Bs(new DateTime(2026, 8, 3), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivoX.xls", 1, balance: 100000m);
+        var aVecino = Bs(new DateTime(2026, 8, 3), -3000.00m, "OTRO CONCEPTO A", "archivoX.xls", 2, balance: 117401m);
+        var d = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoX.xls", 3, balance: 200000m);
+        var dVecino = Bs(new DateTime(2026, 8, 4), -3300.00m, "OTRO CONCEPTO D", "archivoX.xls", 4, balance: 217401m);
+        var b = Bs(new DateTime(2026, 8, 3), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivoY.xls", 1, balance: 100000m);
+        var bVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "OTRO CONCEPTO B", "archivoY.xls", 2, balance: 117401m);
+        var c = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoY.xls", 3, balance: 300000m);
+        var cVecino = Bs(new DateTime(2026, 8, 4), -2200.00m, "OTRO CONCEPTO C", "archivoY.xls", 4, balance: 317401m);
+        var e = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoZ.xls", 1, balance: 400000m);
+        var eVecino = Bs(new DateTime(2026, 8, 4), -1000.00m, "OTRO CONCEPTO E", "archivoZ.xls", 2, balance: 417401m);
+        await SeedAsync(dbName, a, aVecino, d, dVecino, b, bVecino, c, cVecino, e, eVecino);
+
+        var results = await Preview(dbName);
+        var idsDeLaRed = new HashSet<Guid> { a.Id, b.Id, c.Id, d.Id, e.Id };
+
+        var resultadosRelacionados = results
+            .Where(r => idsDeLaRed.Contains(r.PendienteId) || idsDeLaRed.Contains(r.LiquidadoId)
+                     || r.CarryForwardMemberIds.Any(idsDeLaRed.Contains))
+            .ToList();
+
+        // Ninguno de los resultados relacionados con la red puede quedar FUERTE --
+        // el conflicto los degrada a todos, no "desaparecen" silenciosamente.
+        Assert.NotEmpty(resultadosRelacionados);
+        Assert.All(resultadosRelacionados, r => Assert.Equal(IdentityClassification.Indeterminado, r.Classification));
+        Assert.All(resultadosRelacionados, r => Assert.Contains("CONFLICTO", r.Evidence));
+
+        // Los 5 IDs físicos siguen representados exactamente -- ninguno se pierde.
+        var idsResultantes = resultadosRelacionados
+            .SelectMany(r => new[] { r.PendienteId, r.LiquidadoId }.Concat(r.CarryForwardMemberIds))
+            .ToHashSet();
+        Assert.Equal(idsDeLaRed.OrderBy(x => x), idsResultantes.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task NingunStatementId_ApareceEnMasDeUnResultadoFuerte_InvarianteGeneral()
+    {
+        // Misma red conflictiva de -17401 + un caso FUERTE limpio y completamente
+        // ajeno (fecha, importe y archivos sin ninguna relación) -- el caso limpio no
+        // debe verse afectado por la degradación de la red, y la invariante general
+        // (ningún Statement.Id en más de un resultado FUERTE) debe cumplirse sobre
+        // TODOS los resultados FUERTE, no solo sobre los de la red.
+        var dbName = nameof(NingunStatementId_ApareceEnMasDeUnResultadoFuerte_InvarianteGeneral);
+
+        var a = Bs(new DateTime(2026, 8, 3), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivoX.xls", 1, balance: 100000m);
+        var aVecino = Bs(new DateTime(2026, 8, 3), -3000.00m, "OTRO CONCEPTO A", "archivoX.xls", 2, balance: 117401m);
+        var d = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoX.xls", 3, balance: 200000m);
+        var dVecino = Bs(new DateTime(2026, 8, 4), -3300.00m, "OTRO CONCEPTO D", "archivoX.xls", 4, balance: 217401m);
+        var b = Bs(new DateTime(2026, 8, 3), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivoY.xls", 1, balance: 100000m);
+        var bVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "OTRO CONCEPTO B", "archivoY.xls", 2, balance: 117401m);
+        var c = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoY.xls", 3, balance: 300000m);
+        var cVecino = Bs(new DateTime(2026, 8, 4), -2200.00m, "OTRO CONCEPTO C", "archivoY.xls", 4, balance: 317401m);
+        var e = Bs(new DateTime(2026, 8, 4), -17401.00m, "DEBITO DIRECTO", "archivoZ.xls", 1, balance: 400000m);
+        var eVecino = Bs(new DateTime(2026, 8, 4), -1000.00m, "OTRO CONCEPTO E", "archivoZ.xls", 2, balance: 417401m);
+
+        // Caso limpio -- fecha (>10 días de la red) e importe totalmente distintos, sin
+        // ninguna posibilidad de interacción con la red de arriba.
+        var pendienteLimpio = Bs(new DateTime(2026, 8, 20), -8801.00m, "TRANSF DEBITO Nro:700801", "archivoLimpio1.xls", 1, balance: 50000m);
+        var pendienteLimpioVecino = Bs(new DateTime(2026, 8, 20), -9500.00m, "PAGO CON VISA DEBITO OP7091", "archivoLimpio1.xls", 2, balance: 58801m);
+        var liquidadoLimpio = Bs(new DateTime(2026, 8, 22), -8801.00m, "TRANSFERENCIA", "archivoLimpio2.xls", 1, balance: 20000m);
+        var liquidadoLimpioVecino = Bs(new DateTime(2026, 8, 22), -9600.00m, "PAGO CON VISA DEBITO OP7092", "archivoLimpio2.xls", 2, balance: 28801m);
+
+        await SeedAsync(dbName, a, aVecino, d, dVecino, b, bVecino, c, cVecino, e, eVecino,
+            pendienteLimpio, pendienteLimpioVecino, liquidadoLimpio, liquidadoLimpioVecino);
+
+        var results = await Preview(dbName);
+        var fuertes = results.Where(r => r.Classification == IdentityClassification.Fuerte).ToList();
+
+        // El caso limpio no se ve arrastrado por la degradación de la red conflictiva.
+        var resultadoLimpio = Assert.Single(fuertes, r => r.PendienteId == pendienteLimpio.Id);
+        Assert.Equal(liquidadoLimpio.Id, resultadoLimpio.LiquidadoId);
+
+        // Invariante general: ningún Statement.Id aparece en más de un resultado
+        // FUERTE (Pendiente, Liquidado o CarryForward, sin contar repeticiones dentro
+        // de un mismo resultado).
+        var conteos = fuertes
+            .SelectMany(r => new[] { r.PendienteId, r.LiquidadoId }.Concat(r.CarryForwardMemberIds).Distinct())
+            .GroupBy(id => id)
+            .ToDictionary(g => g.Key, g => g.Count());
+        Assert.All(conteos, kv => Assert.True(kv.Value == 1, $"Statement.Id {kv.Key} aparece en {kv.Value} resultados FUERTE"));
+    }
+
     // ── No-destructividad, cardinalidad, idempotencia, Preview de solo lectura ─────
 
     [Fact]
