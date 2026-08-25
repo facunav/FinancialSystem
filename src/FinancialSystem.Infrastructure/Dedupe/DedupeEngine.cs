@@ -168,10 +168,43 @@ internal sealed class DedupeEngine : IDedupeEngine
         foreach (var row in rows)
             row.ChainOk = chainOk.TryGetValue(row.Statement.Id, out var ok) && ok;
 
-        // Señal K: frecuencia de importe entre TRANSFERENCIA/TRANSFERENCIA INMEDIATA.
+        // Señal K: frecuencia de importe entre TRANSFERENCIA/TRANSFERENCIA INMEDIATA --
+        // contada por IDENTIDAD ECONÓMICA, no por fila física (fix DEDUPE-004-CONV,
+        // auditoría de K sobre datos reales de financialsystem: la cuenta reexporta el
+        // mismo movimiento en extractos acumulativos sucesivos -- misma Fecha+Concepto+
+        // Importe+Balance+Balance siguiente en más de un SourceFile -- y esas copias
+        // físicas de una sola reexportación no son competidores reales). Dos filas
+        // colapsan a una sola identidad únicamente cuando ese fingerprint completo
+        // coincide; si Balance o el saldo de la fila siguiente no están disponibles para
+        // alguna fila, esa fila nunca colapsa con ninguna otra -- se sigue contando por
+        // separado, para no bajar la guardia sin evidencia (verificado contra los
+        // controles negativos reales: -50000/-19000/-5000/13000 no colapsan porque, en al
+        // menos un caso, comparten fecha+importe pero tienen Balance distinto).
+        var nextBalance = ComputeNextBalance(all);
         var frequencyByAmount = rows
             .Where(r => r.ConceptNormalized is "TRANSFERENCIA" or "TRANSFERENCIA INMEDIATA")
-            .GroupBy(r => r.Statement.Amount)
+            .Select(r =>
+            {
+                var saldo = r.Statement.Balance;
+                var saldoSiguiente = nextBalance.GetValueOrDefault(r.Statement.Id);
+                var fingerprintCompleto = saldo is not null && saldoSiguiente is not null;
+                return new
+                {
+                    r.Statement.Amount,
+                    IdentityKey = (
+                        r.Statement.Date.Date,
+                        r.ConceptNormalized,
+                        r.Statement.Amount,
+                        Saldo: fingerprintCompleto ? saldo : null,
+                        SaldoSiguiente: fingerprintCompleto ? saldoSiguiente : null,
+                        // Sin fingerprint completo, cada fila es su propia identidad --
+                        // nunca colapsa con otra por suposición.
+                        Disambiguator: fingerprintCompleto ? (Guid?)null : r.Statement.Id)
+                };
+            })
+            .GroupBy(x => x.IdentityKey)
+            .Select(g => g.Key.Amount)
+            .GroupBy(amount => amount)
             .ToDictionary(g => g.Key, g => g.Count());
 
         // Señal M: Nro completo asociado a más de un importe distinto en toda la cuenta.
@@ -378,6 +411,25 @@ internal sealed class DedupeEngine : IDedupeEngine
 
                 result[current.Id] = saldo - current.Amount == saldoSiguiente;
             }
+        }
+
+        return result;
+    }
+
+    // Balance de la fila siguiente (mismo SourceFile, RowNumber inmediato superior) --
+    // usado exclusivamente por el colapso de identidad económica de la señal K (ver
+    // frequencyByAmount en Evaluate). Misma noción de "fila siguiente en el archivo" que
+    // ComputeLocalChainOk (señal F), calculada por separado para no modificar F.
+    private static Dictionary<Guid, decimal?> ComputeNextBalance(IReadOnlyList<BankStatement> all)
+    {
+        var result = new Dictionary<Guid, decimal?>();
+
+        foreach (var group in all.Where(s => s.SourceFile is not null && s.RowNumber.HasValue)
+                                  .GroupBy(s => s.SourceFile))
+        {
+            var ordered = group.OrderBy(s => s.RowNumber).ToList();
+            for (var i = 0; i < ordered.Count - 1; i++)
+                result[ordered[i].Id] = ordered[i + 1].Balance;
         }
 
         return result;

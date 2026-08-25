@@ -174,6 +174,128 @@ public class DedupeEngineTests
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
     }
 
+    // ── Fix DEDUPE-004-CONV: K cuenta identidad económica, no fila física ──────────
+    // Bug demostrado con datos reales de financialsystem (auditoría K, casos 337206/
+    // 684228/-17401): la cuenta reexporta el mismo movimiento en extractos acumulativos
+    // sucesivos -- misma Fecha+Concepto+Importe+Balance+Balance siguiente en más de un
+    // SourceFile -- y esas copias físicas no son competidores reales para el guardián K.
+
+    [Fact]
+    public async Task ReexportacionFisica_DosArchivos_MismoFingerprint_DejaDeSerBloqueadaPorK()
+    {
+        // Reproduce la forma real de 337206/-43000: pendiente con Nro, liquidado
+        // TRANSFERENCIA reexportado en 2 archivos con el mismo saldo antes/después.
+        var dbName = nameof(ReexportacionFisica_DosArchivos_MismoFingerprint_DejaDeSerBloqueadaPorK);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -55000.00m, "TRANSF DEBITO Nro:700555", "archivo1.xls", 1, balance: 200000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7001", "archivo1.xls", 2, balance: 255000m);
+        var liquidado = Bs(new DateTime(2026, 8, 3), -55000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 80000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7002", "archivo2.xls", 2, balance: 135000m);
+        var liquidadoReexportado = Bs(new DateTime(2026, 8, 3), -55000.00m, "TRANSFERENCIA", "archivo3.xls", 1, balance: 80000m);
+        var liquidadoReexportadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7003", "archivo3.xls", 2, balance: 135000m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino, liquidadoReexportado, liquidadoReexportadoVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Single(result.CarryForwardMemberIds); // 2 filas físicas del liquidado, 1 identidad
+    }
+
+    [Fact]
+    public async Task ReexportacionFisica_TresArchivos_MismoFingerprint_DejaDeSerBloqueadaPorK()
+    {
+        // Reproduce la forma real de 684228/-200: 3 filas físicas de la misma
+        // reexportación (mismo saldo antes/después) en 3 archivos distintos.
+        var dbName = nameof(ReexportacionFisica_TresArchivos_MismoFingerprint_DejaDeSerBloqueadaPorK);
+        var pendiente = Bs(new DateTime(2026, 7, 27), -200.00m, "TRANSF DEBITO Nro:700684", "archivo1.xls", 1, balance: 50000m);
+        var pendienteVecino = Bs(new DateTime(2026, 7, 27), -3000.00m, "PAGO CON VISA DEBITO OP7011", "archivo1.xls", 2, balance: 50200m);
+        var liquidadoA = Bs(new DateTime(2026, 7, 26), -200.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 10000m);
+        var liquidadoAVecino = Bs(new DateTime(2026, 7, 26), -2000.00m, "PAGO CON VISA DEBITO OP7012", "archivo2.xls", 2, balance: 10200m);
+        var liquidadoB = Bs(new DateTime(2026, 7, 26), -200.00m, "TRANSFERENCIA", "archivo3.xls", 1, balance: 10000m);
+        var liquidadoBVecino = Bs(new DateTime(2026, 7, 26), -2000.00m, "PAGO CON VISA DEBITO OP7013", "archivo3.xls", 2, balance: 10200m);
+        var liquidadoC = Bs(new DateTime(2026, 7, 26), -200.00m, "TRANSFERENCIA", "archivo4.xls", 1, balance: 10000m);
+        var liquidadoCVecino = Bs(new DateTime(2026, 7, 26), -2000.00m, "PAGO CON VISA DEBITO OP7014", "archivo4.xls", 2, balance: 10200m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidadoA, liquidadoAVecino,
+            liquidadoB, liquidadoBVecino, liquidadoC, liquidadoCVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Equal(2, result.CarryForwardMemberIds.Count); // 3 filas físicas, 1 identidad
+    }
+
+    [Fact]
+    public async Task CasoRealTransferenciaInmediata_ReexportacionDejaDeBloquear()
+    {
+        // Reproduce -17401 con los saldos reales ya auditados (Consulta 4): dos copias
+        // físicas, sin forma Nro en ninguna, mismo saldo antes/después exacto.
+        var dbName = nameof(CasoRealTransferenciaInmediata_ReexportacionDejaDeBloquear);
+        var copiaA = Bs(new DateTime(2026, 8, 2), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1, balance: 3051356.36m);
+        var copiaAVecino = Bs(new DateTime(2026, 8, 2), -3000.00m, "PAGO CON VISA DEBITO OP7041", "archivo1.xls", 2, balance: 3068757.36m);
+        var copiaB = Bs(new DateTime(2026, 8, 2), -17401.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1, balance: 3051356.36m);
+        var copiaBVecino = Bs(new DateTime(2026, 8, 2), -2000.00m, "PAGO CON VISA DEBITO OP7042", "archivo2.xls", 2, balance: 3068757.36m);
+        await SeedAsync(dbName, copiaA, copiaAVecino, copiaB, copiaBVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Single(result.CarryForwardMemberIds);
+    }
+
+    [Fact]
+    public async Task MismaFechaEImporteConBalanceDistinto_NoColapsa_SigueBloqueadaPorK()
+    {
+        // Control: misma Fecha+Concepto+Importe que una reexportación, pero Balance
+        // realmente distinto -- movimiento económico genuinamente diferente ese mismo
+        // día (reproduce el caso real 13000, Consulta 4: 2 físicas, 2 identidades).
+        var dbName = nameof(MismaFechaEImporteConBalanceDistinto_NoColapsa_SigueBloqueadaPorK);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -33000.00m, "TRANSF DEBITO Nro:700333", "archivo1.xls", 1, balance: 400000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7021", "archivo1.xls", 2, balance: 433000m);
+        var liquidadoA = Bs(new DateTime(2026, 8, 3), -33000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 50000m);
+        var liquidadoAVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7022", "archivo2.xls", 2, balance: 83000m);
+        var liquidadoB = Bs(new DateTime(2026, 8, 3), -33000.00m, "TRANSFERENCIA", "archivo3.xls", 1, balance: 999000m);
+        var liquidadoBVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7023", "archivo3.xls", 2, balance: 1032000m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidadoA, liquidadoAVecino, liquidadoB, liquidadoBVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Posible, result.Classification);
+        Assert.Contains("K", result.Evidence, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FilaSinBalance_NoColapsaDeFormaOptimista_SigueBloqueadaPorK()
+    {
+        // Control: misma Fecha+Concepto+Importe, pero sin Balance en una de las dos --
+        // fingerprint incompleto, nunca debe colapsar por suposición.
+        var dbName = nameof(FilaSinBalance_NoColapsaDeFormaOptimista_SigueBloqueadaPorK);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -21000.00m, "TRANSF DEBITO Nro:700210", "archivo1.xls", 1, balance: 100000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7031", "archivo1.xls", 2, balance: 121000m);
+        var liquidadoConBalance = Bs(new DateTime(2026, 8, 3), -21000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 40000m);
+        var liquidadoConBalanceVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7032", "archivo2.xls", 2, balance: 61000m);
+        var liquidadoSinBalance = Bs(new DateTime(2026, 8, 3), -21000.00m, "TRANSFERENCIA", "archivo3.xls", 1);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidadoConBalance, liquidadoConBalanceVecino, liquidadoSinBalance);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Posible, result.Classification);
+        Assert.Contains("K", result.Evidence, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ControlNegativo_OcurrenciasEnFechasDistintas_SiguenBloqueando()
+    {
+        // Reproduce -50000/-19000/-5000/13000 (Consulta 4: colapsadas=0 para los
+        // cuatro) -- ocurrencias en fechas distintas del mismo importe, sin Balance
+        // compartido: siguen siendo identidades distintas, K sigue bloqueando.
+        var dbName = nameof(ControlNegativo_OcurrenciasEnFechasDistintas_SiguenBloqueando);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -50000.00m, "TRANSF DEBITO Nro:700500", "archivo1.xls", 1, balance: 600000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7051", "archivo1.xls", 2, balance: 650000m);
+        var liquidado = Bs(new DateTime(2026, 8, 3), -50000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 90000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7052", "archivo2.xls", 2, balance: 140000m);
+        var otraFecha1 = Bs(new DateTime(2026, 6, 7), -50000.00m, "TRANSFERENCIA", "archivo3.xls", 1);
+        var otraFecha2 = Bs(new DateTime(2026, 7, 7), -50000.00m, "TRANSFERENCIA", "archivo4.xls", 1);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino, otraFecha1, otraFecha2);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Posible, result.Classification);
+        Assert.Contains("K", result.Evidence, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task NroReutilizadoConImporteDistinto_GuardianM_BloqueaFuerte()
     {
