@@ -237,6 +237,16 @@ public class DedupeEngineTests
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
         Assert.Single(result.CarryForwardMemberIds);
         Assert.Contains("B:", result.Evidence); // vía de duplicado exacto, no F+K+L
+
+        // Los IDs físicos representados son exactamente {copiaA, copiaB} -- no solo el
+        // conteo (fix 0008, auditoría del test A).
+        var miembrosResultantes = new[] { result.PendienteId, result.LiquidadoId }
+            .Concat(result.CarryForwardMemberIds)
+            .ToList();
+        Assert.Equal(2, miembrosResultantes.Distinct().Count());
+        Assert.Equal(
+            new[] { copiaA.Id, copiaB.Id }.OrderBy(x => x),
+            miembrosResultantes.OrderBy(x => x));
     }
 
     // ── Fix DEDUPE-004-CONV: duplicado exacto -- FUERTE trivial (spec caso #16) ────
@@ -264,8 +274,48 @@ public class DedupeEngineTests
 
         var result = Assert.Single(await Preview(dbName)); // 1 resultado, no 3
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
-        Assert.Single(result.CarryForwardMemberIds); // 3 físicas, 1 identidad -> 1 extra
         Assert.Contains("B:", result.Evidence);
+
+        // No alcanza con el conteo (fix 0008, auditoría del test B): los IDs físicos
+        // representados son EXACTAMENTE {copiaA, copiaB, copiaC}, sin duplicados y sin
+        // ninguna perdida -- equivalente a miembrosResultantes == {A, B, C}, Count == 3.
+        var miembrosResultantes = new[] { result.PendienteId, result.LiquidadoId }
+            .Concat(result.CarryForwardMemberIds)
+            .ToList();
+        Assert.Equal(3, miembrosResultantes.Count);
+        Assert.Equal(3, miembrosResultantes.Distinct().Count());
+        Assert.Equal(
+            new[] { copiaA.Id, copiaB.Id, copiaC.Id }.OrderBy(x => x),
+            miembrosResultantes.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task CuatroCopiasFisicasExactas_ConBalancesDistintosEntreSi_EsUnaSolaIdentidadFuerte()
+    {
+        // "Dos grupos distintos" (pedido de auditoría 0008): 4 representaciones físicas
+        // exactas (misma Fecha+Importe+ConceptNormalized), con Balance distinto entre sí
+        // -- una sin Balance -- para determinar la identidad lógica correcta según la
+        // especificación. Balance ya NO participa de la decisión (fix 0008): las 4 son
+        // UNA sola identidad, nunca 2 pares separados por Balance.
+        var dbName = nameof(CuatroCopiasFisicasExactas_ConBalancesDistintosEntreSi_EsUnaSolaIdentidadFuerte);
+        var copiaA = Bs(new DateTime(2026, 8, 2), -6600.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1, balance: 300000m);
+        var copiaB = Bs(new DateTime(2026, 8, 2), -6600.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1, balance: 777777m);
+        var copiaC = Bs(new DateTime(2026, 8, 2), -6600.00m, "TRANSFERENCIA INMEDIATA", "archivo3.xls", 1);
+        var copiaD = Bs(new DateTime(2026, 8, 2), -6600.00m, "TRANSFERENCIA INMEDIATA", "archivo4.xls", 1, balance: 300000m);
+        await SeedAsync(dbName, copiaA, copiaB, copiaC, copiaD);
+
+        var result = Assert.Single(await Preview(dbName)); // 1 identidad, no 2
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Contains("B:", result.Evidence);
+
+        var miembrosResultantes = new[] { result.PendienteId, result.LiquidadoId }
+            .Concat(result.CarryForwardMemberIds)
+            .ToList();
+        Assert.Equal(4, miembrosResultantes.Count);
+        Assert.Equal(4, miembrosResultantes.Distinct().Count());
+        Assert.Equal(
+            new[] { copiaA.Id, copiaB.Id, copiaC.Id, copiaD.Id }.OrderBy(x => x),
+            miembrosResultantes.OrderBy(x => x));
     }
 
     [Fact]
@@ -318,6 +368,52 @@ public class DedupeEngineTests
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
         Assert.DoesNotContain("B:", result.Evidence);
         Assert.Contains("F+K+L", result.Evidence);
+    }
+
+    [Fact]
+    public async Task ControlPositivo_BalanceDistinto_SigueSiendoDuplicadoExactoFuerte()
+    {
+        // Caso F (fix 0008): Balance NO es condición del duplicado exacto. Dos copias
+        // con Fecha+Importe+ConceptNormalized idénticos, sin ningún lado con Nro que
+        // sirva de puente -- deben resolver FUERTE por la vía trivial aunque su Balance
+        // sea distinto entre sí. Evidencia específica de la vía exacta, no de K.
+        var dbName = nameof(ControlPositivo_BalanceDistinto_SigueSiendoDuplicadoExactoFuerte);
+        var copiaA = Bs(new DateTime(2026, 8, 2), -19500.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1, balance: 200000m);
+        var copiaB = Bs(new DateTime(2026, 8, 2), -19500.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1, balance: 999999m);
+        await SeedAsync(dbName, copiaA, copiaB);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Contains("B:", result.Evidence);
+
+        var miembrosResultantes = new[] { result.PendienteId, result.LiquidadoId }
+            .Concat(result.CarryForwardMemberIds)
+            .ToList();
+        Assert.Equal(
+            new[] { copiaA.Id, copiaB.Id }.OrderBy(x => x),
+            miembrosResultantes.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task ControlPositivo_BalanceNull_SigueSiendoDuplicadoExactoFuerte()
+    {
+        // Caso G (fix 0008): Balance null tampoco puede impedir el duplicado exacto --
+        // ninguna de las dos copias tiene Balance, y aun así deben resolver FUERTE.
+        var dbName = nameof(ControlPositivo_BalanceNull_SigueSiendoDuplicadoExactoFuerte);
+        var copiaA = Bs(new DateTime(2026, 8, 2), -7700.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1);
+        var copiaB = Bs(new DateTime(2026, 8, 2), -7700.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1);
+        await SeedAsync(dbName, copiaA, copiaB);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Contains("B:", result.Evidence);
+
+        var miembrosResultantes = new[] { result.PendienteId, result.LiquidadoId }
+            .Concat(result.CarryForwardMemberIds)
+            .ToList();
+        Assert.Equal(
+            new[] { copiaA.Id, copiaB.Id }.OrderBy(x => x),
+            miembrosResultantes.OrderBy(x => x));
     }
 
     [Fact]

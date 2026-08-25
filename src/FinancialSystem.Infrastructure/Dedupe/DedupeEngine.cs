@@ -343,8 +343,16 @@ internal sealed class DedupeEngine : IDedupeEngine
         // trivial que exige la especificación (bug real, DEDUPE-004-CONV). Esta vía es
         // ADITIVA y posterior al pipeline normal de arriba: nunca compite con un
         // resultado ya emitido para las mismas filas (yaCubiertos) -- los casos que
-        // además tienen un lado con concepto distinto (326888/684228, ya resueltos por
+        // además tienen un lado con concepto distinto (337206/684228, ya resueltos por
         // F+K+L más arriba) no generan un segundo resultado.
+        //
+        // Definición EXACTA del duplicado exacto (fix DEDUPE-004-CONV posterior a la
+        // auditoría de 0007): Fecha + ConceptNormalized + Importe idénticos, en 2+
+        // SourceFile distintos -- nada más. Balance NO es condición: la especificación
+        // (sección B paso 1 / caso #16) no lo exige, y usarlo como filtro dejaba sin
+        // resolver casos que la propia especificación define como FUERTE trivial. El
+        // orden canónico (para no emitir A→B y B→A) es por Statement.Id -- Balance
+        // nunca fue necesario para ordenar ni para representar los miembros físicos.
         var yaCubiertos = results
             .SelectMany(r => new[] { r.PendienteId, r.LiquidadoId }.Concat(r.CarryForwardMemberIds))
             .ToHashSet();
@@ -352,12 +360,10 @@ internal sealed class DedupeEngine : IDedupeEngine
         var clustersExactos = rows
             .GroupBy(r => (r.Statement.Date.Date, r.ConceptNormalized, r.Statement.Amount))
             .Where(g => g.Select(r => r.Statement.SourceFile).Distinct().Count() > 1)
-            .SelectMany(g => AgruparPorFingerprintDeBalance(g, nextBalance));
+            .Select(g => g.ToList());
 
         foreach (var miembros in clustersExactos)
         {
-            if (miembros.Count < 2) continue;
-            if (miembros.Select(m => m.Statement.SourceFile).Distinct().Count() < 2) continue;
             if (miembros.Any(m => yaCubiertos.Contains(m.Statement.Id))) continue;
             if (focusIds is not null && !miembros.Any(m => focusIds.Contains(m.Statement.Id))) continue;
 
@@ -381,33 +387,13 @@ internal sealed class DedupeEngine : IDedupeEngine
                 segundo.Statement.Amount,
                 segundo.Statement.SourceFile,
                 IdentityClassification.Fuerte,
-                $"B: duplicado exacto -- Fecha+Importe+Concepto+Balance idénticos en " +
+                $"B: duplicado exacto -- Fecha+Importe+ConceptNormalized idénticos en " +
                 $"{ordenados.Count} archivos, no pasa por el resto del pipeline " +
                 "(DEDUPE-003-CONV, apéndice caso #16)",
                 extras));
         }
 
         return results;
-    }
-
-    // Sub-agrupa un cluster de "misma Fecha+Concepto+Importe" por el mismo fingerprint
-    // de Balance que ya usa la señal K (saldo propio + saldo de la fila siguiente en su
-    // archivo, vía ComputeNextBalance) -- un duplicado exacto real exige, además, el
-    // mismo saldo antes/después; sin ese dato disponible en ambos lados, nunca se asume
-    // la identidad (mismo criterio conservador que el fix de K en frequencyByAmount).
-    private static IEnumerable<List<Row>> AgruparPorFingerprintDeBalance(
-        IEnumerable<Row> candidatos, IReadOnlyDictionary<Guid, decimal?> nextBalance)
-    {
-        return candidatos
-            .Select(r => new
-            {
-                Row = r,
-                Saldo = r.Statement.Balance,
-                SaldoSiguiente = nextBalance.GetValueOrDefault(r.Statement.Id)
-            })
-            .Where(x => x.Saldo is not null && x.SaldoSiguiente is not null)
-            .GroupBy(x => (x.Saldo, x.SaldoSiguiente))
-            .Select(g => g.Select(x => x.Row).ToList());
     }
 
     private static bool IsCandidatePair(Row a, Row b, HashSet<decimal> amountsWithAnchor)
