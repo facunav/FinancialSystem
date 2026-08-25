@@ -335,7 +335,79 @@ internal sealed class DedupeEngine : IDedupeEngine
             }
         }
 
+        // ── Duplicado exacto (DEDUPE-003-CONV sección B paso 1 / apéndice caso #16) ──
+        // "Fecha+Importe+Concepto idénticos entre archivos -> FUERTE trivial, no pasa
+        // por el resto del pipeline." IsCandidatePair excluye a propósito este par del
+        // pipeline normal (ver el comentario ahí) -- pero esa exclusión no tenía
+        // contraparte: el par desaparecía sin resultado en vez de resolverse por la vía
+        // trivial que exige la especificación (bug real, DEDUPE-004-CONV). Esta vía es
+        // ADITIVA y posterior al pipeline normal de arriba: nunca compite con un
+        // resultado ya emitido para las mismas filas (yaCubiertos) -- los casos que
+        // además tienen un lado con concepto distinto (326888/684228, ya resueltos por
+        // F+K+L más arriba) no generan un segundo resultado.
+        var yaCubiertos = results
+            .SelectMany(r => new[] { r.PendienteId, r.LiquidadoId }.Concat(r.CarryForwardMemberIds))
+            .ToHashSet();
+
+        var clustersExactos = rows
+            .GroupBy(r => (r.Statement.Date.Date, r.ConceptNormalized, r.Statement.Amount))
+            .Where(g => g.Select(r => r.Statement.SourceFile).Distinct().Count() > 1)
+            .SelectMany(g => AgruparPorFingerprintDeBalance(g, nextBalance));
+
+        foreach (var miembros in clustersExactos)
+        {
+            if (miembros.Count < 2) continue;
+            if (miembros.Select(m => m.Statement.SourceFile).Distinct().Count() < 2) continue;
+            if (miembros.Any(m => yaCubiertos.Contains(m.Statement.Id))) continue;
+            if (focusIds is not null && !miembros.Any(m => focusIds.Contains(m.Statement.Id))) continue;
+
+            // Orden canónico por Id -- mismo criterio de desempate ya usado en el
+            // roleOk de IsCandidatePair -- para no emitir A→B y B→A como dos
+            // resultados de la misma identidad (regla 10).
+            var ordenados = miembros.OrderBy(m => m.Statement.Id).ToList();
+            var primero = ordenados[0];
+            var segundo = ordenados[1];
+            var extras = ordenados.Skip(2).Select(m => m.Statement.Id).ToList();
+
+            results.Add(new DedupeCandidateResult(
+                primero.Statement.Id,
+                primero.Statement.Concept,
+                primero.Statement.Date,
+                primero.Statement.Amount,
+                primero.Statement.SourceFile,
+                segundo.Statement.Id,
+                segundo.Statement.Concept,
+                segundo.Statement.Date,
+                segundo.Statement.Amount,
+                segundo.Statement.SourceFile,
+                IdentityClassification.Fuerte,
+                $"B: duplicado exacto -- Fecha+Importe+Concepto+Balance idénticos en " +
+                $"{ordenados.Count} archivos, no pasa por el resto del pipeline " +
+                "(DEDUPE-003-CONV, apéndice caso #16)",
+                extras));
+        }
+
         return results;
+    }
+
+    // Sub-agrupa un cluster de "misma Fecha+Concepto+Importe" por el mismo fingerprint
+    // de Balance que ya usa la señal K (saldo propio + saldo de la fila siguiente en su
+    // archivo, vía ComputeNextBalance) -- un duplicado exacto real exige, además, el
+    // mismo saldo antes/después; sin ese dato disponible en ambos lados, nunca se asume
+    // la identidad (mismo criterio conservador que el fix de K en frequencyByAmount).
+    private static IEnumerable<List<Row>> AgruparPorFingerprintDeBalance(
+        IEnumerable<Row> candidatos, IReadOnlyDictionary<Guid, decimal?> nextBalance)
+    {
+        return candidatos
+            .Select(r => new
+            {
+                Row = r,
+                Saldo = r.Statement.Balance,
+                SaldoSiguiente = nextBalance.GetValueOrDefault(r.Statement.Id)
+            })
+            .Where(x => x.Saldo is not null && x.SaldoSiguiente is not null)
+            .GroupBy(x => (x.Saldo, x.SaldoSiguiente))
+            .Select(g => g.Select(x => x.Row).ToList());
     }
 
     private static bool IsCandidatePair(Row a, Row b, HashSet<decimal> amountsWithAnchor)

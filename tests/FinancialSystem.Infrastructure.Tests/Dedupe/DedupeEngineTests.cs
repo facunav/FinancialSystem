@@ -236,6 +236,88 @@ public class DedupeEngineTests
         var result = Assert.Single(await Preview(dbName));
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
         Assert.Single(result.CarryForwardMemberIds);
+        Assert.Contains("B:", result.Evidence); // vía de duplicado exacto, no F+K+L
+    }
+
+    // ── Fix DEDUPE-004-CONV: duplicado exacto -- FUERTE trivial (spec caso #16) ────
+    // IsCandidatePair excluye a propósito un par con la misma Fecha+Concepto (es "ya
+    // resuelto como duplicado exacto"), pero antes de este fix esa exclusión no tenía
+    // contraparte: el candidato desaparecía sin resultado en vez de resolverse FUERTE
+    // por la vía trivial que exige DEDUPE-003-especificacion-formal.md (sección B paso
+    // 1 / apéndice caso #16). El test anterior (A) ya cubre 2 copias; los siguientes
+    // cubren 3 copias y los 3 controles negativos pedidos.
+
+    [Fact]
+    public async Task TresCopiasFisicasExactas_SinLadoConNro_EsUnaSolaIdentidadFuerte()
+    {
+        // Caso B: 3 representaciones físicas exactas del mismo movimiento, sin ningún
+        // lado con Nro/OP que sirva de puente -- deben resolver en UN único resultado
+        // FUERTE, no en 3 resultados.
+        var dbName = nameof(TresCopiasFisicasExactas_SinLadoConNro_EsUnaSolaIdentidadFuerte);
+        var copiaA = Bs(new DateTime(2026, 8, 2), -8800.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1, balance: 500000m);
+        var copiaAVecino = Bs(new DateTime(2026, 8, 2), -3000.00m, "PAGO CON VISA DEBITO OP7061", "archivo1.xls", 2, balance: 508800m);
+        var copiaB = Bs(new DateTime(2026, 8, 2), -8800.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1, balance: 500000m);
+        var copiaBVecino = Bs(new DateTime(2026, 8, 2), -2000.00m, "PAGO CON VISA DEBITO OP7062", "archivo2.xls", 2, balance: 508800m);
+        var copiaC = Bs(new DateTime(2026, 8, 2), -8800.00m, "TRANSFERENCIA INMEDIATA", "archivo3.xls", 1, balance: 500000m);
+        var copiaCVecino = Bs(new DateTime(2026, 8, 2), -1000.00m, "PAGO CON VISA DEBITO OP7063", "archivo3.xls", 2, balance: 508800m);
+        await SeedAsync(dbName, copiaA, copiaAVecino, copiaB, copiaBVecino, copiaC, copiaCVecino);
+
+        var result = Assert.Single(await Preview(dbName)); // 1 resultado, no 3
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Single(result.CarryForwardMemberIds); // 3 físicas, 1 identidad -> 1 extra
+        Assert.Contains("B:", result.Evidence);
+    }
+
+    [Fact]
+    public async Task ControlNegativo_MismoConceptoYFecha_ImporteDistinto_NoEsDuplicadoExacto()
+    {
+        // Control C: mismo Concepto+Fecha, Importe distinto -- nunca es el mismo
+        // movimiento; ni siquiera debe llegar a ser candidato (Importe es la primera
+        // condición de IsCandidatePair).
+        var dbName = nameof(ControlNegativo_MismoConceptoYFecha_ImporteDistinto_NoEsDuplicadoExacto);
+        var rowA = Bs(new DateTime(2026, 8, 2), -5000.00m, "TRANSFERENCIA INMEDIATA", "archivo1.xls", 1, balance: 100000m);
+        var rowB = Bs(new DateTime(2026, 8, 2), -6000.00m, "TRANSFERENCIA INMEDIATA", "archivo2.xls", 1, balance: 100000m);
+        await SeedAsync(dbName, rowA, rowB);
+
+        Assert.Empty(await Preview(dbName));
+    }
+
+    [Fact]
+    public async Task ControlNegativo_MismoImporteYConcepto_FechaDistinta_NoEsDuplicadoExacto()
+    {
+        // Control D: mismo Importe+Concepto, Fecha distinta -- es el escenario normal
+        // de pendiente/liquidado (ya cubierto por el pipeline existente), no un
+        // duplicado exacto. Con ambos lados "TRANSFERENCIA" (sin Nro que los distinga),
+        // K los cuenta a los dos -> frecuencia=2 -> POSIBLE por la vía normal, nunca
+        // por la vía trivial de duplicado exacto.
+        var dbName = nameof(ControlNegativo_MismoImporteYConcepto_FechaDistinta_NoEsDuplicadoExacto);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -14000.00m, "TRANSFERENCIA", "archivo1.xls", 1, balance: 60000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7071", "archivo1.xls", 2, balance: 74000m);
+        var liquidado = Bs(new DateTime(2026, 8, 3), -14000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 20000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7072", "archivo2.xls", 2, balance: 34000m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Posible, result.Classification);
+        Assert.DoesNotContain("B:", result.Evidence);
+    }
+
+    [Fact]
+    public async Task ControlNegativo_MismaFechaEImporte_ConceptoDistinto_NoEsDuplicadoExacto()
+    {
+        // Control E: misma Fecha+Importe, Concepto distinto -- es el escenario normal
+        // Nro->TRANSFERENCIA (ya cubierto por F+K+L), no un duplicado exacto.
+        var dbName = nameof(ControlNegativo_MismaFechaEImporte_ConceptoDistinto_NoEsDuplicadoExacto);
+        var pendiente = Bs(new DateTime(2026, 8, 5), -9100.00m, "TRANSF DEBITO Nro:700910", "archivo1.xls", 1, balance: 45000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 5), -3000.00m, "PAGO CON VISA DEBITO OP7081", "archivo1.xls", 2, balance: 54100m);
+        var liquidado = Bs(new DateTime(2026, 8, 5), -9100.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 12000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 5), -2000.00m, "PAGO CON VISA DEBITO OP7082", "archivo2.xls", 2, balance: 21100m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.DoesNotContain("B:", result.Evidence);
+        Assert.Contains("F+K+L", result.Evidence);
     }
 
     [Fact]
