@@ -8,10 +8,10 @@
     FinancialSystem.Worker, FinancialSystem.McpServer): los 3 llaman
     DatabaseMigrationExtensions.ApplyMigrationsAsync en su Program.cs, lo que aplicaría
     automáticamente CUALQUIER migración pendiente (incluida AddMovementIdentityLink)
-    apenas arrancan -- exactamente lo que esta etapa NO debe hacer. Esta herramienta
+    apenas arrancan, exactamente lo que esta etapa NO debe hacer. Esta herramienta
     nunca llama a esa clase, nunca llama a ApplyAsync, nunca llama a SaveChanges.
 
-    No se agregó al .sln -- se ejecuta con `dotnet run --project tools/DedupePreviewCli`,
+    No se agregó al .sln, se ejecuta manualmente (ver el comando de uso en Program.cs),
     nunca corre como parte de un build/test normal.
   -->
 
