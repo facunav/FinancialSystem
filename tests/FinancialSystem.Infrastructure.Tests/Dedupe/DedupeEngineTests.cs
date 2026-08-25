@@ -235,7 +235,7 @@ public class DedupeEngineTests
 
         var result = Assert.Single(await Preview(dbName));
         Assert.Equal(IdentityClassification.Fuerte, result.Classification);
-        Assert.Single(result.CarryForwardMemberIds);
+        Assert.Empty(result.CarryForwardMemberIds);
         Assert.Contains("B:", result.Evidence); // vía de duplicado exacto, no F+K+L
 
         // Los IDs físicos representados son exactamente {copiaA, copiaB} -- no solo el
