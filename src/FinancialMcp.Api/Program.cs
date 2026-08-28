@@ -119,4 +119,8 @@ app.MapInvestigationEndpoints();
 app.MapAuditEndpoints();
 app.MapPlanningEndpoints();
 
+// Patch 0112: único punto de producción que invoca IDedupeEngine.ApplyAsync -- ver
+// doc-comment de DedupeEndpoints para el contrato completo.
+app.MapDedupeEndpoints();
+
 app.Run();
