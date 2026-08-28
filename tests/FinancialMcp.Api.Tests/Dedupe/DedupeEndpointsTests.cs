@@ -271,8 +271,16 @@ public class DedupeEndpointsTests
         {
             var candidato = Assert.Single(resultados);
             Assert.Equal(IdentityClassification.Fuerte, candidato.Classification);
-            Assert.Equal(a.Id, candidato.PendienteId);
-            Assert.Equal(b.Id, candidato.LiquidadoId);
+
+            // Vía B asigna Pendiente/Liquidado por orden canónico de GUID
+            // (DedupeEngine.Evaluate: "ordenados = miembros.OrderBy(m => m.Statement.Id)"),
+            // no por el orden en que se sembraron a/b -- Guid.NewGuid() no tiene relación
+            // con ese orden, así que afirmar qué lado ocupa cada rol es no determinista.
+            // Lo que este test debe probar es que [A], [B] y [A,B] reconstruyen el mismo
+            // par físico, no qué GUID cae en cada rol.
+            Assert.Equal(
+                new HashSet<Guid> { a.Id, b.Id },
+                new HashSet<Guid> { candidato.PendienteId, candidato.LiquidadoId });
         }
     }
 
