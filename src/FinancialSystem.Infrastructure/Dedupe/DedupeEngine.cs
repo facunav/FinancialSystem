@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.RegularExpressions;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Dedupe;
@@ -62,14 +63,14 @@ internal sealed class DedupeEngine : IDedupeEngine
         return evaluated.Where(r => r.Classification != IdentityClassification.Descartado).ToList();
     }
 
-    public async Task<int> ApplyAsync(
+    public async Task<ApplyOutcome> ApplyAsync(
         IReadOnlyList<DedupeCandidateResult> results,
         string createdBy,
         CancellationToken cancellationToken = default)
     {
         var fuertes = results.Where(r => r.Classification == IdentityClassification.Fuerte).ToList();
         if (fuertes.Count == 0)
-            return 0;
+            return new ApplyOutcome(0, Array.Empty<ApplySkip>());
 
         // Idempotencia (ver PRE-FLIGHT sección G): consultar qué representaciones ya
         // tienen link antes de insertar nada -- nunca confiar solo en el índice único
@@ -85,8 +86,18 @@ internal sealed class DedupeEngine : IDedupeEngine
             .Select(l => l.SourceId)
             .ToHashSetAsync(cancellationToken);
 
+        // Revalidación (DEDUPE-005, invariante I4): un DedupeCandidateResult puede tener
+        // horas o días de antigüedad al momento de aplicarse -- nunca se persiste sin
+        // volver a confirmar, contra el estado ACTUAL de la cuenta, que sigue siendo la
+        // misma identidad FUERTE. Una sola lectura fresca de BankStatements para todo el
+        // batch (un único instante T1 consistente para todas las revalidaciones de esta
+        // corrida), reutilizada por SigueSiendoFuerte -- que a su vez reutiliza Evaluate(),
+        // nunca reimplementa F/K/L/D/E/M acá.
+        var freshStatements = await _db.BankStatements.AsNoTracking().ToListAsync(cancellationToken);
+
         var now = _clock.UtcNow;
         var groupsCreated = 0;
+        var skipped = new List<ApplySkip>();
 
         foreach (var result in fuertes)
         {
@@ -98,37 +109,50 @@ internal sealed class DedupeEngine : IDedupeEngine
             // Si CUALQUIER miembro ya está linkeado, se saltea el grupo entero -- no se
             // genera un link parcial ni se toca el grupo existente.
             if (memberIds.Any(alreadyLinked.Contains))
+            {
+                skipped.Add(new ApplySkip(result.PendienteId, result.LiquidadoId,
+                    ApplySkipReason.YaAplicado,
+                    "Al menos una de las representaciones físicas ya tenía un MovementIdentityLink antes de esta corrida."));
                 continue;
+            }
+
+            if (!SigueSiendoFuerte(result, freshStatements, out var motivoRevalidacion))
+            {
+                skipped.Add(new ApplySkip(result.PendienteId, result.LiquidadoId,
+                    ApplySkipReason.RevalidacionFallida, motivoRevalidacion));
+                continue;
+            }
 
             var groupId = Guid.NewGuid();
-
-            _db.MovementIdentityLinks.Add(new MovementIdentityLink
+            var nuevasFilas = new List<MovementIdentityLink>
             {
-                IdentityGroupId = groupId,
-                SourceEntityType = SourceEntityType.BankStatement,
-                SourceId = result.PendienteId,
-                Role = IdentityRole.Pendiente,
-                Classification = IdentityClassification.Fuerte,
-                Evidence = result.Evidence,
-                CreatedAtUtc = now,
-                CreatedBy = createdBy,
-            });
-
-            _db.MovementIdentityLinks.Add(new MovementIdentityLink
-            {
-                IdentityGroupId = groupId,
-                SourceEntityType = SourceEntityType.BankStatement,
-                SourceId = result.LiquidadoId,
-                Role = IdentityRole.Liquidado,
-                Classification = IdentityClassification.Fuerte,
-                Evidence = result.Evidence,
-                CreatedAtUtc = now,
-                CreatedBy = createdBy,
-            });
+                new()
+                {
+                    IdentityGroupId = groupId,
+                    SourceEntityType = SourceEntityType.BankStatement,
+                    SourceId = result.PendienteId,
+                    Role = IdentityRole.Pendiente,
+                    Classification = IdentityClassification.Fuerte,
+                    Evidence = result.Evidence,
+                    CreatedAtUtc = now,
+                    CreatedBy = createdBy,
+                },
+                new()
+                {
+                    IdentityGroupId = groupId,
+                    SourceEntityType = SourceEntityType.BankStatement,
+                    SourceId = result.LiquidadoId,
+                    Role = IdentityRole.Liquidado,
+                    Classification = IdentityClassification.Fuerte,
+                    Evidence = result.Evidence,
+                    CreatedAtUtc = now,
+                    CreatedBy = createdBy,
+                },
+            };
 
             foreach (var carryForwardId in result.CarryForwardMemberIds)
             {
-                _db.MovementIdentityLinks.Add(new MovementIdentityLink
+                nuevasFilas.Add(new MovementIdentityLink
                 {
                     IdentityGroupId = groupId,
                     SourceEntityType = SourceEntityType.BankStatement,
@@ -141,19 +165,93 @@ internal sealed class DedupeEngine : IDedupeEngine
                 });
             }
 
-            // Marcar como ya-linkeados dentro de esta misma corrida -- evita que dos
-            // resultados de la MISMA llamada a ApplyAsync (ej. carry-forward mal armado)
-            // generen dos grupos para el mismo miembro.
-            foreach (var id in memberIds)
-                alreadyLinked.Add(id);
+            _db.MovementIdentityLinks.AddRange(nuevasFilas);
 
-            groupsCreated++;
+            // Persistencia AISLADA por resultado (DEDUPE-005): un SaveChangesAsync por
+            // grupo, no uno para todo el batch -- así, un conflicto real de concurrencia
+            // en UN resultado no arrastra consigo a los demás resultados sanos del mismo
+            // batch. Cada grupo sigue siendo atómico en sí mismo (todas sus filas viajan
+            // en la misma transacción implícita de este SaveChangesAsync, o ninguna) --
+            // es exactamente la misma garantía de antes, solo que aislada por grupo en
+            // vez de compartida por todo el batch.
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                groupsCreated++;
+
+                // Marcar como ya-linkeados dentro de esta misma corrida -- evita que dos
+                // resultados de la MISMA llamada a ApplyAsync (ej. carry-forward mal
+                // armado) generen dos grupos para el mismo miembro.
+                foreach (var id in memberIds)
+                    alreadyLinked.Add(id);
+            }
+            catch (DbUpdateException ex)
+            {
+                // La fila nunca llegó a persistirse (SaveChangesAsync falló) -- Remove()
+                // sobre una entidad en estado Added la desengancha del change tracker
+                // (Detached), no genera ningún DELETE; es necesario para que el próximo
+                // grupo del loop pueda intentar su propio SaveChangesAsync sin arrastrar
+                // estas filas fallidas.
+                _db.MovementIdentityLinks.RemoveRange(nuevasFilas);
+
+                // Violación real del índice único (SourceEntityType, SourceId) de
+                // Postgres -- código SQLSTATE 23505 -- vs cualquier otro fallo de
+                // SaveChangesAsync (timeout, conexión, etc.). No se asume: se inspecciona
+                // la excepción interna.
+                var esViolacionDeUnicidad = ex.InnerException is DbException dbEx
+                                             && dbEx.SqlState == "23505";
+
+                skipped.Add(new ApplySkip(result.PendienteId, result.LiquidadoId,
+                    esViolacionDeUnicidad ? ApplySkipReason.ConflictoDeConcurrencia : ApplySkipReason.ErrorInesperado,
+                    esViolacionDeUnicidad
+                        ? "Violación real del índice único (SourceEntityType, SourceId) -- otra ejecución concurrente ya linkeó alguno de estos movimientos."
+                        : $"SaveChangesAsync falló por una razón distinta a un conflicto de unicidad conocido: {ex.Message}"));
+            }
         }
 
-        if (groupsCreated > 0)
-            await _db.SaveChangesAsync(cancellationToken);
+        return new ApplyOutcome(groupsCreated, skipped);
+    }
 
-        return groupsCreated;
+    // DEDUPE-005, invariante I4 -- revalida, contra el estado ACTUAL de la cuenta (no el
+    // snapshot que traía `result`), si este candidato específico sigue siendo FUERTE con
+    // exactamente los mismos miembros. Reutiliza Evaluate() -- misma fuente de verdad que
+    // PreviewAsync -- acotado por focusIds a este único Pendiente; el mismo mecanismo de
+    // focusIds ya usado por PreviewAsync alcanza para las 3 vías (B exige que CUALQUIER
+    // miembro del cluster esté en focusIds -- PendienteId siempre lo es). Nunca reimplementa
+    // ninguna señal de clasificación acá.
+    private bool SigueSiendoFuerte(
+        DedupeCandidateResult result,
+        IReadOnlyList<BankStatement> freshStatements,
+        out string motivo)
+    {
+        var focusIds = new HashSet<Guid> { result.PendienteId };
+        var revalidados = Evaluate(freshStatements, focusIds);
+
+        var carryForwardOriginal = result.CarryForwardMemberIds.ToHashSet();
+
+        var coincideExacto = revalidados.Any(r =>
+            r.Classification == IdentityClassification.Fuerte
+            && r.PendienteId == result.PendienteId
+            && r.LiquidadoId == result.LiquidadoId
+            && r.CarryForwardMemberIds.ToHashSet().SetEquals(carryForwardOriginal));
+
+        if (coincideExacto)
+        {
+            motivo = string.Empty;
+            return true;
+        }
+
+        var siguePendiente = freshStatements.Any(s => s.Id == result.PendienteId);
+        var sigueLiquidado = freshStatements.Any(s => s.Id == result.LiquidadoId);
+
+        motivo = (siguePendiente, sigueLiquidado) switch
+        {
+            (false, _) => "El movimiento Pendiente ya no existe en BankStatements (desapareció entre Preview y Apply).",
+            (_, false) => "El movimiento Liquidado ya no existe en BankStatements (desapareció entre Preview y Apply).",
+            _ => "Al reevaluar contra el estado actual de la cuenta, este candidato ya no se clasifica como FUERTE " +
+                 "con exactamente los mismos miembros (cambiaron los datos, la clasificación, o aparecieron nuevos competidores).",
+        };
+        return false;
     }
 
     // ── Evaluación (traducción de la especificación DEDUPE-003-CONV a C#) ──────────

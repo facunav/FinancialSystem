@@ -703,8 +703,9 @@ public class DedupeEngineTests
         await using (var db = OpenDb(dbName))
         {
             var engine = new DedupeEngine(db, new FakeDateTimeProvider());
-            var created = await engine.ApplyAsync(results, "test");
-            Assert.Equal(1, created); // solo el grupo FUERTE
+            var outcome = await engine.ApplyAsync(results, "test");
+            Assert.Equal(1, outcome.GroupsCreated); // solo el grupo FUERTE
+            Assert.Empty(outcome.Skipped); // el Posible ni siquiera llega a evaluarse como candidato a Apply
         }
 
         await using var verifyDb = OpenDb(dbName);
@@ -726,7 +727,7 @@ public class DedupeEngineTests
 
         var results = await Preview(dbName);
 
-        int firstRun, secondRun;
+        ApplyOutcome firstRun, secondRun;
         await using (var db = OpenDb(dbName))
         {
             var engine = new DedupeEngine(db, new FakeDateTimeProvider());
@@ -738,8 +739,10 @@ public class DedupeEngineTests
             secondRun = await engine.ApplyAsync(results, "test");
         }
 
-        Assert.Equal(1, firstRun);
-        Assert.Equal(0, secondRun); // segunda corrida no inserta nada nuevo
+        Assert.Equal(1, firstRun.GroupsCreated);
+        Assert.Equal(0, secondRun.GroupsCreated); // segunda corrida no inserta nada nuevo
+        Assert.Single(secondRun.Skipped);
+        Assert.Equal(ApplySkipReason.YaAplicado, secondRun.Skipped[0].Reason);
 
         await using var verifyDb = OpenDb(dbName);
         var links = await verifyDb.MovementIdentityLinks.ToListAsync();
@@ -765,6 +768,242 @@ public class DedupeEngineTests
         var links = await verifyDb.MovementIdentityLinks.ToListAsync();
         var groupedBySource = links.GroupBy(l => (l.SourceEntityType, l.SourceId));
         Assert.All(groupedBySource, g => Assert.Single(g)); // nunca más de 1 fila por representación física
+    }
+
+    // ── DEDUPE-005: revalidación (I4), conflicto (I6/I7), aislamiento por resultado ──
+
+    [Fact]
+    public async Task ApplyAsync_ConMovimientoDesaparecidoEntrePreviewYApply_NoCreaLinkYReportaMotivo()
+    {
+        var dbName = nameof(ApplyAsync_ConMovimientoDesaparecidoEntrePreviewYApply_NoCreaLinkYReportaMotivo);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -33333.00m, "PAGO CON VISA DEBITO Nro:100333", "archivo1.xls", 1);
+        var liquidado = Bs(new DateTime(2026, 8, 2), -33333.00m, "PAGO CON VISA DEBITO 96477108 OP0333", "archivo2.xls", 1);
+        await SeedAsync(dbName, pendiente, liquidado);
+
+        var results = await Preview(dbName);
+        Assert.Equal(IdentityClassification.Fuerte, Assert.Single(results).Classification);
+
+        // Simula que el Liquidado desapareció entre Preview y Apply (DEDUPE-005, I4).
+        await using (var db = OpenDb(dbName))
+        {
+            db.BankStatements.Remove(liquidado);
+            await db.SaveChangesAsync();
+        }
+
+        ApplyOutcome outcome;
+        await using (var db = OpenDb(dbName))
+        {
+            var engine = new DedupeEngine(db, new FakeDateTimeProvider());
+            outcome = await engine.ApplyAsync(results, "test");
+        }
+
+        Assert.Equal(0, outcome.GroupsCreated);
+        var skip = Assert.Single(outcome.Skipped);
+        Assert.Equal(ApplySkipReason.RevalidacionFallida, skip.Reason);
+        Assert.Contains("ya no existe", skip.Detail, StringComparison.OrdinalIgnoreCase);
+
+        await using var verifyDb = OpenDb(dbName);
+        Assert.Empty(await verifyDb.MovementIdentityLinks.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ApplyAsync_ConClasificacionQueCambioEntrePreviewYApply_NoCreaLinkYReportaMotivo()
+    {
+        var dbName = nameof(ApplyAsync_ConClasificacionQueCambioEntrePreviewYApply_NoCreaLinkYReportaMotivo);
+        // Mismo patrón que ImporteRecurrente_BloqueaFuerte_GuardianK: cadena de Balance
+        // válida en ambos lados, sin número en el liquidado -> FUERTE vía F+K+L.
+        var pendiente = Bs(new DateTime(2026, 8, 1), -20000.00m, "TRANSF CREDITO Nro:900111", "archivo1.xls", 1, balance: 100000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -1000.00m, "PAGO CON VISA DEBITO OP7001", "archivo1.xls", 2, balance: 120000m);
+        var liquidado = Bs(new DateTime(2026, 8, 3), -20000.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 50000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 3), -1000.00m, "PAGO CON VISA DEBITO OP7002", "archivo2.xls", 2, balance: 70000m);
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino);
+
+        var results = await Preview(dbName);
+        var original = Assert.Single(results);
+        Assert.Equal(IdentityClassification.Fuerte, original.Classification);
+        Assert.Contains("F+K+L", original.Evidence);
+
+        // Entre Preview y Apply aparece un competidor real: otra TRANSFERENCIA
+        // independiente del mismo importe, fuera de la ventana de descubrimiento (no es
+        // candidato a pareja de `pendiente`) pero SÍ cuenta para la frecuencia global de
+        // la señal K -- al revalidar, el guardián K ya no debe permitir FUERTE. Mismo
+        // mecanismo, con datos reales, que resolvió el caso 136644 en esta investigación.
+        var competidorNuevo = Bs(new DateTime(2026, 5, 5), -20000.00m, "TRANSFERENCIA", "archivo3.xls", 1);
+        await using (var db = OpenDb(dbName))
+        {
+            db.BankStatements.Add(competidorNuevo);
+            await db.SaveChangesAsync();
+        }
+
+        ApplyOutcome outcome;
+        await using (var db = OpenDb(dbName))
+        {
+            var engine = new DedupeEngine(db, new FakeDateTimeProvider());
+            outcome = await engine.ApplyAsync(results, "test");
+        }
+
+        Assert.Equal(0, outcome.GroupsCreated);
+        var skip = Assert.Single(outcome.Skipped);
+        Assert.Equal(ApplySkipReason.RevalidacionFallida, skip.Reason);
+
+        await using var verifyDb = OpenDb(dbName);
+        Assert.Empty(await verifyDb.MovementIdentityLinks.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ApplyAsync_ConLinkYaExistentePorOtraVia_NoSobrescribe()
+    {
+        var dbName = nameof(ApplyAsync_ConLinkYaExistentePorOtraVia_NoSobrescribe);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -33333.00m, "PAGO CON VISA DEBITO Nro:100333", "archivo1.xls", 1);
+        var liquidado = Bs(new DateTime(2026, 8, 2), -33333.00m, "PAGO CON VISA DEBITO 96477108 OP0333", "archivo2.xls", 1);
+        await SeedAsync(dbName, pendiente, liquidado);
+
+        var results = await Preview(dbName);
+        Assert.Equal(IdentityClassification.Fuerte, Assert.Single(results).Classification);
+
+        // Link preexistente creado por OTRA vía (no por este ApplyAsync) -- ej. un
+        // backfill manual anterior, con su propio IdentityGroupId/Evidence/CreatedBy.
+        var grupoPreexistente = Guid.NewGuid();
+        await using (var db = OpenDb(dbName))
+        {
+            db.MovementIdentityLinks.Add(new MovementIdentityLink
+            {
+                IdentityGroupId = grupoPreexistente,
+                SourceEntityType = SourceEntityType.BankStatement,
+                SourceId = pendiente.Id,
+                Role = IdentityRole.Pendiente,
+                Classification = IdentityClassification.Fuerte,
+                Evidence = "backfill manual anterior",
+                CreatedAtUtc = FixedNow.AddDays(-1),
+                CreatedBy = "Backfill-manual",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        ApplyOutcome outcome;
+        await using (var db = OpenDb(dbName))
+        {
+            var engine = new DedupeEngine(db, new FakeDateTimeProvider());
+            outcome = await engine.ApplyAsync(results, "test");
+        }
+
+        Assert.Equal(0, outcome.GroupsCreated);
+        var skip = Assert.Single(outcome.Skipped);
+        Assert.Equal(ApplySkipReason.YaAplicado, skip.Reason);
+
+        await using var verifyDb = OpenDb(dbName);
+        var links = await verifyDb.MovementIdentityLinks.ToListAsync();
+        var link = Assert.Single(links); // sigue habiendo exactamente 1 -- el original, sin tocar
+        Assert.Equal(grupoPreexistente, link.IdentityGroupId);
+        Assert.Equal("backfill manual anterior", link.Evidence);
+        Assert.Equal("Backfill-manual", link.CreatedBy);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_BatchMixto_AplicaLosValidosYReportaLosInvalidosSinAfectarseEntreSi()
+    {
+        var dbName = nameof(ApplyAsync_BatchMixto_AplicaLosValidosYReportaLosInvalidosSinAfectarseEntreSi);
+        var sanoPendiente = Bs(new DateTime(2026, 8, 1), -33333.00m, "PAGO CON VISA DEBITO Nro:100333", "archivo1.xls", 1);
+        var sanoLiquidado = Bs(new DateTime(2026, 8, 2), -33333.00m, "PAGO CON VISA DEBITO 96477108 OP0333", "archivo2.xls", 1);
+        var corruptoPendiente = Bs(new DateTime(2026, 8, 1), -55555.00m, "PAGO CON VISA DEBITO Nro:200555", "archivo1.xls", 5);
+        var corruptoLiquidado = Bs(new DateTime(2026, 8, 2), -55555.00m, "PAGO CON VISA DEBITO 96477108 OP0555", "archivo2.xls", 5);
+        await SeedAsync(dbName, sanoPendiente, sanoLiquidado, corruptoPendiente, corruptoLiquidado);
+
+        var results = await Preview(dbName);
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal(IdentityClassification.Fuerte, r.Classification));
+
+        // Solo el segundo candidato pierde su Liquidado entre Preview y Apply.
+        await using (var db = OpenDb(dbName))
+        {
+            db.BankStatements.Remove(corruptoLiquidado);
+            await db.SaveChangesAsync();
+        }
+
+        ApplyOutcome outcome;
+        await using (var db = OpenDb(dbName))
+        {
+            var engine = new DedupeEngine(db, new FakeDateTimeProvider());
+            outcome = await engine.ApplyAsync(results, "test");
+        }
+
+        Assert.Equal(1, outcome.GroupsCreated); // el sano se aplicó igual
+        var skip = Assert.Single(outcome.Skipped);
+        Assert.Equal(ApplySkipReason.RevalidacionFallida, skip.Reason);
+        Assert.Equal(corruptoPendiente.Id, skip.PendienteId);
+
+        await using var verifyDb = OpenDb(dbName);
+        var links = await verifyDb.MovementIdentityLinks.ToListAsync();
+        Assert.Equal(2, links.Count); // pendiente+liquidado del sano únicamente
+        Assert.Contains(links, l => l.SourceId == sanoPendiente.Id);
+        Assert.Contains(links, l => l.SourceId == sanoLiquidado.Id);
+        Assert.DoesNotContain(links, l => l.SourceId == corruptoPendiente.Id);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_Concurrente_NoDuplicaIdentidad()
+    {
+        // LIMITACIÓN CONOCIDA, documentada a propósito (no simulada como si fuera
+        // Postgres real): este test usa el proveedor InMemory de EF Core con dos
+        // DbContext concurrentes contra el mismo nombre de base -- ejercita la lógica de
+        // aplicación (alreadyLinked + SaveChangesAsync aislado por grupo + el índice
+        // único configurado vía HasIndex().IsUnique()), pero NO reproduce el
+        // comportamiento real de locks/aislamiento/SQLSTATE de Postgres. La garantía real
+        // de exclusividad (I2) está demostrada por el esquema en
+        // DEDUPE-005-diseno-apply-safe-persistence.md §6, no por este test. Lo que este
+        // test sí puede probar, con la infraestructura actual: que, gane quien gane la
+        // carrera, nunca queda persistida una identidad duplicada/contradictoria.
+        var dbName = nameof(ApplyAsync_Concurrente_NoDuplicaIdentidad);
+        var pendiente = Bs(new DateTime(2026, 8, 1), -33333.00m, "PAGO CON VISA DEBITO Nro:100333", "archivo1.xls", 1);
+        var liquidado = Bs(new DateTime(2026, 8, 2), -33333.00m, "PAGO CON VISA DEBITO 96477108 OP0333", "archivo2.xls", 1);
+        await SeedAsync(dbName, pendiente, liquidado);
+
+        var results = await Preview(dbName);
+        Assert.Equal(IdentityClassification.Fuerte, Assert.Single(results).Classification);
+
+        await using var dbA = OpenDb(dbName);
+        await using var dbB = OpenDb(dbName);
+        var engineA = new DedupeEngine(dbA, new FakeDateTimeProvider());
+        var engineB = new DedupeEngine(dbB, new FakeDateTimeProvider());
+
+        var taskA = engineA.ApplyAsync(results, "testA");
+        var taskB = engineB.ApplyAsync(results, "testB");
+        await Task.WhenAll(taskA, taskB);
+
+        await using var verifyDb = OpenDb(dbName);
+        var links = await verifyDb.MovementIdentityLinks.ToListAsync();
+
+        // La invariante que importa: exactamente 2 filas (pendiente+liquidado de UN solo
+        // grupo), nunca 4 -- sin importar cuál de las dos corridas "ganó".
+        Assert.Equal(2, links.Count);
+        Assert.Single(links.Select(l => l.IdentityGroupId).Distinct());
+    }
+
+    [Fact]
+    public async Task ApplyAsync_ConResultadoFabricadoParaMovimientosInexistentes_NoCreaLink()
+    {
+        var dbName = nameof(ApplyAsync_ConResultadoFabricadoParaMovimientosInexistentes_NoCreaLink);
+        // Cuenta vacía -- ningún BankStatement sembrado. Un DedupeCandidateResult
+        // construido a mano (no proviene de Preview) referenciando Ids que nunca
+        // existieron -- verifica que ApplyAsync nunca confía ciegamente en el DTO.
+        var fabricado = new DedupeCandidateResult(
+            Guid.NewGuid(), "concepto fabricado", FixedNow, -1000m, "archivo.xls",
+            Guid.NewGuid(), "concepto fabricado liquidado", FixedNow, -1000m, "archivo2.xls",
+            IdentityClassification.Fuerte, "evidencia fabricada", Array.Empty<Guid>());
+
+        ApplyOutcome outcome;
+        await using (var db = OpenDb(dbName))
+        {
+            var engine = new DedupeEngine(db, new FakeDateTimeProvider());
+            outcome = await engine.ApplyAsync(new[] { fabricado }, "test");
+        }
+
+        Assert.Equal(0, outcome.GroupsCreated);
+        var skip = Assert.Single(outcome.Skipped);
+        Assert.Equal(ApplySkipReason.RevalidacionFallida, skip.Reason);
+
+        await using var verifyDb = OpenDb(dbName);
+        Assert.Empty(await verifyDb.MovementIdentityLinks.ToListAsync());
     }
 
     private static async Task<IReadOnlyList<DedupeCandidateResult>> Preview(string dbName)
