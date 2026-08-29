@@ -108,6 +108,10 @@ public static class DependencyInjection
         services.AddScoped<IReviewEngine, Review.ReviewEngine>();
         services.AddScoped<IDedupeEngine, Dedupe.DedupeEngine>();
 
+        // DEDUPE-010: servicio de reversión auditable de MovementIdentityLink -- separado
+        // de IDedupeEngine a propósito, no toca Evaluate/PreviewAsync/ApplyAsync.
+        services.AddScoped<IMovementIdentityLinkRollbackService, Dedupe.MovementIdentityLinkRollbackService>();
+
         // PR-S3: primera implementación real (ver docs/Architecture/PRS1analisismotorsugerencias.md
         // para el diseño y PR-S3 para la heurística — exact match de descripción normalizada
         // contra el historial de ClassifiedMovements, sin IA). Scoped (no Singleton, a

@@ -27,6 +27,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PlanningMonth> PlanningMonths => Set<PlanningMonth>();
     public DbSet<PlanningItem> PlanningItems => Set<PlanningItem>();
     public DbSet<MovementIdentityLink> MovementIdentityLinks => Set<MovementIdentityLink>();
+    public DbSet<MovementIdentityLinkRollback> MovementIdentityLinkRollbacks => Set<MovementIdentityLinkRollback>();
+    public DbSet<MovementIdentityLinkRollbackMember> MovementIdentityLinkRollbackMembers => Set<MovementIdentityLinkRollbackMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,5 +48,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfiguration(new PlanningMonthConfiguration());
         modelBuilder.ApplyConfiguration(new PlanningItemConfiguration());
         modelBuilder.ApplyConfiguration(new MovementIdentityLinkConfiguration());
+        modelBuilder.ApplyConfiguration(new MovementIdentityLinkRollbackConfiguration());
+        modelBuilder.ApplyConfiguration(new MovementIdentityLinkRollbackMemberConfiguration());
     }
 }

@@ -31,6 +31,11 @@ namespace FinancialSystem.Api.Endpoints;
 /// conjunto exacto de miembros físicos (Pendiente + Liquidado + CarryForward, si los
 /// hubiera) coincide, sin faltantes ni sobrantes, con <c>bankStatementIds</c>. Ante
 /// cualquier ambigüedad (0 o 2+ candidatos que califican) no se aplica nada.
+///
+/// DEDUPE-010: este grupo también expone <c>POST /api/dedupe/rollback</c>, reversión
+/// auditable de un grupo completo de <c>MovementIdentityLink</c> por
+/// <c>IdentityGroupId</c> -- ver <see cref="IMovementIdentityLinkRollbackService"/>. Es
+/// un mecanismo separado de <c>Apply</c>, sin relación con <c>DedupeEngine</c>.
 /// </summary>
 public static class DedupeEndpoints
 {
@@ -39,6 +44,7 @@ public static class DedupeEndpoints
         var group = app.MapGroup("/api/dedupe").WithTags("Dedupe").RequireAuthorization();
 
         group.MapPost("/apply", Apply);
+        group.MapPost("/rollback", Rollback);
 
         return app;
     }
@@ -136,4 +142,42 @@ public static class DedupeEndpoints
         new[] { candidate.PendienteId, candidate.LiquidadoId }
             .Concat(candidate.CarryForwardMemberIds)
             .ToHashSet();
+
+    // ── POST /api/dedupe/rollback ────────────────────────────────────────────
+    //
+    // DEDUPE-010: reversión auditable de un grupo completo de MovementIdentityLink.
+    // Nunca acepta un SourceId individual -- solo IdentityGroupId, el grupo entero se
+    // revierte o no se toca nada (ver IMovementIdentityLinkRollbackService). No tiene
+    // relación con ApplyAsync/DedupeEngine.
+
+    private static async Task<IResult> Rollback(
+        [FromBody] DedupeRollbackRequest request,
+        [FromServices] IMovementIdentityLinkRollbackService rollbackService,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        if (request.IdentityGroupId == Guid.Empty)
+            return Results.BadRequest("identityGroupId es requerido.");
+
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return Results.BadRequest("reason es obligatorio y no puede estar vacío.");
+
+        var rolledBackBy = httpContext.User.Identity?.Name ?? "desconocido";
+
+        var result = await rollbackService.RollbackAsync(
+            request.IdentityGroupId, rolledBackBy, request.Reason, ct);
+
+        return result.Outcome switch
+        {
+            // RolledBack y AlreadyRolledBack son ambos resultados válidos, no errores --
+            // mismo criterio que ApplyOutcome: un reintento HTTP nunca debe parecer un
+            // fallo solo porque no había nada nuevo que hacer.
+            RollbackOutcome.RolledBack or RollbackOutcome.AlreadyRolledBack =>
+                Results.Ok(DedupeRollbackResponseDto.Create(result)),
+            RollbackOutcome.NotFound => Results.NotFound(
+                $"No existe ningún MovementIdentityLink (ni un rollback previo) para " +
+                $"IdentityGroupId={request.IdentityGroupId}."),
+            _ => Results.Problem("Resultado inesperado del rollback."),
+        };
+    }
 }

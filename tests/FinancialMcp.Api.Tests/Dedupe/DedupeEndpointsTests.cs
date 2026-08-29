@@ -8,6 +8,7 @@ using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Dedupe;
 using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
+using FinancialSystem.Domain.Enums;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -84,6 +85,10 @@ public class DedupeEndpointsTests
 
                     services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
                     services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
+
+                    // DEDUPE-010: independiente de si el motor Dedupe es real o sustituido.
+                    services.AddScoped<IMovementIdentityLinkRollbackService,
+                        FinancialSystem.Infrastructure.Dedupe.MovementIdentityLinkRollbackService>();
 
                     if (fakeDedupeEngine is not null)
                         services.AddSingleton(fakeDedupeEngine);
@@ -446,5 +451,180 @@ public class DedupeEndpointsTests
         yield return [null];
         yield return [Array.Empty<Guid>()];
         yield return [new[] { Guid.NewGuid() }]; // un solo Id -- insuficiente para un par
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DEDUPE-010 — POST /api/dedupe/rollback
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Seedea un grupo YA aplicado directamente en MovementIdentityLinks -- estos tests
+    // prueban el endpoint de rollback en aislamiento, no el flujo completo Apply->
+    // Rollback (ese ya está cubierto indirectamente: Apply se prueba arriba, y acá
+    // reutilizamos exactamente la misma forma de datos que ApplyAsync produce).
+    private static async Task<Guid> SeedAppliedGroupAsync(string dbName, int memberCount = 2)
+    {
+        var groupId = Guid.NewGuid();
+        var roles = new[] { IdentityRole.Pendiente, IdentityRole.Liquidado, IdentityRole.CarryForward };
+        var links = Enumerable.Range(0, memberCount).Select(i => new MovementIdentityLink
+        {
+            Id = Guid.NewGuid(),
+            IdentityGroupId = groupId,
+            SourceEntityType = SourceEntityType.BankStatement,
+            SourceId = Guid.NewGuid(),
+            Role = roles[i],
+            Classification = IdentityClassification.Fuerte,
+            Evidence = "B: duplicado exacto (fixture de test)",
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            CreatedBy = "DedupeEngine",
+        }).ToArray();
+
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        db.MovementIdentityLinks.AddRange(links);
+        await db.SaveChangesAsync();
+        return groupId;
+    }
+
+    [Fact]
+    public async Task Rollback_SinApiKey_Retorna401()
+    {
+        var dbName = nameof(Rollback_SinApiKey_Retorna401);
+        var groupId = await SeedAppliedGroupAsync(dbName);
+        using var host = await CreateHostAsync(dbName);
+        using var client = host.GetTestClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(groupId, "motivo de prueba"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rollback_ConGrupoExistente_EliminaLosLinksYRegistraAuditoria()
+    {
+        var dbName = nameof(Rollback_ConGrupoExistente_EliminaLosLinksYRegistraAuditoria);
+        var groupId = await SeedAppliedGroupAsync(dbName);
+        using var host = await CreateHostAsync(dbName);
+        using var client = AuthedClient(host);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(groupId, "aplicado por error"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<DedupeRollbackResponseDto>();
+        Assert.NotNull(body);
+        Assert.Equal(nameof(RollbackOutcome.RolledBack), body!.Outcome);
+        Assert.Equal(2, body.MembersAffected);
+
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        Assert.Empty(await db.MovementIdentityLinks.Where(l => l.IdentityGroupId == groupId).ToListAsync());
+
+        var rollback = await db.MovementIdentityLinkRollbacks.SingleAsync(r => r.IdentityGroupId == groupId);
+        Assert.Equal("aplicado por error", rollback.Reason);
+        // El actor viene del mismo mecanismo que ApplyAsync/createdBy -- ApiKeyAuthenticationHandler
+        // emite el claim de nombre "ApiKeyUser" (ver su código real).
+        Assert.Equal("ApiKeyUser", rollback.RolledBackBy);
+
+        var members = await db.MovementIdentityLinkRollbackMembers
+            .Where(m => m.RollbackId == rollback.Id).ToListAsync();
+        Assert.Equal(2, members.Count);
+    }
+
+    [Fact]
+    public async Task Rollback_ConReasonVacio_Retorna400()
+    {
+        var dbName = nameof(Rollback_ConReasonVacio_Retorna400);
+        var groupId = await SeedAppliedGroupAsync(dbName);
+        using var host = await CreateHostAsync(dbName);
+        using var client = AuthedClient(host);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(groupId, ""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        Assert.Equal(2, await db.MovementIdentityLinks.Where(l => l.IdentityGroupId == groupId).CountAsync());
+    }
+
+    [Fact]
+    public async Task Rollback_ConIdentityGroupIdVacio_Retorna400()
+    {
+        var dbName = nameof(Rollback_ConIdentityGroupIdVacio_Retorna400);
+        using var host = await CreateHostAsync(dbName);
+        using var client = AuthedClient(host);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(Guid.Empty, "motivo válido"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rollback_ConGrupoInexistente_Retorna404()
+    {
+        var dbName = nameof(Rollback_ConGrupoInexistente_Retorna404);
+        using var host = await CreateHostAsync(dbName); // sin seed
+        using var client = AuthedClient(host);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(Guid.NewGuid(), "no debería encontrar nada"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rollback_Repetido_SegundaLlamadaDevuelveAlreadyRolledBackSinDuplicarAuditoria()
+    {
+        var dbName = nameof(Rollback_Repetido_SegundaLlamadaDevuelveAlreadyRolledBackSinDuplicarAuditoria);
+        var groupId = await SeedAppliedGroupAsync(dbName);
+        using var host = await CreateHostAsync(dbName);
+        using var client = AuthedClient(host);
+        var request = new DedupeRollbackRequest(groupId, "motivo del primer y segundo intento");
+
+        var firstResponse = await client.PostAsJsonAsync("/api/dedupe/rollback", request);
+        var secondResponse = await client.PostAsJsonAsync("/api/dedupe/rollback", request);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+
+        var firstBody = await firstResponse.Content.ReadFromJsonAsync<DedupeRollbackResponseDto>();
+        var secondBody = await secondResponse.Content.ReadFromJsonAsync<DedupeRollbackResponseDto>();
+        Assert.Equal(nameof(RollbackOutcome.RolledBack), firstBody!.Outcome);
+        Assert.Equal(nameof(RollbackOutcome.AlreadyRolledBack), secondBody!.Outcome);
+
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        Assert.Single(await db.MovementIdentityLinkRollbacks.Where(r => r.IdentityGroupId == groupId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Rollback_NuncaModificaBankStatements()
+    {
+        var dbName = nameof(Rollback_NuncaModificaBankStatements);
+        var (a, b) = await SeedViaBPairAsync(dbName);
+        using var host = await CreateHostAsync(dbName);
+        using var client = AuthedClient(host);
+
+        // Aplica de verdad (crea el grupo real vía el endpoint de Apply) y después lo revierte.
+        await client.PostAsJsonAsync("/api/dedupe/apply", new DedupeApplyRequest([a.Id, b.Id]));
+
+        await using var dbBefore = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        var groupId = (await dbBefore.MovementIdentityLinks.FirstAsync()).IdentityGroupId;
+
+        var response = await client.PostAsJsonAsync(
+            "/api/dedupe/rollback", new DedupeRollbackRequest(groupId, "verificar que BankStatements no cambia"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var dbAfter = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options);
+        var statements = await dbAfter.BankStatements.AsNoTracking().ToListAsync();
+        Assert.Equal(2, statements.Count);
+        Assert.Contains(statements, s => s.Id == a.Id && s.Amount == a.Amount);
+        Assert.Contains(statements, s => s.Id == b.Id && s.Amount == b.Amount);
     }
 }

@@ -40,3 +40,20 @@ public sealed record DedupeApplyResponseDto(int GroupsCreated, IReadOnlyList<Ded
         outcome.GroupsCreated,
         outcome.Skipped.Select(DedupeApplySkipDto.Create).ToList());
 }
+
+// ── POST /api/dedupe/rollback ────────────────────────────────────────────────
+
+/// <summary>
+/// Request de DEDUPE-010: el cliente identifica el grupo completo por
+/// <see cref="IdentityGroupId"/> -- nunca un <c>SourceId</c> individual, nunca puede
+/// elegir arbitrariamente qué miembros revertir (ver
+/// <see cref="DedupeEndpoints"/>). <see cref="Reason"/> es obligatorio.
+/// </summary>
+public sealed record DedupeRollbackRequest(Guid IdentityGroupId, string? Reason);
+
+/// <summary>Traducción directa de <see cref="RollbackResult"/> -- no reinterpreta el resultado real del servicio.</summary>
+public sealed record DedupeRollbackResponseDto(string Outcome, Guid IdentityGroupId, int MembersAffected)
+{
+    public static DedupeRollbackResponseDto Create(RollbackResult result) => new(
+        result.Outcome.ToString(), result.IdentityGroupId, result.MembersAffected);
+}

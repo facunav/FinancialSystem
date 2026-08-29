@@ -25,6 +25,8 @@ public interface IApplicationDbContext
     DbSet<PlanningMonth> PlanningMonths { get; }
     DbSet<PlanningItem> PlanningItems { get; }
     DbSet<MovementIdentityLink> MovementIdentityLinks { get; }
+    DbSet<MovementIdentityLinkRollback> MovementIdentityLinkRollbacks { get; }
+    DbSet<MovementIdentityLinkRollbackMember> MovementIdentityLinkRollbackMembers { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
