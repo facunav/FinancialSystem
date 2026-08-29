@@ -44,7 +44,7 @@ namespace FinancialSystem.Infrastructure.Migrations
                 {
                     table.PrimaryKey("PK_MovementIdentityLinkRollbackMembers", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_MovementIdentityLinkRollbackMembers_MovementIdentityLinkRollbacks_RollbackId",
+                        name: "FK_MovementIdentityLinkRollbackMembers_MovementIdentityLinkRol~",
                         column: x => x.RollbackId,
                         principalTable: "MovementIdentityLinkRollbacks",
                         principalColumn: "Id",
@@ -52,15 +52,15 @@ namespace FinancialSystem.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_MovementIdentityLinkRollbackMembers_RollbackId",
+                table: "MovementIdentityLinkRollbackMembers",
+                column: "RollbackId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_MovementIdentityLinkRollbacks_IdentityGroupId_Unique",
                 table: "MovementIdentityLinkRollbacks",
                 column: "IdentityGroupId",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MovementIdentityLinkRollbackMembers_RollbackId",
-                table: "MovementIdentityLinkRollbackMembers",
-                column: "RollbackId");
         }
 
         /// <inheritdoc />
