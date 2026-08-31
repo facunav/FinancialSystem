@@ -221,6 +221,56 @@ public class DedupeEngineTests
         Assert.Equal(2, result.CarryForwardMemberIds.Count); // 3 filas físicas, 1 identidad
     }
 
+    // ── DEDUPE-022: caso real 136644 (-3400), verificado con datos reales de
+    // financialsystem -- ver docs/DEDUPE001borradorcierretecnico.md §9 (DEDUPE-001 lo
+    // había clasificado POSIBLE por "importe demasiado frecuente") y la conclusión real
+    // de DEDUPE-022: los -3400 adicionales de la cuenta son, o bien VISA (familia
+    // económica distinta, fuera del universo de K) o bien reexportaciones físicas del
+    // mismo liquidado -- ninguno es un competidor real, y la frecuencia económica dentro
+    // del universo que evalúa K (línea 283, exclusivamente "TRANSFERENCIA"/
+    // "TRANSFERENCIA INMEDIATA") es 1. Este test fija ese resultado como regresión: debe
+    // fallar si alguien ampliara el filtro de K para incluir VISA o formas con Nro:.
+    [Fact]
+    public async Task CasoReal136644_VISAYPendienteConNroNoInfluyenEnK_FrecuenciaEconomicaUno_EsFuerte()
+    {
+        var dbName = nameof(CasoReal136644_VISAYPendienteConNroNoInfluyenEnK_FrecuenciaEconomicaUno_EsFuerte);
+
+        // Pendiente -- "TRANSF DEBITO Nro:136644" nunca entra al universo de K (su
+        // ConceptNormalized no es "TRANSFERENCIA"/"TRANSFERENCIA INMEDIATA").
+        var pendiente = Bs(new DateTime(2026, 8, 1), -3400.00m, "TRANSF DEBITO Nro:136644", "archivo1.xls", 1, balance: 200000m);
+        var pendienteVecino = Bs(new DateTime(2026, 8, 1), -3000.00m, "PAGO CON VISA DEBITO OP7051", "archivo1.xls", 2, balance: 203400m);
+
+        // Liquidado, reexportado físicamente en un tercer archivo -- mismo fingerprint
+        // económico (Fecha+Concepto+Importe+Balance+BalanceSiguiente) -- debe colapsar a
+        // UNA sola identidad económica, no sumar como segundo competidor de K.
+        var liquidado = Bs(new DateTime(2026, 8, 3), -3400.00m, "TRANSFERENCIA", "archivo2.xls", 1, balance: 80000m);
+        var liquidadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7052", "archivo2.xls", 2, balance: 83400m);
+        var liquidadoReexportado = Bs(new DateTime(2026, 8, 3), -3400.00m, "TRANSFERENCIA", "archivo3.xls", 1, balance: 80000m);
+        var liquidadoReexportadoVecino = Bs(new DateTime(2026, 8, 3), -2000.00m, "PAGO CON VISA DEBITO OP7053", "archivo3.xls", 2, balance: 83400m);
+
+        // Un -3400 económicamente DISTINTO (VISA, fecha lejana): no debe entrar al
+        // universo de K. Si entrara, la frecuencia subiría a 2 y K bloquearía FUERTE.
+        var visaOtroMovimiento = Bs(new DateTime(2026, 6, 10), -3400.00m, "PAGO CON VISA DEBITO 96477108 OP0684", "archivoVisa.xls", 1);
+
+        await SeedAsync(dbName, pendiente, pendienteVecino, liquidado, liquidadoVecino,
+            liquidadoReexportado, liquidadoReexportadoVecino, visaOtroMovimiento);
+
+        var result = Assert.Single(await Preview(dbName));
+        Assert.Equal(IdentityClassification.Fuerte, result.Classification);
+        Assert.Equal(pendiente.Id, result.PendienteId);
+
+        // No asumimos cuál de las dos copias físicas del liquidado queda como
+        // "representante" (LiquidadoId) vs. CarryForwardMemberIds -- mismo criterio que
+        // ReexportacionFisica_DosArchivos_MismoFingerprint_DejaDeSerBloqueadaPorK -- solo
+        // que, entre las dos, cubran exactamente las 2 filas físicas del liquidado.
+        var liquidadoFisicos = new HashSet<Guid> { liquidado.Id, liquidadoReexportado.Id };
+        Assert.Single(result.CarryForwardMemberIds);
+        Assert.True(liquidadoFisicos.SetEquals(new[] { result.LiquidadoId }.Concat(result.CarryForwardMemberIds)));
+
+        Assert.Contains("F+K+L", result.Evidence);
+        Assert.Contains("frecuencia=1", result.Evidence);
+    }
+
     [Fact]
     public async Task CasoRealTransferenciaInmediata_ReexportacionDejaDeBloquear()
     {
