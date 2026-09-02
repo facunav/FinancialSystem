@@ -163,6 +163,14 @@ public sealed class AuditReportService
                 sb.AppendLine($"  - Valor sugerido: {motivo.ValorSugerido}");
                 if (motivo.Confianza is not null)
                     sb.AppendLine($"  - Confianza: {motivo.Confianza}");
+                // Tier 0 (AGENT-004): MatchCount/WinnerCount ya se calculaban y ya
+                // viajaban en Motivo -- solo faltaba imprimirlos. Reason es el texto
+                // legible que ClassificationSuggestionService.BuildReason ya arma (ej.
+                // "5 clasificaciones históricas... mayoría amplia (4 de 5)...").
+                if (motivo.MatchCount is not null && motivo.WinnerCount is not null)
+                    sb.AppendLine($"  - Evidencia: {motivo.WinnerCount} de {motivo.MatchCount}");
+                if (motivo.Reason is not null)
+                    sb.AppendLine($"  - Reason: {motivo.Reason}");
             }
 
             sb.AppendLine();
@@ -561,6 +569,14 @@ public sealed class AuditReportService
     // consumido desde hosts/FinancialSystem.McpServer (MovementTools.ExplainClassification).
     // Se mantiene anidado dentro de AuditReportService (no se mueve a nivel de namespace)
     // para minimizar el diff: ningún otro cambio de forma ni de contenido.
+    // Tier 0 (AGENT-002/003/004): Reason agregado al final -- MatchCount/WinnerCount ya
+    // existían y ya se propagaban desde ClassificationSuggestion, pero el texto completo
+    // de ClassificationSuggestion.Reason (armado por
+    // ClassificationSuggestionService.BuildReason, ya pensado para ser legible: "no es
+    // opcional: una sugerencia sin motivo visible es una caja negra") se descartaba antes
+    // de llegar acá. No se toca BuildReason ni el algoritmo que decide Confianza -- solo
+    // se transporta el mismo texto ya calculado. Agregado como último parámetro opcional
+    // para no romper ningún call site posicional existente.
     public sealed record Motivo(
         string Origen,
         string Dimension,
@@ -568,7 +584,8 @@ public sealed class AuditReportService
         string ValorSugerido,
         string? Confianza,
         int? MatchCount = null,
-        int? WinnerCount = null);
+        int? WinnerCount = null,
+        string? Reason = null);
 
     /// <summary>
     /// Resultado de <see cref="ExplainCurrentClassificationAsync"/> (PATCH-0106).
@@ -608,7 +625,8 @@ public sealed class AuditReportService
                             categoryNames.GetValueOrDefault(suggestedCategoryId, "(desconocida)"),
                             s.Confidence.ToString(),
                             s.MatchCount,
-                            s.WinnerCount));
+                            s.WinnerCount,
+                            s.Reason));
                     break;
 
                 case SuggestionDimension.MovementType:
@@ -621,7 +639,8 @@ public sealed class AuditReportService
                             suggestedType.ToString(),
                             s.Confidence.ToString(),
                             s.MatchCount,
-                            s.WinnerCount));
+                            s.WinnerCount,
+                            s.Reason));
                     break;
 
                 case SuggestionDimension.FinancialImpact:
@@ -634,7 +653,8 @@ public sealed class AuditReportService
                             suggestedImpact.ToString(),
                             s.Confidence.ToString(),
                             s.MatchCount,
-                            s.WinnerCount));
+                            s.WinnerCount,
+                            s.Reason));
                     break;
 
                 case SuggestionDimension.Counterparty:
@@ -651,7 +671,8 @@ public sealed class AuditReportService
                             counterpartyNames.GetValueOrDefault(suggestedCounterpartyId, "(desconocida)"),
                             s.Confidence.ToString(),
                             s.MatchCount,
-                            s.WinnerCount));
+                            s.WinnerCount,
+                            s.Reason));
                     }
                     break;
             }

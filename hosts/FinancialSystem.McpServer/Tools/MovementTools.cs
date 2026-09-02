@@ -498,6 +498,14 @@ public sealed class MovementTools
                     sb.AppendLine($"    Valor sugerido: {motivo.ValorSugerido}");
                     sb.AppendLine($"    Origen: {motivo.Origen}");
                     sb.AppendLine($"    Confianza: {motivo.Confianza ?? "-"}");
+                    // Tier 0 (AGENT-004): misma evidencia y misma semántica que
+                    // FindMisclassifiedMovements (AuditReportService.FormatMisclassifiedMovementsReport)
+                    // -- MatchCount/WinnerCount/Reason ya calculados por
+                    // ClassificationSuggestionService, solo faltaba imprimirlos acá también.
+                    if (motivo.MatchCount is not null && motivo.WinnerCount is not null)
+                        sb.AppendLine($"    Evidencia: {motivo.WinnerCount} de {motivo.MatchCount}");
+                    if (motivo.Reason is not null)
+                        sb.AppendLine($"    Reason: {motivo.Reason}");
                 }
             }
         }

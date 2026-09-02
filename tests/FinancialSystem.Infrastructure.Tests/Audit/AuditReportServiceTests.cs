@@ -355,6 +355,33 @@ public class AuditReportServiceTests
     }
 
     [Fact]
+    public async Task BuildMisclassifiedMovementsReportAsync_TieneMatchCountWinnerCountYReason_LosIncluyeEnElTexto()
+    {
+        // Tier 0 (AGENT-002/003/004): MatchCount/WinnerCount ya se calculaban y ya
+        // viajaban en Motivo antes de este cambio -- lo único nuevo acá es que el texto
+        // que recibe el cliente MCP (FormatMisclassifiedMovementsReport) ahora los
+        // imprime, junto con el mismo Reason que ya arma
+        // ClassificationSuggestionService.BuildReason (sin alterar ese método).
+        var dbName = Guid.NewGuid().ToString();
+        var currentCategoryId = Guid.NewGuid();
+        var suggestedCategoryId = Guid.NewGuid();
+        await SeedCategoryAsync(dbName, currentCategoryId, "Otros");
+        await SeedCategoryAsync(dbName, suggestedCategoryId, "Ingresos");
+        var movement = ClassifiedMovementView(currentCategoryId, description: "INTERESES GANADOS");
+        var suggestion = new ClassificationSuggestion(
+            SuggestionDimension.Category, suggestedCategoryId, SuggestionConfidence.Medium,
+            "5 clasificaciones históricas con la misma descripción; mayoría amplia (4 de 5) coincide en este valor.",
+            MatchCount: 5, WinnerCount: 4);
+        var service = CreateService(
+            dbName, movements: [movement], suggestions: [SuggestionSet(movement.SourceId, suggestion)]);
+
+        var report = await service.BuildMisclassifiedMovementsReportAsync(From, To, null);
+
+        Assert.Contains("- Evidencia: 4 de 5", report);
+        Assert.Contains("- Reason: 5 clasificaciones históricas con la misma descripción; mayoría amplia (4 de 5) coincide en este valor.", report);
+    }
+
+    [Fact]
     public async Task BuildMisclassifiedMovementsReportAsync_DefaultDeContraparteDistinto_IncluyeElMotivo()
     {
         var dbName = Guid.NewGuid().ToString();
@@ -971,6 +998,9 @@ public class AuditReportServiceTests
         Assert.Equal("Salud", motivo.ValorSugerido);
         Assert.Equal("High", motivo.Confianza);
         Assert.Contains("Historial de descripción idéntica", motivo.Origen);
+        // Tier 0 (AGENT-004): Reason ahora se propaga hasta Motivo -- mismo texto que
+        // ClassificationSuggestion.Reason, sin alterar BuildReason.
+        Assert.Equal("m", motivo.Reason);
     }
 
     [Fact]
@@ -1055,5 +1085,9 @@ public class AuditReportServiceTests
         Assert.Equal("Salud", motivo.ValorSugerido);
         Assert.Null(motivo.Confianza);
         Assert.Contains("Default configurado en la contraparte", motivo.Origen);
+        // Tier 0 (AGENT-004): BuildDefaultMotivos no tiene ningún texto de Reason que
+        // propagar (CounterpartyDefaults no lo tiene) -- Reason queda null, sin cambios
+        // de comportamiento respecto de antes de este patch.
+        Assert.Null(motivo.Reason);
     }
 }
