@@ -130,6 +130,56 @@ public sealed class ClassifyMovementHandler
             return ClassifyMovementResult.Success(existing.Id);
         }
 
+        // DEDUPE-017: si NO existe item propio para este SourceId (llegamos hasta acá
+        // porque existingItem es null) pero el SourceId pertenece a un IdentityGroupId
+        // (MovementIdentityLink) con otro miembro físico que YA tiene su propio
+        // ClassifiedMovementItem, no crear un ClassifiedMovement independiente -- ambas
+        // filas físicas representan el mismo evento económico real (ver doc-comment de
+        // MovementIdentityLink), y crear uno nuevo duplicaría el monto en las métricas
+        // (FinancialMetricsService suma por ClassifiedMovement, no por fila física).
+        // No fusiona automáticamente el grupo, no modifica el ClassifiedMovement ya
+        // existente del otro miembro: solo bloquea esta clasificación puntual, dejando
+        // la decisión de UX (fusionar vs. avisar) para una tarea aparte. Si el SourceId
+        // no tiene ningún MovementIdentityLink, esta consulta no encuentra nada y el
+        // comportamiento es idéntico al de antes de este patch.
+        var identityLink = await _db.MovementIdentityLinks
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                l => l.SourceEntityType == command.SourceEntityType && l.SourceId == command.SourceId,
+                cancellationToken);
+
+        if (identityLink is not null)
+        {
+            var siblingSources = await _db.MovementIdentityLinks
+                .AsNoTracking()
+                .Where(l => l.IdentityGroupId == identityLink.IdentityGroupId && l.SourceId != command.SourceId)
+                .Select(l => new { l.SourceEntityType, l.SourceId })
+                .ToListAsync(cancellationToken);
+
+            if (siblingSources.Count > 0)
+            {
+                var siblingIds = siblingSources.Select(s => s.SourceId).ToHashSet();
+                var siblingKeys = siblingSources
+                    .Select(s => (s.SourceEntityType, s.SourceId))
+                    .ToHashSet();
+
+                var siblingItemKeys = await _db.ClassifiedMovementItems
+                    .AsNoTracking()
+                    .Where(i => siblingIds.Contains(i.SourceId))
+                    .Select(i => new { i.SourceEntityType, i.SourceId })
+                    .ToListAsync(cancellationToken);
+
+                var siblingYaClasificado = siblingItemKeys
+                    .Any(k => siblingKeys.Contains((k.SourceEntityType, k.SourceId)));
+
+                if (siblingYaClasificado)
+                {
+                    return ClassifyMovementResult.Failure(
+                        ClassifyMovementFailureReason.PartOfAlreadyClassifiedIdentityGroup);
+                }
+            }
+        }
+
         var classifiedMovement = new ClassifiedMovement
         {
             // Si el comando trae EffectiveDate (usuario ajustó el período financiero

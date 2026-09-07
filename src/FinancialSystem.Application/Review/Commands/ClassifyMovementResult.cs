@@ -19,6 +19,16 @@ public enum ClassifyMovementFailureReason
     /// históricos de antes de ese PR siguen existiendo y siguen siendo válidos.
     /// </summary>
     AlreadyPartOfMatchGroup,
+
+    /// <summary>
+    /// DEDUPE-017: el SourceId no tiene item propio todavía, pero pertenece a un
+    /// IdentityGroupId (MovementIdentityLink) cuyo otro miembro físico ya tiene un
+    /// ClassifiedMovementItem -- ambas filas físicas son el mismo evento económico
+    /// real (reexportación/duplicado detectado por DedupeEngine), así que clasificar
+    /// esta también crearía un ClassifiedMovement duplicado. No se fusiona
+    /// automáticamente ni se modifica la clasificación existente del otro miembro.
+    /// </summary>
+    PartOfAlreadyClassifiedIdentityGroup,
 }
 
 /// <summary>Resultado de <see cref="ClassifyMovementCommand"/>: éxito con el id creado, o motivo de fallo.</summary>

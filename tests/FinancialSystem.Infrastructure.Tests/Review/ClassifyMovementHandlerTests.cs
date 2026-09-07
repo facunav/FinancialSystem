@@ -1,4 +1,5 @@
 using FinancialSystem.Application.Abstractions;
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Application.Review.Commands;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
@@ -328,6 +329,67 @@ public class ClassifyMovementHandlerTests
         Assert.Null(reclassified.AmountDelta);
     }
 
+    // ── DEDUPE-017: no duplicar ClassifiedMovement entre miembros del mismo
+    // IdentityGroupId (MovementIdentityLink) ────────────────────────────────────────
+
+    [Fact]
+    public async Task Handle_SourceIdConMovementIdentityLinkYMiembroYaClasificado_FallaSinCrearSegundoClassifiedMovement()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName);
+        var bankDate = new DateTime(2026, 8, 3, 0, 0, 0, DateTimeKind.Utc);
+
+        // BankStatement A (pendiente) y B (liquidado/reexportación) -- mismo evento
+        // económico real, vinculados por DedupeEngine.ApplyAsync vía MovementIdentityLink.
+        var bankStatementAId = await SeedBankStatementAsync(dbName, bankDate, "TRANSFERENCIA");
+        var bankStatementBId = await SeedBankStatementAsync(dbName, bankDate, "TRANSFERENCIA");
+        var identityGroupId = Guid.NewGuid();
+        await SeedMovementIdentityLinkAsync(dbName, identityGroupId, bankStatementAId, IdentityRole.Pendiente);
+        await SeedMovementIdentityLinkAsync(dbName, identityGroupId, bankStatementBId, IdentityRole.Liquidado);
+
+        // A ya fue clasificado -- tiene su propio ClassifiedMovement + ClassifiedMovementItem.
+        await SeedClassifiedMovementAsync(
+            dbName, SourceEntityType.BankStatement, bankStatementAId, categoryId,
+            ProcessingSource.ManualReview, bankDate);
+
+        // Intentar clasificar B (nunca clasificado individualmente todavía) debe fallar,
+        // no crear un segundo ClassifiedMovement para el mismo evento económico.
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.BankStatement, bankStatementBId, categoryId,
+            MovementType.Transfer, FinancialImpact.InternalMovement, null, null));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ClassifyMovementFailureReason.PartOfAlreadyClassifiedIdentityGroup, result.FailureReason);
+
+        await using var db = OpenDb(dbName);
+        Assert.Equal(1, await db.ClassifiedMovements.CountAsync());
+        Assert.Equal(1, await db.ClassifiedMovementItems.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_BankStatementSinMovementIdentityLink_FuncionaComoAntes()
+    {
+        // Regresión: un BankStatement sin ningún MovementIdentityLink (el caso normal,
+        // la inmensa mayoría de los movimientos) debe seguir clasificándose exactamente
+        // igual que antes de este patch -- la nueva consulta a MovementIdentityLinks no
+        // encuentra nada y no cambia el camino existente.
+        var dbName = Guid.NewGuid().ToString();
+        var categoryId = await SeedCategoryAsync(dbName);
+        var bankDate = new DateTime(2026, 8, 3, 0, 0, 0, DateTimeKind.Utc);
+        var bankStatementId = await SeedBankStatementAsync(dbName, bankDate, "PAGO CON VISA DEBITO OP1234");
+
+        var result = await CreateHandler(dbName).Handle(new ClassifyMovementCommand(
+            SourceEntityType.BankStatement, bankStatementId, categoryId,
+            MovementType.Purchase, FinancialImpact.Expense, null, null));
+
+        Assert.True(result.IsSuccess);
+
+        await using var db = OpenDb(dbName);
+        Assert.Equal(1, await db.ClassifiedMovements.CountAsync());
+        var classified = await db.ClassifiedMovements.SingleAsync();
+        Assert.Equal(bankDate, classified.EffectiveDate);
+    }
+
     private static ClassifyMovementHandler CreateHandler(string dbName) =>
         new(OpenDb(dbName), new FakeDateTimeProvider(), NullLogger<ClassifyMovementHandler>.Instance);
 
@@ -356,6 +418,45 @@ public class ClassifyMovementHandlerTests
         db.Transactions.Add(transaction);
         await db.SaveChangesAsync();
         return transaction.Id;
+    }
+
+    private static async Task<Guid> SeedBankStatementAsync(string dbName, DateTime date, string concept)
+    {
+        await using var db = OpenDb(dbName);
+        var bankStatement = new BankStatement
+        {
+            Date = date,
+            Concept = concept,
+            Amount = 100m,
+            Currency = "ARS",
+            BankName = "BBVA",
+            ExternalId = Guid.NewGuid().ToString(),
+            ImportedAtUtc = date,
+        };
+        db.BankStatements.Add(bankStatement);
+        await db.SaveChangesAsync();
+        return bankStatement.Id;
+    }
+
+    // Siembra directa de un MovementIdentityLink -- simula lo que ya dejó persistido
+    // DedupeEngine.ApplyAsync (no se ejecuta ApplyAsync real acá: este test cubre
+    // exclusivamente ClassifyMovementHandler, con el link ya asumido como dado).
+    private static async Task SeedMovementIdentityLinkAsync(
+        string dbName, Guid identityGroupId, Guid sourceId, IdentityRole role)
+    {
+        await using var db = OpenDb(dbName);
+        db.MovementIdentityLinks.Add(new MovementIdentityLink
+        {
+            IdentityGroupId = identityGroupId,
+            SourceEntityType = SourceEntityType.BankStatement,
+            SourceId = sourceId,
+            Role = role,
+            Classification = IdentityClassification.Fuerte,
+            Evidence = "Test: F+K+L, frecuencia=1",
+            CreatedAtUtc = new DateTime(2026, 8, 3, 0, 0, 0, DateTimeKind.Utc),
+            CreatedBy = "DedupeEngine",
+        });
+        await db.SaveChangesAsync();
     }
 
     // Siembra directa (sin pasar por el handler, que siempre escribe ManualReview) de
