@@ -2,11 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using FinancialSystem.Api.Authentication;
 using FinancialSystem.Api.Endpoints;
+using FinancialSystem.Api.Validation;
 using FinancialSystem.Application;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Accounts;
 using FinancialSystem.Application.Metrics;
 using FinancialSystem.Infrastructure.Persistence;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -294,6 +296,15 @@ public class MasterDataProtectedEndpointsTests
                     services.AddRouting();
                     services.AddApiKeyAuthentication(context.Configuration);
                     services.AddApplication();
+
+                    // Fix de test: CategoryEndpoints.Create/Update resuelven
+                    // IValidator<CreateCategoryRequest>/IValidator<UpdateCategoryRequest>
+                    // desde DI (Patch 0065, PATCH-016) -- Program.cs los registra vía
+                    // AddValidatorsFromAssemblyContaining, pero este host de test propio
+                    // nunca llamaba a Program.cs y no los registraba, así que las
+                    // llamadas a Categories_Create/Categories_Update fallaban con
+                    // InvalidOperationException ("No service for type IValidator<...>").
+                    services.AddValidatorsFromAssemblyContaining<CreateCategoryRequestValidator>();
 
                     services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
                     services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());

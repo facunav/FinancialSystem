@@ -290,7 +290,7 @@ public class SuspicionDetectorTests
         // del total, queda sin detectar. Comportamiento actual, documentado tal cual,
         // no una corrección.
         var total = Movement(400m);
-        var parts = new[] { Movement(50m), Movement(90m), Movement(120m), Movement(140m) }; // suman 400 entre las 4
+        var parts = new[] { Movement(61m), Movement(89m), Movement(113m), Movement(137m) }; // suman 400 entre las 4
 
         var groups = CreateDetector().Detect([total, .. parts]);
 
@@ -305,10 +305,10 @@ public class SuspicionDetectorTests
         // primera combinación que encuentra, sin evaluar cuál es "mejor". Con este
         // orden de entrada, (a,b) aparece antes que (c,d) en la iteración y gana.
         var total = Movement(1000m);
-        var a = Movement(300m);
-        var b = Movement(700m);
-        var c = Movement(400m);
-        var d = Movement(600m);
+        var a = Movement(100m);
+        var b = Movement(900m);
+        var c = Movement(300m);
+        var d = Movement(700m);
 
         var groups = CreateDetector().Detect([total, a, b, c, d]);
 
@@ -328,10 +328,10 @@ public class SuspicionDetectorTests
         // Confirma que la elección depende del orden de entrada, no de ningún criterio
         // de "mejor combinación".
         var total = Movement(1000m);
-        var a = Movement(300m);
-        var b = Movement(700m);
-        var c = Movement(400m);
-        var d = Movement(600m);
+        var a = Movement(100m);
+        var b = Movement(900m);
+        var c = Movement(300m);
+        var d = Movement(700m);
 
         var groups = CreateDetector().Detect([total, c, d, a, b]);
 
@@ -424,8 +424,8 @@ public class SuspicionDetectorTests
         // de SuspicionDetector asigna hoy -- solo PossibleDuplicate y SplitTransaction
         // se producen realmente. Se documenta con un escenario que dispara ambos casos
         // reales para confirmar que ninguno de los dos resulta en RoundingAnomaly.
-        var dupA = Movement(100m);
-        var dupB = Movement(100m);
+        var dupA = Movement(150m);
+        var dupB = Movement(150m);
         var total = Movement(1000m);
         var part1 = Movement(600m);
         var part2 = Movement(400m);

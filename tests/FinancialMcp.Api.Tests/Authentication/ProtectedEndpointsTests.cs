@@ -6,6 +6,7 @@ using FinancialSystem.Api.Endpoints;
 using FinancialSystem.Application;
 using FinancialSystem.Application.Abstractions;
 using FinancialSystem.Application.Imports;
+using FinancialSystem.Application.Metrics;
 using FinancialSystem.Application.Movements;
 using FinancialSystem.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
@@ -24,8 +25,16 @@ namespace FinancialMcp.Api.Tests.Authentication;
 /// Importaciones y Movimientos: /api/imports, /api/movements, /api/movement-review,
 /// /api/transactions y /api/bank-statements quedan detrás de
 /// RequireAuthorization() (mismo esquema "ApiKey" del Patch 0058). Ningún otro
-/// endpoint cambia -- /api/categories se incluye acá justamente para probar que un
+/// endpoint cambia -- /api/metrics se incluye acá justamente para probar que un
 /// grupo NO tocado por este patch sigue siendo público (ausencia de regresiones).
+///
+/// Actualización (fix de tests, sin cambio de comportamiento): el ejemplo de "grupo
+/// no tocado" usaba antes /api/categories, pero el Patch 0060 (PATCH-011, ver
+/// MasterDataProtectedEndpointsTests) protegió después también /api/categories con
+/// RequireAuthorization() -- una decisión de seguridad posterior e intencional, no
+/// una regresión de este patch. Se reemplazó por /api/metrics, que sigue siendo
+/// público hoy (mismo endpoint usado como control en
+/// MasterDataProtectedEndpointsTests.UnrelatedEndpoint_MetricsSummary_RemainsPublic_NoRegressionFromThisPatch).
 ///
 /// Se mapean las extensiones REALES de FinancialMcp.Api (MapImportBatchEndpoints,
 /// MapMovementsEndpoints, etc. -- código de producción, sin duplicarlo) sobre un host
@@ -145,14 +154,16 @@ public class ProtectedEndpointsTests
     }
 
     [Fact]
-    public async Task UnrelatedEndpoint_Categories_RemainsPublic_NoRegressionFromThisPatch()
+    public async Task UnrelatedEndpoint_MetricsSummary_RemainsPublic_NoRegressionFromThisPatch()
     {
-        // /api/categories no forma parte de este patch (Importaciones y Movimientos) --
-        // debe seguir funcionando exactamente igual, sin ninguna clave.
+        // /api/categories dejó de servir como ejemplo de "grupo no tocado" -- el Patch
+        // 0060 lo protegió después (ver doc-comment de la clase). /api/metrics sigue
+        // siendo público hoy, así que es el control válido para esta prueba de
+        // ausencia de regresiones.
         using var host = await CreateHostAsync(ValidApiKey);
         using var client = host.GetTestClient();
 
-        var response = await client.GetAsync("/api/categories");
+        var response = await client.GetAsync("/api/metrics/summary?year=2026&month=1");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -194,6 +205,7 @@ public class ProtectedEndpointsTests
 
                     services.AddSingleton<IImportHistoryQueryService, FakeImportHistoryQueryService>();
                     services.AddSingleton<IMovementsQueryService, FakeMovementsQueryService>();
+                    services.AddSingleton<IFinancialMetricsService, FakeFinancialMetricsService>();
                 });
                 webHost.Configure(app =>
                 {
@@ -207,7 +219,7 @@ public class ProtectedEndpointsTests
                         endpoints.MapMovementReviewEndpoints();
                         endpoints.MapTransactionEndpoints();
                         endpoints.MapBankStatementEndpoints();
-                        endpoints.MapCategoryEndpoints();
+                        endpoints.MapMetricsEndpoints();
                     });
                 });
             });
@@ -229,5 +241,27 @@ public class ProtectedEndpointsTests
         public Task<IReadOnlyList<MovementView>> GetAsync(
             DateOnly from, DateOnly to, Guid? financialAccountId, string? search, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<MovementView>>([]);
+    }
+
+    private sealed class FakeFinancialMetricsService : IFinancialMetricsService
+    {
+        public Task<PeriodSummary> GetPeriodSummaryAsync(DateOnly from, DateOnly to, CancellationToken ct = default) =>
+            Task.FromResult(new PeriodSummary(from, to, 0m, 0m, 0m, 0m, 0, 0, 0, "ARS"));
+
+        public Task<IReadOnlyList<CategoryExpense>> GetExpensesByCategoryAsync(
+            DateOnly from, DateOnly to, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<CategoryExpense>>([]);
+
+        public Task<IReadOnlyList<MonthlyTrendPoint>> GetMonthlyTrendAsync(int months, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<MonthlyTrendPoint>>([]);
+
+        public Task<MonthComparison> CompareWithPreviousMonthAsync(int year, int month, CancellationToken ct = default) =>
+            Task.FromResult(new MonthComparison(
+                new PeriodSummary(new DateOnly(year, month, 1), new DateOnly(year, month, 1), 0m, 0m, 0m, 0m, 0, 0, 0, "ARS"),
+                null, 0m, 0, []));
+
+        public Task<ClassificationCoverage> GetClassificationCoverageAsync(
+            DateOnly from, DateOnly to, CancellationToken ct = default) =>
+            Task.FromResult(new ClassificationCoverage(from, to, 0, 0, 0, 0m));
     }
 }

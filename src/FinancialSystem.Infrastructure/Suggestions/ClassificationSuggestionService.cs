@@ -421,7 +421,11 @@ internal sealed class ClassificationSuggestionService : IClassificationSuggestio
     private static string BuildReason(int distinctCount, int winnerCount, int matchCount, SuggestionConfidence confidence)
     {
         if (distinctCount == 1)
-            return $"{matchCount} clasificación{(matchCount == 1 ? "" : "es")} histórica{(matchCount == 1 ? "" : "s")} con la misma descripción, siempre con este valor.";
+        {
+            var noun = matchCount == 1 ? "clasificación" : "clasificaciones";
+            var adjective = matchCount == 1 ? "histórica" : "históricas";
+            return $"{matchCount} {noun} {adjective} con la misma descripción, siempre con este valor.";
+        }
 
         if (confidence == SuggestionConfidence.Medium)
             return $"{matchCount} clasificaciones históricas con la misma descripción; mayoría amplia ({winnerCount} de {matchCount}) coincide en este valor.";
