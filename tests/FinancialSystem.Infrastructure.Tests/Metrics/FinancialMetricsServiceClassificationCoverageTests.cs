@@ -1,3 +1,4 @@
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
@@ -139,6 +140,125 @@ public class FinancialMetricsServiceClassificationCoverageTests
         Assert.Equal(first, second);
     }
 
+    // ── DEDUPE-017 -- ver claude/AUDITORIA-DEDUPE017-METRICS.md, conclusión B ───
+    // Desde DEDUPE-017, ClassifyMovementHandler nunca deja que un segundo miembro de
+    // un IdentityGroupId obtenga su propio ClassifiedMovementItem si otro miembro ya
+    // lo tiene -- así que, sin este ajuste, esos hermanos quedarían pendientes para
+    // siempre. La unidad de cobertura pasa a ser la identidad económica cuando existe
+    // un MovementIdentityLink.
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_MovimientoSinMovementIdentityLink_SigueContandoComoPendiente()
+    {
+        // Una fila física sin MovementIdentityLink no participa de ningún grupo de
+        // identidad -- debe comportarse exactamente igual que antes de este cambio.
+        var dbName = Guid.NewGuid().ToString();
+        await SeedPendingBankStatementAsync(dbName);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(1, result.TotalMovements);
+        Assert.Equal(0, result.ClassifiedMovements);
+        Assert.Equal(1, result.PendingMovements);
+        Assert.Equal(0m, result.CoveragePercentage);
+    }
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_IdentityGroupDeDosMiembros_NingunoClasificado_CuentaLosDosComoPendientes()
+    {
+        // Nadie fue clasificado todavía dentro del grupo -- DEDUPE-017 todavía no
+        // bloqueó nada, así que cada fila física sigue contando por separado.
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Pendiente);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Liquidado);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(2, result.TotalMovements);
+        Assert.Equal(0, result.ClassifiedMovements);
+        Assert.Equal(2, result.PendingMovements);
+        Assert.Equal(0m, result.CoveragePercentage);
+    }
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_IdentityGroupDeDosMiembros_UnoClasificado_ElOtroNoCuentaComoPendiente()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        await SeedClassifiedBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Liquidado);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Pendiente);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(1, result.TotalMovements);
+        Assert.Equal(1, result.ClassifiedMovements);
+        Assert.Equal(0, result.PendingMovements);
+        Assert.Equal(100m, result.CoveragePercentage);
+    }
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_IdentityGroupDeTresMiembros_UnoClasificado_LosOtrosDosNoCuentanComoPendientes()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        await SeedClassifiedBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Liquidado);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.Pendiente);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupId, IdentityRole.CarryForward);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(1, result.TotalMovements);
+        Assert.Equal(1, result.ClassifiedMovements);
+        Assert.Equal(0, result.PendingMovements);
+        Assert.Equal(100m, result.CoveragePercentage);
+    }
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_DosIdentityGroupsDistintos_SoloElGrupoPendienteContribuyeAPendientes()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupCubierto = Guid.NewGuid();
+        var groupPendiente = Guid.NewGuid();
+
+        // Grupo A: un miembro clasificado -- ya cubierto, el otro miembro no debe
+        // sumar a pendientes.
+        await SeedClassifiedBankStatementWithIdentityLinkAsync(dbName, groupCubierto, IdentityRole.Liquidado);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupCubierto, IdentityRole.Pendiente);
+
+        // Grupo B: ningún miembro clasificado todavía -- ambos deben seguir contando
+        // como pendientes, sin verse afectados por lo que pasa en el Grupo A.
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupPendiente, IdentityRole.Pendiente);
+        await SeedPendingBankStatementWithIdentityLinkAsync(dbName, groupPendiente, IdentityRole.Liquidado);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(3, result.TotalMovements);
+        Assert.Equal(1, result.ClassifiedMovements);
+        Assert.Equal(2, result.PendingMovements);
+    }
+
+    [Fact]
+    public async Task GetClassificationCoverageAsync_SinNingunMovementIdentityLink_ComportamientoIdenticoAlAnterior()
+    {
+        // Regresión: mezclando banco/tarjeta, clasificados/pendientes, sin ningún
+        // MovementIdentityLink de por medio, el resultado debe ser idéntico al de
+        // antes de este cambio (mismo escenario que
+        // GetClassificationCoverageAsync_WithPartialClassification_ReturnsRoundedPercentage).
+        var dbName = Guid.NewGuid().ToString();
+        await SeedClassifiedTransactionAsync(dbName);
+        await SeedClassifiedTransactionAsync(dbName);
+        await SeedClassifiedTransactionAsync(dbName);
+        await SeedPendingBankStatementAsync(dbName);
+
+        var result = await CreateService(dbName).GetClassificationCoverageAsync(From, To);
+
+        Assert.Equal(4, result.TotalMovements);
+        Assert.Equal(3, result.ClassifiedMovements);
+        Assert.Equal(1, result.PendingMovements);
+        Assert.Equal(75.0m, result.CoveragePercentage);
+    }
+
     [Fact]
     public async Task GetPeriodSummaryAsync_StillWorks_NoRegressionFromRemovingIMovementsQueryService()
     {
@@ -260,6 +380,64 @@ public class FinancialMetricsServiceClassificationCoverageTests
             OriginalDate = effectiveDate,
             OriginalDescription = "Movimiento clasificado de prueba",
             OriginalCurrency = "ARS",
+        });
+    }
+
+    // ── Siembra de grupos de identidad (DEDUPE-017) ─────────────────────────────
+
+    private static async Task SeedPendingBankStatementWithIdentityLinkAsync(
+        string dbName, Guid identityGroupId, IdentityRole role, DateTime? date = null)
+    {
+        await using var db = OpenDb(dbName);
+        var statement = new BankStatement
+        {
+            Date = date ?? InPeriod,
+            Concept = "Movimiento bancario pendiente de prueba (grupo de identidad)",
+            Amount = -100m,
+            Currency = "ARS",
+            BankName = "Banco de prueba",
+            ExternalId = Guid.NewGuid().ToString(),
+            ImportedAtUtc = InPeriod,
+        };
+        db.BankStatements.Add(statement);
+        AddIdentityLink(db, identityGroupId, statement.Id, role);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedClassifiedBankStatementWithIdentityLinkAsync(
+        string dbName, Guid identityGroupId, IdentityRole role,
+        ClassificationStatus status = ClassificationStatus.Confirmed, DateTime? date = null)
+    {
+        var effectiveDate = date ?? InPeriod;
+        await using var db = OpenDb(dbName);
+        var statement = new BankStatement
+        {
+            Date = effectiveDate,
+            Concept = "Movimiento bancario clasificado de prueba (grupo de identidad)",
+            Amount = -100m,
+            Currency = "ARS",
+            BankName = "Banco de prueba",
+            ExternalId = Guid.NewGuid().ToString(),
+            ImportedAtUtc = InPeriod,
+        };
+        db.BankStatements.Add(statement);
+        AddClassifiedMovement(db, SourceEntityType.BankStatement, statement.Id, effectiveDate, status);
+        AddIdentityLink(db, identityGroupId, statement.Id, role);
+        await db.SaveChangesAsync();
+    }
+
+    private static void AddIdentityLink(AppDbContext db, Guid identityGroupId, Guid sourceId, IdentityRole role)
+    {
+        db.MovementIdentityLinks.Add(new MovementIdentityLink
+        {
+            IdentityGroupId = identityGroupId,
+            SourceEntityType = SourceEntityType.BankStatement,
+            SourceId = sourceId,
+            Role = role,
+            Classification = IdentityClassification.Fuerte,
+            Evidence = "Test: par pendiente/liquidado con firma idéntica (Fecha + Concepto).",
+            CreatedAtUtc = InPeriod,
+            CreatedBy = "Test",
         });
     }
 }

@@ -1,3 +1,4 @@
+using FinancialSystem.Domain.Dedupe;
 using FinancialSystem.Domain.Entities;
 using FinancialSystem.Domain.Enums;
 using FinancialSystem.Domain.Review;
@@ -120,6 +121,24 @@ public class MovementLoaderTests
             OriginalDate = PeriodFrom,
             OriginalDescription = "Ya clasificado",
             OriginalCurrency = "ARS",
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedIdentityLinkAsync(
+        string dbName, SourceEntityType sourceEntityType, Guid sourceId, Guid identityGroupId, IdentityRole role)
+    {
+        await using var db = OpenDb(dbName);
+        db.MovementIdentityLinks.Add(new MovementIdentityLink
+        {
+            IdentityGroupId = identityGroupId,
+            SourceEntityType = sourceEntityType,
+            SourceId = sourceId,
+            Role = role,
+            Classification = IdentityClassification.Fuerte,
+            Evidence = "Test: par pendiente/liquidado con firma idéntica.",
+            CreatedAtUtc = PeriodFrom,
+            CreatedBy = "Test",
         });
         await db.SaveChangesAsync();
     }
@@ -281,6 +300,146 @@ public class MovementLoaderTests
         Assert.Equal(2, movements.Count);
         Assert.Contains(movements, m => m.SourceId == id1);
         Assert.Contains(movements, m => m.SourceId == id2);
+    }
+
+    // ── DEDUPE-017: grupos de identidad (MovementIdentityLink) ──────────────
+    // Ver claude/AUDITORIA-DEDUPE017-METRICS.md y la auditoría de MovementLoader
+    // que le siguió. Mismo criterio que ya aplica
+    // FinancialMetricsService.GetClassificationCoverageAsync: una fila física sin
+    // ClassifiedMovementItem propio, pero cuyo IdentityGroupId ya tiene otro
+    // miembro clasificado, no debe ofrecerse como pendiente -- ClassifyMovementHandler
+    // nunca va a dejar clasificarla.
+
+    [Fact]
+    public async Task LoadAsync_MovimientoSinMovementIdentityLink_SigueApareciendoComoPendiente()
+    {
+        // Una fila física sin MovementIdentityLink no participa de ningún grupo de
+        // identidad -- debe comportarse exactamente igual que antes de este cambio.
+        var dbName = Guid.NewGuid().ToString();
+        var bankId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1));
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        var movement = Assert.Single(movements);
+        Assert.Equal(bankId, movement.SourceId);
+    }
+
+    [Fact]
+    public async Task LoadAsync_IdentityGroupDeDosMiembros_NingunoClasificado_ApareceLosDos()
+    {
+        // Nadie fue clasificado todavía dentro del grupo -- DEDUPE-017 todavía no
+        // bloqueó nada, así que cada fila física sigue apareciendo por separado.
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        var id1 = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Pendiente");
+        var id2 = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Liquidado");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, id1, groupId, IdentityRole.Pendiente);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, id2, groupId, IdentityRole.Liquidado);
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        Assert.Equal(2, movements.Count);
+        Assert.Contains(movements, m => m.SourceId == id1);
+        Assert.Contains(movements, m => m.SourceId == id2);
+    }
+
+    [Fact]
+    public async Task LoadAsync_IdentityGroupDeDosMiembros_UnoClasificado_ElOtroNoAparece()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        var classifiedId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Liquidado");
+        var siblingId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Pendiente");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, classifiedId, groupId, IdentityRole.Liquidado);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, siblingId, groupId, IdentityRole.Pendiente);
+        await MarkAsClassifiedAsync(dbName, SourceEntityType.BankStatement, classifiedId);
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        // El clasificado ya no es "pendiente" (mismo filtro de siempre); el hermano
+        // tampoco debe aparecer -- ese es el comportamiento nuevo bajo prueba acá.
+        Assert.Empty(movements);
+        Assert.DoesNotContain(movements, m => m.SourceId == siblingId);
+    }
+
+    [Fact]
+    public async Task LoadAsync_IdentityGroupDeTresMiembros_UnoClasificado_LosOtrosDosNoAparecen()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+        var classifiedId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Liquidado");
+        var sibling1Id = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Pendiente 1");
+        var sibling2Id = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Pendiente 2");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, classifiedId, groupId, IdentityRole.Liquidado);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, sibling1Id, groupId, IdentityRole.Pendiente);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, sibling2Id, groupId, IdentityRole.CarryForward);
+        await MarkAsClassifiedAsync(dbName, SourceEntityType.BankStatement, classifiedId);
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        Assert.Empty(movements);
+        Assert.DoesNotContain(movements, m => m.SourceId == sibling1Id);
+        Assert.DoesNotContain(movements, m => m.SourceId == sibling2Id);
+    }
+
+    [Fact]
+    public async Task LoadAsync_DosIdentityGroupsDistintos_SoloElGrupoPendienteAparece()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupCubierto = Guid.NewGuid();
+        var groupPendiente = Guid.NewGuid();
+
+        // Grupo A: un miembro clasificado -- ya cubierto, el otro miembro no debe
+        // aparecer.
+        var classifiedId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo cubierto - liquidado");
+        var coveredSiblingId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo cubierto - pendiente");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, classifiedId, groupCubierto, IdentityRole.Liquidado);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, coveredSiblingId, groupCubierto, IdentityRole.Pendiente);
+        await MarkAsClassifiedAsync(dbName, SourceEntityType.BankStatement, classifiedId);
+
+        // Grupo B: ningún miembro clasificado todavía -- ambos deben seguir
+        // apareciendo, sin verse afectados por lo que pasa en el Grupo A.
+        var pendingId1 = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo pendiente 1");
+        var pendingId2 = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo pendiente 2");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, pendingId1, groupPendiente, IdentityRole.Pendiente);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, pendingId2, groupPendiente, IdentityRole.Liquidado);
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        Assert.Equal(2, movements.Count);
+        Assert.Contains(movements, m => m.SourceId == pendingId1);
+        Assert.Contains(movements, m => m.SourceId == pendingId2);
+        Assert.DoesNotContain(movements, m => m.SourceId == coveredSiblingId);
+    }
+
+    [Fact]
+    public async Task LoadAsync_MezclaDeMovimientosNormalesYDeIdentidadDeduplicada_CadaUnoSeComportaCorrectamente()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var groupId = Guid.NewGuid();
+
+        // Movimiento normal, sin MovementIdentityLink -- debe aparecer.
+        var normalId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Normal");
+
+        // Movimiento normal ya clasificado, sin MovementIdentityLink -- no debe
+        // aparecer (comportamiento preexistente, sin relación con este cambio).
+        var normalClassifiedId = await SeedTransactionAsync(dbName, PeriodFrom.AddDays(1), description: "Normal clasificado");
+        await MarkAsClassifiedAsync(dbName, SourceEntityType.Transaction, normalClassifiedId);
+
+        // Grupo de identidad: uno clasificado, el otro NO debe aparecer.
+        var classifiedId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo - liquidado");
+        var siblingId = await SeedBankStatementAsync(dbName, PeriodFrom.AddDays(1), concept: "Grupo - pendiente");
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, classifiedId, groupId, IdentityRole.Liquidado);
+        await SeedIdentityLinkAsync(dbName, SourceEntityType.BankStatement, siblingId, groupId, IdentityRole.Pendiente);
+        await MarkAsClassifiedAsync(dbName, SourceEntityType.BankStatement, classifiedId);
+
+        var movements = await LoadDefaultPeriodAsync(dbName);
+
+        var movement = Assert.Single(movements);
+        Assert.Equal(normalId, movement.SourceId);
+        Assert.DoesNotContain(movements, m => m.SourceId == normalClassifiedId);
+        Assert.DoesNotContain(movements, m => m.SourceId == classifiedId);
+        Assert.DoesNotContain(movements, m => m.SourceId == siblingId);
     }
 
     // ── Caso especialmente importante: inversión de signo ───────────────────

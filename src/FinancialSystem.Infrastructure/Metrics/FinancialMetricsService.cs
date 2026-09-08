@@ -219,16 +219,36 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
     // introducir una definición alternativa (idéntico al que aplican MovementLoader y
     // MovementsQueryService, sin cambios en ninguna de las dos):
     //   - Pendiente: BankStatement/Transaction con Date en el período que NO tiene
-    //     ningún ClassifiedMovementItem que lo referencie (ver MovementLoader.LoadAsync).
+    //     ningún ClassifiedMovementItem que lo referencie (ver MovementLoader.LoadAsync)
+    //     Y que tampoco es miembro de un MovementIdentityLink cuyo IdentityGroupId ya
+    //     tiene otro miembro clasificado -- ver excepción DEDUPE-017 más abajo.
     //   - Clasificado: ClassifiedMovementItem (de BankStatement o Transaction) con
     //     OriginalDate en el período (ver MovementsQueryService.LoadClassifiedAsync).
     //
-    // 3 consultas COUNT secuenciales (pendientes de banco, pendientes de tarjeta,
-    // clasificados) -- secuenciales porque comparten el mismo IApplicationDbContext,
-    // que no admite operaciones concurrentes sobre la misma instancia (mismo motivo ya
-    // documentado en MovementsQueryService.GetAsync). No hay forma de unir banco y
-    // tarjeta en una sola consulta sin SQL crudo, y esta cantidad de queries es la
-    // mínima necesaria sin duplicar lógica de exclusión entre ambas fuentes.
+    // EXCEPCIÓN DEDUPE-017 (ver claude/AUDITORIA-DEDUPE017-METRICS.md, conclusión B):
+    // desde DEDUPE-017, ClassifyMovementHandler impide clasificar un miembro de un
+    // IdentityGroupId (MovementIdentityLink) cuando otro miembro del mismo grupo ya
+    // tiene su propio ClassifiedMovementItem -- ambas filas físicas son la misma
+    // identidad económica real. Sin este ajuste, esos hermanos quedan sin
+    // ClassifiedMovementItem para siempre (no es que falte clasificarlos: está
+    // prohibido clasificarlos) y el criterio de "pendiente" de arriba los seguiría
+    // contando como pendientes indefinidamente, sin que la cobertura pueda llegar
+    // nunca a 100% para un período con grupos deduplicados ya resueltos.
+    // La unidad de cobertura pasa a ser la IDENTIDAD ECONÓMICA cuando existe un
+    // MovementIdentityLink: un grupo se considera cubierto (no pendiente) en cuanto
+    // CUALQUIERA de sus miembros físicos tiene un ClassifiedMovementItem propio, sin
+    // importar cuántos otros miembros del grupo sigan sin el suyo. Una fila física sin
+    // MovementIdentityLink se comporta exactamente igual que antes de este cambio.
+    // No se crea ni se borra ningún ClassifiedMovementItem ni MovementIdentityLink acá
+    // -- esto es puramente una corrección de conteo de lectura.
+    //
+    // Consultas: las 3 de siempre (pendientes de banco, pendientes de tarjeta,
+    // clasificados) más, ÚNICAMENTE cuando alguna fila pendiente tiene
+    // MovementIdentityLink (caso raro -- la mayoría de los períodos no tiene grupos
+    // deduplicados), 2 consultas adicionales acotadas a esos grupos puntuales para
+    // determinar cuáles ya tienen un miembro clasificado -- ver
+    // CountPendingCoveredByClassifiedSiblingAsync. Todas secuenciales, mismo motivo ya
+    // documentado arriba (un solo IApplicationDbContext).
 
     public async Task<ClassificationCoverage> GetClassificationCoverageAsync(
         DateOnly from, DateOnly to, CancellationToken ct = default)
@@ -242,17 +262,19 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
             .Where(i => i.SourceEntityType == SourceEntityType.Transaction)
             .Select(i => i.SourceId);
 
-        var pendingBankStatements = await _db.BankStatements
+        var pendingBankStatementIds = await _db.BankStatements
             .AsNoTracking()
             .Where(b => b.Date >= fromUtc && b.Date <= toUtc)
             .Where(b => !classifiedBankStatementIds.Contains(b.Id))
-            .CountAsync(ct);
+            .Select(b => b.Id)
+            .ToListAsync(ct);
 
-        var pendingTransactions = await _db.Transactions
+        var pendingTransactionIds = await _db.Transactions
             .AsNoTracking()
             .Where(t => t.Date >= fromUtc && t.Date <= toUtc)
             .Where(t => !classifiedTransactionIds.Contains(t.Id))
-            .CountAsync(ct);
+            .Select(t => t.Id)
+            .ToListAsync(ct);
 
         var classified = await _db.ClassifiedMovementItems
             .AsNoTracking()
@@ -261,13 +283,83 @@ internal sealed class FinancialMetricsService : IFinancialMetricsService
             .Where(i => i.OriginalDate >= fromUtc && i.OriginalDate <= toUtc)
             .CountAsync(ct);
 
-        var pending = pendingBankStatements + pendingTransactions;
+        var coveredBySiblingCount = await CountPendingCoveredByClassifiedSiblingAsync(
+            pendingBankStatementIds, pendingTransactionIds, ct);
+
+        var pending = pendingBankStatementIds.Count + pendingTransactionIds.Count - coveredBySiblingCount;
         var total = classified + pending;
         var coveragePercentage = total > 0
             ? Math.Round((decimal)classified / total * 100, 1)
             : 0m;
 
         return new ClassificationCoverage(from, to, total, classified, pending, coveragePercentage);
+    }
+
+    // DEDUPE-017 (ver comentario de GetClassificationCoverageAsync arriba): de las filas
+    // pendientes recibidas, cuenta cuántas pertenecen a un IdentityGroupId
+    // (MovementIdentityLink) que ya tiene, en CUALQUIER otro miembro del grupo (dentro o
+    // fuera del período consultado -- el ClassifiedMovementItem del hermano puede tener
+    // una OriginalDate distinta), un ClassifiedMovementItem propio. Esas filas dejan de
+    // contarse como pendientes: su identidad económica ya está resuelta a través del
+    // hermano. Salida temprana sin consultas adicionales cuando ninguna fila pendiente
+    // tiene MovementIdentityLink -- el caso normal, sin grupos deduplicados en el período.
+    private async Task<int> CountPendingCoveredByClassifiedSiblingAsync(
+        List<Guid> pendingBankStatementIds,
+        List<Guid> pendingTransactionIds,
+        CancellationToken ct)
+    {
+        if (pendingBankStatementIds.Count == 0 && pendingTransactionIds.Count == 0)
+            return 0;
+
+        var pendingLinks = await _db.MovementIdentityLinks
+            .AsNoTracking()
+            .Where(l =>
+                (l.SourceEntityType == SourceEntityType.BankStatement && pendingBankStatementIds.Contains(l.SourceId)) ||
+                (l.SourceEntityType == SourceEntityType.Transaction && pendingTransactionIds.Contains(l.SourceId)))
+            .Select(l => new { l.SourceEntityType, l.SourceId, l.IdentityGroupId })
+            .ToListAsync(ct);
+
+        if (pendingLinks.Count == 0)
+            return 0;
+
+        var groupIds = pendingLinks.Select(l => l.IdentityGroupId).Distinct().ToList();
+
+        var groupMembers = await _db.MovementIdentityLinks
+            .AsNoTracking()
+            .Where(l => groupIds.Contains(l.IdentityGroupId))
+            .Select(l => new { l.SourceEntityType, l.SourceId, l.IdentityGroupId })
+            .ToListAsync(ct);
+
+        var memberBankStatementIds = groupMembers
+            .Where(m => m.SourceEntityType == SourceEntityType.BankStatement)
+            .Select(m => m.SourceId)
+            .ToList();
+        var memberTransactionIds = groupMembers
+            .Where(m => m.SourceEntityType == SourceEntityType.Transaction)
+            .Select(m => m.SourceId)
+            .ToList();
+
+        var classifiedMemberKeys = await _db.ClassifiedMovementItems
+            .AsNoTracking()
+            .Where(i =>
+                (i.SourceEntityType == SourceEntityType.BankStatement && memberBankStatementIds.Contains(i.SourceId)) ||
+                (i.SourceEntityType == SourceEntityType.Transaction && memberTransactionIds.Contains(i.SourceId)))
+            .Select(i => new { i.SourceEntityType, i.SourceId })
+            .ToListAsync(ct);
+
+        // Un grupo está cubierto en cuanto CUALQUIERA de sus miembros tiene un
+        // ClassifiedMovementItem -- nunca puede ser la fila pendiente en cuestión
+        // misma, porque por definición una fila pendiente no tiene su propio item.
+        var classifiedKeySet = classifiedMemberKeys
+            .Select(k => (k.SourceEntityType, k.SourceId))
+            .ToHashSet();
+
+        var coveredGroupIds = groupMembers
+            .Where(m => classifiedKeySet.Contains((m.SourceEntityType, m.SourceId)))
+            .Select(m => m.IdentityGroupId)
+            .ToHashSet();
+
+        return pendingLinks.Count(l => coveredGroupIds.Contains(l.IdentityGroupId));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
