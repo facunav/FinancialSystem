@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!-- NPOI 2.8.0 exige aceptar la licencia OSMF (Open Specification Media Format,
-         de la Free Standards Group) para el código de esquema OOXML que empaqueta --
+         de la Free Standards Group) para el código de esquema OOXML que empaqueta;
          sin esto, el build falla con "You must accept the OSMF EULA license". -->
     <AcceptNPOIOSMFLicense>true</AcceptNPOIOSMFLicense>
   </PropertyGroup>
