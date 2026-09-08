@@ -149,6 +149,8 @@ public class MovementToolsExplainClassificationComparisonTests
         public DbSet<PlanningMonth> PlanningMonths => throw NotExpected();
         public DbSet<PlanningItem> PlanningItems => throw NotExpected();
         public DbSet<MovementIdentityLink> MovementIdentityLinks => throw NotExpected();
+        public DbSet<MovementIdentityLinkRollback> MovementIdentityLinkRollbacks => throw NotExpected();
+        public DbSet<MovementIdentityLinkRollbackMember> MovementIdentityLinkRollbackMembers => throw NotExpected();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             throw NotExpected();
