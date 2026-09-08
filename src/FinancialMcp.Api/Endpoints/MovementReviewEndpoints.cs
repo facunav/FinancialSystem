@@ -59,6 +59,8 @@ public static class MovementReviewEndpoints
                 ClassifyMovementFailureReason.AlreadyPartOfMatchGroup =>
                     Results.Conflict("Este movimiento es parte de un grupo de conciliación (match N↔M); " +
                         "no se puede reclasificar individualmente desde acá"),
+                ClassifyMovementFailureReason.PartOfAlreadyClassifiedIdentityGroup =>
+                    Results.Conflict("Este movimiento ya pertenece a una identidad económica que fue clasificada anteriormente."),
                 _ => Results.Problem("Error desconocido al clasificar el movimiento"),
             };
         }
