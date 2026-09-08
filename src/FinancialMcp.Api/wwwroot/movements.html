@@ -1733,7 +1733,14 @@
 
             const progress = document.getElementById('classifyProgress');
             progress.style.display = 'block';
-            let ok = 0, fail = 0;
+            let ok = 0;
+            // PR-U2: antes acá solo había fail++ -- el usuario nunca sabía cuál
+            // movimiento había fallado ni por qué (ver auditoría de UX del batch de
+            // clasificación). Se conserva el mensaje real del backend (ya extraído por
+            // postJson/extractErrorMessage en ui-common.js -- ver catch abajo) asociado
+            // a la fila que falló, para mostrarlo en showBatchClassifyResult al
+            // terminar el loop.
+            const failures = [];
 
             for (let i = 0; i < ids.length; i++) {
                 const movement = state.movements.find(m => m.sourceId === ids[i]);
@@ -1751,8 +1758,14 @@
                     movement.movementType = shared.movementType;
                     movement.financialImpact = shared.financialImpact;
                     ok++;
-                } catch {
-                    fail++;
+                } catch (e) {
+                    // e.message ya viene resuelto por postJson -> handleWriteResponse ->
+                    // extractErrorMessage (ui-common.js): body string plano (caso del
+                    // 409 de PartOfAlreadyClassifiedIdentityGroup, ver
+                    // MovementReviewEndpoints.Classify) o ProblemDetails.detail/title,
+                    // con fallback a "status statusText". Puede venir vacío ante un
+                    // error de red sin body legible -- de ahí el fallback genérico acá.
+                    failures.push({ movement, message: e?.message || 'Error desconocido al clasificar' });
                 }
             }
 
@@ -1760,14 +1773,47 @@
             // Se limpia la selección haya habido error o no, en vez de tratar de
             // conservar solo los fallidos — más simple y consistente con cómo ya
             // se limpia selectedIds en cada loadMovements(). Si algo falló, el
-            // usuario lo ve en el toast y puede volver a seleccionarlo.
+            // usuario lo ve en el toast (con detalle por fila, ver
+            // showBatchClassifyResult) y puede volver a seleccionarlo.
             state.selectedIds.clear();
             closeClassifyModal();
             renderMovements();
-            const msg = fail === 0
-                ? `✓ ${ok} movimiento${ok !== 1 ? 's' : ''} clasificado${ok !== 1 ? 's' : ''}`
-                : `✓ ${ok} ok · ⚠ ${fail} con error`;
-            showToast('listToast', msg, fail === 0 ? 'ok' : 'err', 5000);
+            showBatchClassifyResult(ok, failures);
+        }
+
+        // PR-U2: resumen del batch de clasificación. Sin errores, mismo mensaje/toast
+        // de siempre. Con errores, arma el HTML a mano (en vez de pasar por
+        // showToast() con un string plano) para poder unir varias líneas con <br>
+        // real -- showToast() (ui-common.js) escapa el mensaje COMPLETO con esc(), así
+        // que un <br> puesto ahí llegaría como texto literal, no como salto de línea.
+        // Reutiliza el mismo contenedor (#listToast) y las mismas clases .toast/.err
+        // que ya usaba showToast() para este mismo mensaje -- ningún modal ni panel
+        // nuevo, cada campo dinámico (encabezado, descripción del movimiento, mensaje
+        // de error) se escapa por separado con esc() antes de unirlos.
+        function showBatchClassifyResult(ok, failures) {
+            if (failures.length === 0) {
+                showToast('listToast', `✓ ${ok} movimiento${ok !== 1 ? 's' : ''} clasificado${ok !== 1 ? 's' : ''}`, 'ok', 5000);
+                return;
+            }
+
+            const header = `✓ ${ok} ok · ⚠ ${failures.length} con error`;
+            const detailLines = failures.map(({ movement, message }) =>
+                `${esc(describeMovementForBatchError(movement))}: ${esc(message)}`);
+
+            const el = document.getElementById('listToast');
+            el.innerHTML = `<span class="toast err">${esc(header)}<br>${detailLines.join('<br>')}</span>`;
+            // Mismo patrón de auto-clear que showToast(), con más tiempo -- el
+            // detalle por fila necesita más que los 3.5s/5s por defecto para leerse.
+            setTimeout(() => { if (el) el.innerHTML = ''; }, 15000);
+        }
+
+        // Identificación de la fila para el detalle de errores del batch -- mismos
+        // datos que ya se muestran en la tabla (descripción/concepto, fecha, importe),
+        // con los formatters (fmt/fmtDate) que ya existen en este archivo. Ningún dato
+        // nuevo pedido al backend.
+        function describeMovementForBatchError(movement) {
+            const label = movement.description || movement.merchant || '(sin descripción)';
+            return `${label} · ${fmtDate(movement.date)} · ${fmt(movement.amount)} ${movement.currency}`;
         }
 
         // esc(), showToast() y las utilidades HTTP (getJson/postJson/putJson) se
